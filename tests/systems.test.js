@@ -327,11 +327,11 @@ test('community standing drifts rather than jumping', async () => {
 });
 
 test('endgame goals report real progress and never throw', async () => {
-  const { endgameProgress } = await import('../src/data/endgame.js');
+  const { endgameProgress, ENDGAME_GOALS } = await import('../src/data/endgame.js');
   const fresh = new Game();
   fresh.newGame({ seed: 2 });
   const early = endgameProgress(fresh.state);
-  assert.equal(early.total, 12);
+  assert.equal(early.total, ENDGAME_GOALS.length);
   assert.equal(early.complete, 0);
   assert.ok(early.goals.every((g) => typeof g.detail === 'string' && g.value >= 0 && g.value <= 1));
 
@@ -352,4 +352,35 @@ test('rival standings rank the player against the competition', () => {
   // Nobody shares the player's default complex name.
   const you = table.find((r) => r.you);
   assert.equal(table.filter((r) => r.name === you.name).length, 1);
+});
+
+// ----------------------------------------------------------------- weather
+
+test('weather wears an open pitch and slows a building site', async () => {
+  const g = new Game();
+  g.adopt(createState({ seed: 12 }), buildReferenceStadium());
+  g.analyze(true);
+  const dry = g.primaryVenue.ratings.measures.field;
+
+  // Force a run of storms and let the days pass.
+  g.state.weather = 'storm';
+  g.state.weatherUntilDay = 9999;
+  assert.equal(g.weatherBuildFactor(), 0.35, 'a storm should stop most work');
+  for (let i = 0; i < 12; i++) g.skipDay();
+  assert.ok(g.state.pitchWear > 0.2, `wear is only ${g.state.pitchWear}`);
+  g.analyze(true);
+  const wet = g.primaryVenue.ratings.measures.field;
+  assert.ok(wet < dry, `an open pitch should suffer (${dry} -> ${wet})`);
+  assert.ok(g.primaryVenue.ratings.issues.some((i) => i.key === 'pitch_condition'), 'and say so');
+
+  // Fine weather brings it back, but slowly - a battered pitch takes weeks.
+  g.state.weather = 'sunny';
+  const worst = g.state.pitchWear;
+  for (let i = 0; i < 10; i++) g.skipDay();
+  assert.ok(g.state.pitchWear < worst, 'it starts recovering');
+  for (let i = 0; i < 60; i++) g.skipDay();
+  assert.equal(g.state.pitchWear, 0, 'and gets there eventually');
+  assert.equal(g.weatherBuildFactor(), 1);
+  g.analyze(true);
+  assert.ok(g.primaryVenue.ratings.measures.field >= dry - 0.001, 'the surface is as good as new');
 });

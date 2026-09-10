@@ -51,6 +51,7 @@ export function detectVenues(world, opts = {}) {
   const powerCapacity = opts.powerCapacity ?? Infinity;
   const utilities = opts.utilities || null;
   const sitePrefix = opts.siteId ? `${opts.siteId}:` : '';
+  const pitchWear = opts.pitchWear || 0;
   const { zoneInfo, stats, size } = scanWorld(world);
   const get = (key) => zoneInfo.get(zoneId(key)) || null;
   const countOf = (key) => (get(key)?.count ?? 0);
@@ -110,6 +111,7 @@ export function detectVenues(world, opts = {}) {
   complex.powerCapacity = powerCapacity;
   complex.powerDeficit = Math.max(0, complex.powerDemand - powerCapacity);
   complex.utilityFactors = utilities || {};
+  complex.pitchWear = pitchWear;
 
   // Roads must actually reach the parking for it to be usable. Without any
   // road network some drivers still find their way in, so the floor is 0.3
@@ -444,9 +446,10 @@ function orphanSummary(zoneInfo) {
  * twice, the game scores venues once, derives the networks, then rescores with
  * this - which is pure arithmetic over data already gathered.
  */
-export function rescoreVenues(analysis, utilityFactors) {
+export function rescoreVenues(analysis, utilityFactors, pitchWear) {
   if (!analysis?.venues) return analysis;
   analysis.complex.utilityFactors = utilityFactors || {};
+  if (pitchWear !== undefined) analysis.complex.pitchWear = pitchWear;
   for (const v of analysis.venues) {
     v.ratings = rateVenue(v, analysis.complex);
     v.tier = eventTier(v);

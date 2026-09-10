@@ -20,7 +20,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test           # 25 headless simulation tests
+npm test           # 72 headless simulation tests
 npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
@@ -29,10 +29,22 @@ loaded.
 
 ## The loop, concretely
 
-1. **Build.** Place blocks from a palette of ~55 materials with single-block,
+1. **Build.** Place blocks from a palette of ~70 materials with single-block,
    line, wall, floor, rectangle, room, flood-fill, replace, copy and paste
    tools. Undo/redo throughout. Planning mode lets you design an entire stand
    and see the price before committing a penny.
+
+   Three **procedural structures** handle the parts that are pure repetition:
+   *Stand* works out which way the pitch is and lays a raked seating tier with
+   its own supports and vomitories; *Garage* builds a multi-level car park with
+   decks, columns and a ramp bay; *Retain* builds a retaining wall that matches
+   the ground behind it. A separate **TERRAIN** mode raises, lowers, flattens
+   and ramps the ground while preserving each column's surface material.
+
+   Anything substantial becomes a **construction project** that rises out of
+   the ground over several days, lowest blocks first. You cannot throw up a
+   12,000-seat tier the day before an event you have already won — though you
+   can pay overtime to rush it.
 2. **Zone.** Paint what areas are *for*: pitch, seating, concourse, entrance,
    emergency exit, locker room, medical, media, broadcast, restrooms,
    concessions, retail, hospitality, security, parking, roads. Placing an
@@ -48,12 +60,25 @@ loaded.
    venue. Bidding is a set of decisions — offer amount, venue packages,
    contract terms, ticket pricing — scored against rival venues. You will lose
    bids.
+
+   Once a bid for a serious event is credible the organiser stops filling in
+   forms and starts **negotiating**: extra days, exclusive hospitality, a
+   ticket allocation, a relaid pitch, accredited screening on every gate. Each
+   answer moves their goodwill and changes the deal itself. Promising
+   something your venue cannot back up is discounted, and risks an
+   embarrassment on the day.
 5. **Host.** Fans walk from the gates to their seats in the 3D world, cars fill
    the parking, then you get a full revenue/cost breakdown, a satisfaction
    score and reputation movement.
 6. **Expand.** Bigger events need more seats *and* more provision. Doubling
    capacity without adding restrooms, exits and parking will break requirements
-   that used to pass.
+   that used to pass. Five **utility networks** — power, water, wastewater,
+   data and climate — read their demand from what you built and degrade what
+   they serve when they fall behind.
+
+   Eventually you buy land in **another city** entirely. Each has its own land
+   prices, audience size, weather and climate, and venues on every site
+   compete for the same event board.
 
 ## Scale
 
@@ -65,14 +90,18 @@ still giving enough resolution for stands, concourses and rooms.
 
 ```
 src/
-  core/        game hub, state, seeded RNG, economy, audio, constants
-  data/        blocks, zones, events, sponsors, staff, research,
-               achievements, random events, rivals   (all pure data)
+  core/        game hub, state, seeded RNG, economy, community, construction,
+               audio, constants
+  data/        blocks, zones, events, negotiations, sponsors, staff, research,
+               utilities, cities, achievements, endgame goals, random events,
+               rivals   (all pure data)
   voxel/       chunked world, greedy mesher, renderer, DDA raycast,
-               reversible edit batches, build tools, build controller
+               reversible edit batches, build tools, procedural structures,
+               build controller
   venues/      world scan, connected components, largest-rectangle fitting,
                rating model, venue classification
-  events/      generator, requirement checking, bidding, event simulation
+  events/      generator, requirement checking, bidding, negotiation,
+               event simulation
   world/       day/night sky, event-day crowd
   input/       camera rig (4 modes), unified touch + mouse + keyboard
   ui/          HUD shell, build dock, screens, events UI, tutorial
@@ -125,6 +154,17 @@ are no third-party trademarks, logos or likenesses anywhere in the project, and
 all art is generated at runtime from the block data — there are no image assets
 to license.
 
+## Systems at a glance
+
+| System | What it reads | What happens when it is wrong |
+| --- | --- | --- |
+| Venue analysis | zones, block geometry, roof coverage, supports | events you cannot bid for, with a named reason |
+| Utility networks | pitch area, fixtures, broadcast feeds, enclosed volume | degraded ratings and specific failures on event day |
+| Transport | road types, parking, garages, transit, bus and taxi bays | queues, turned-away fans, angry neighbours |
+| Community | jobs, visitors, facilities, traffic, noise, branding | standing drifts toward what you have earned |
+| Rivals | their reinvestment vs yours | they outbid you and say so |
+| Weather | the city's own climate table | worn pitches, slowed building sites, thinner crowds |
+
 ## Deliberate design calls
 
 - **Reputation replaces XP.** Rather than a separate experience bar, venue
@@ -141,13 +181,14 @@ to license.
 
 ## What is deliberately not here yet
 
-The vertical slice is the loop above. These are designed for but not built:
-
-- Multi-city / multi-venue empire management (the state shape supports several
-  venues on one site today; a global overview is the next step)
-- Terrain raise/lower and retaining walls
-- Water, sewer and network infrastructure beyond the power grid
-- Ice, aquatic, cricket and combat venues have zones, blocks and event
-  templates, but have had far less balancing than football and basketball
+- **Long-run balance is unproven.** The systems are tested individually and the
+  loop is tested end to end, but nobody has played 300 in-game days. The
+  progression from a community ground to a world championship host is designed
+  rather than demonstrated.
+- **Ice, aquatic, cricket, combat, baseball and esports venues** have zones,
+  blocks, venue types and event templates, but far less balancing than football
+  and basketball.
+- **Real-device performance is unmeasured.** Everything here was profiled under
+  software rendering, which tells you nothing about a phone.
 
 Nothing in that list is exposed in the UI as a dead button.

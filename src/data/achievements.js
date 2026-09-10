@@ -18,6 +18,7 @@ export const ACHIEVEMENTS = [
   { id: 'multi_sport',   name: 'Multi-Sport Complex',  desc: 'Operate venues for three different sports.',  check: (s) => s.stats.sportsHosted.length >= 3 },
   { id: 'big_sponsor',   name: 'Naming Rights',        desc: 'Sign a naming-rights sponsor.',               check: (s) => s.sponsors.some((x) => x.naming) },
   { id: 'perfect',       name: 'Perfect Event',        desc: 'Finish an event at 95%+ fan satisfaction.',   check: (s) => s.stats.bestSatisfaction >= 95 },
-  { id: 'land_max',      name: 'Mega Sports District', desc: 'Own the largest land tier.',                  check: (s) => s.landTier >= 3 },
+  { id: 'land_max',      name: 'Mega Sports District', desc: 'Own the largest land tier.',                  check: (s) => (s.sites || []).some((x) => (x.landTier ?? 0) >= 3) },
+  { id: 'second_city',   name: 'Second City',          desc: 'Buy land in another city.',                   check: (s) => (s.sites || []).length >= 2 },
   { id: 'empire',        name: 'Global Sports Empire', desc: 'Reach 90 venue reputation.',                  check: (s) => s.reputation.venue >= 90 },
 ];

@@ -228,9 +228,18 @@ export class Game {
     this.maybeAnalyze();
   }
 
+  /** Bad weather slows a building site down; good weather does not speed it up. */
+  weatherBuildFactor() {
+    const w = this.state.weather;
+    if (w === 'storm') return 0.35;
+    if (w === 'rain') return 0.7;
+    if (w === 'heat') return 0.85;
+    return 1;
+  }
+
   tickConstruction(dayFraction) {
     if (!this.state.construction?.length) return;
-    const r = tickConstruction(this.state, this.world, dayFraction);
+    const r = tickConstruction(this.state, this.world, dayFraction * this.weatherBuildFactor());
     if (r.changed) this.markWorldDirty();
     for (const p of r.completed) {
       this.notify('construction', 'Construction complete', `${p.label} is finished and operational.`);
@@ -313,6 +322,14 @@ export class Game {
     driftCommunity(s, this.analysis);
     s.recentConstruction = (s.recentConstruction || 0) * 0.93;
 
+    // Weather works on an open pitch. Groundstaff and a climate that suits the
+    // grass both push the wear back down.
+    const climate = climateEffects(this.site.cityId);
+    const todayWear = { storm: 0.10, rain: 0.05, heat: 0.06, cloudy: 0.005, sunny: 0 }[s.weather] || 0;
+    const recovery = 0.02 + s.staffBonus.operations * 0.05;
+    s.pitchWear = Math.max(0, Math.min(1,
+      (s.pitchWear || 0) + todayWear * climate.pitchWear - recovery));
+
     // Weather
     if (s.day >= s.weatherUntilDay) {
       const rng = makeRng(hashString(`${s.seed}:weather:${s.day}`));
@@ -394,6 +411,7 @@ export class Game {
       siteId: site.id,
       powerCapacity: siteStatus.power.capacity,
       utilities: siteFactors,
+      pitchWear: this.state.pitchWear || 0,
     });
 
     // Where a venue is changes who turns up and how they get there.
@@ -436,7 +454,7 @@ export class Game {
     // Derive the utility networks from the scan, then rescore the venues now
     // that the service factors are known.
     attachDerived(this.state, a);
-    rescoreVenues(a, this.state.utilityFactors);
+    rescoreVenues(a, this.state.utilityFactors, this.state.pitchWear || 0);
     attachDerived(this.state, a);
     this.rollUpEmpire();
 

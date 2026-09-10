@@ -32,6 +32,16 @@ export const ENDGAME_GOALS = [
     detail: (s) => `${s.stats.sportsHosted.length} / 6 sports`,
   },
   {
+    id: 'empire', name: 'A Group, Not A Ground', tier: 'build',
+    desc: 'Operate venues in three different cities.',
+    progress: (s) => Math.min(1, (s.sites || []).filter(
+      (site) => s.venues.registered.some((r) => r.siteId === site.id)).length / 3),
+    detail: (s) => {
+      const live = (s.sites || []).filter((site) => s.venues.registered.some((r) => r.siteId === site.id));
+      return `${live.length} / 3 cities with a live venue`;
+    },
+  },
+  {
     id: 'reputation', name: 'Untouchable Reputation', tier: 'operate',
     desc: 'Reach 100 venue reputation.',
     progress: (s) => s.reputation.venue / 100,
@@ -87,6 +97,11 @@ export const ENDGAME_GOALS = [
     },
   },
 ];
+
+/** The best plot the player owns anywhere. */
+function maxLandTier(s) {
+  return Math.max(0, ...(s.sites || []).map((site) => site.landTier ?? 0));
+}
 
 export const GOAL_GROUPS = [
   { key: 'build', name: 'Build' },

@@ -42,7 +42,7 @@ const STEPS = [
   {
     id: 'parking',
     title: 'Connect roads and parking',
-    body: 'Lay Asphalt for parking and Road to reach it. A big stadium with nowhere to park will be marked down badly.',
+    body: 'Asphalt for parking, and Roads & Parking \u2192 Main Road to reach it. A big stadium with nowhere to park gets marked down badly. The Garage tool stacks parking upward when you run out of ground.',
     done: (g) => (g.analysis.complex?.parkingCars ?? 0) > 100,
   },
   {
@@ -64,9 +64,15 @@ const STEPS = [
     done: (g) => g.state.stats.eventsHosted > 0,
   },
   {
+    id: 'utilities',
+    title: 'Keep the site supplied',
+    body: 'Management \u2192 Infra shows power, water, wastewater, data and climate. Demand comes from what you built. A network over capacity fails during events.',
+    done: (g) => Object.values(g.state.utilityStatus || {}).every((u) => u.deficit === 0),
+  },
+  {
     id: 'expand',
     title: 'Now grow it',
-    body: 'More seats unlock bigger events. Better facilities unlock higher tiers. Check the venue report to see exactly what is holding you back.',
+    body: 'More seats unlock bigger events; better facilities unlock higher tiers. The venue report says exactly what is holding you back. Later, Management \u2192 Empire lets you buy land in another city entirely.',
     done: (g) => g.state.stats.eventsHosted >= 2,
   },
 ];

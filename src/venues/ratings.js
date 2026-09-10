@@ -35,6 +35,9 @@ export function rateVenue(v, complex) {
   // thing it serves. No water means a tired pitch and dry restrooms.
   const u = complex.utilityFactors || {};
   const uf = (k) => (u[k] === undefined ? 1 : u[k]);
+  // Weather works on an open pitch; a covered one shrugs it off.
+  const exposure = 1 - Math.min(1, v.roofCoverage ?? 0);
+  const pitchWeather = 1 - (complex.pitchWear || 0) * 0.25 * exposure;
 
   // --- individual measures -------------------------------------------------
   const m = {
@@ -42,7 +45,7 @@ export function rateVenue(v, complex) {
     // on top of it.
     field: v.field
       ? v.field.regulation * (0.85 + 0.15 * (v.field.sizeQuality ?? 1))
-        * (v.field.surfaceOk ? 1 : 0.55) * (0.55 + uf('water') * 0.45)
+        * (v.field.surfaceOk ? 1 : 0.55) * (0.55 + uf('water') * 0.45) * pitchWeather
       : 0,
     seating: clamp01(Math.log10(Math.max(cap, 10)) / 5),
     restroom: pct(f.restroom, R.restroomVoxels(cap)) * Math.min(uf('water'), uf('sewer')),
@@ -152,6 +155,12 @@ export function rateVenue(v, complex) {
   note(0.6, 'Concourse space is tight; crowd congestion is likely.', 'Excellent pedestrian flow through the concourses.', 'concourse');
   note(0.6, 'Not enough stairs/vomitories connecting concourse to seating.', null, 'stairs');
   note(0.6, 'Parking bottleneck detected. Add parking, bus bays, a transit stop or a multi-level garage.', 'Transport provision is excellent.', 'parking');
+  if ((complex.pitchWear || 0) > 0.5 && exposure > 0.4 && v.field) {
+    issues.push({
+      key: 'pitch_condition', severity: 'warn',
+      text: 'The playing surface is suffering from the weather. A roof, or a synthetic surface, would protect it.',
+    });
+  }
   if ((complex.emergencyRoad || 0) === 0 && cap > 5000) {
     issues.push({ key: 'emergency', severity: 'warn', text: 'No dedicated emergency route. Blue-light access shares the public approach.' });
   }
