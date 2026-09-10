@@ -157,6 +157,7 @@ export function simulateEvent(ev, venue, state, contract) {
     tier: ev.tier,
     organiser: ev.organiser,
     venueName: venue.name || venue.type,
+    venueKey: venue.key,
     day: state.day,
     attendance,
     capacity: venue.capacity.total,

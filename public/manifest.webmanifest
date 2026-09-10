@@ -1,0 +1,17 @@
+{
+  "name": "Sports Complex Tycoon 3D",
+  "short_name": "Sports Tycoon",
+  "description": "Build a sports complex block by block, then run it as a business.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#070d18",
+  "theme_color": "#070d18",
+  "categories": ["games", "simulation"],
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

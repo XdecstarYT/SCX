@@ -59,7 +59,7 @@ const FRAG = /* glsl */`
     // Soft wrap term keeps shadowed faces readable instead of pure black.
     float wrap = max(dot(N, uSunDir) * 0.5 + 0.5, 0.0);
     vec3 hemi = mix(uGroundColor, uSkyColor, N.y * 0.5 + 0.5);
-    vec3 lit = vColor * (hemi * 0.62 + uSunColor * (ndl * 0.72 + wrap * 0.18));
+    vec3 lit = vColor * (hemi * 0.78 + uSunColor * (ndl * 0.66 + wrap * 0.22));
 
     // Panel seams: one line per metre of real surface, faded out by distance
     // via fwidth so it never turns into moire.
