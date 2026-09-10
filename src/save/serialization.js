@@ -53,7 +53,9 @@ function b64ToBytes(b64) {
 
 /** Fields that are recomputed from the world and must never be persisted. */
 const DERIVED_KEYS = [
-  'derived', 'complex', 'staffBonus', 'sponsorPerEvent', 'sponsorBonuses',
+  'derived', 'complex', 'empire', 'utilityStatus', 'utilityFactors', 'utilityUpkeep',
+  'powerCapacity', 'powerDemand', 'powerDeficit',
+  'staffBonus', 'sponsorPerEvent', 'sponsorBonuses',
   'buildCostMult', 'salaryMult', 'wearFactor', 'capacityPenalty', 'tempSeats',
   'sponsorLocked', 'transitShare', 'bestCapacityHint',
 ];
@@ -111,7 +113,16 @@ export function deserializeWorld(data) {
   return world;
 }
 
-export function makeSave(state, world, meta = {}) {
+/**
+ * @param worlds a single VoxelWorld, or a Map of siteId -> VoxelWorld.
+ * Single-world saves keep the old `world` field so older saves stay readable
+ * and newer ones stay small when there is only one site.
+ */
+export function makeSave(state, worlds, meta = {}) {
+  const map = worlds instanceof Map ? worlds : new Map([[state.activeSite || 'site1', worlds]]);
+  const sites = {};
+  for (const [id, w] of map) sites[id] = serializeWorld(w);
+
   return {
     version: SAVE_VERSION,
     savedAt: Date.now(),
@@ -121,11 +132,25 @@ export function makeSave(state, world, meta = {}) {
       cash: Math.round(state.cash),
       reputation: Math.round(state.reputation.venue),
       capacity: state.derived?.bestCapacity || 0,
+      sites: map.size,
       ...meta,
     },
     state: serializeState(state),
-    world: serializeWorld(world),
+    // Kept for single-site saves and for anything that only reads `world`.
+    world: sites[state.activeSite || 'site1'] || Object.values(sites)[0],
+    sites,
   };
+}
+
+/** Rebuild every site's world from a save. */
+export function deserializeWorlds(save) {
+  const out = new Map();
+  if (save.sites) {
+    for (const [id, data] of Object.entries(save.sites)) out.set(id, deserializeWorld(data));
+  } else if (save.world) {
+    out.set(save.state?.activeSite || 'site1', deserializeWorld(save.world));
+  }
+  return out;
 }
 
 /** Migrate older saves forward. Never throw on an old save. */
@@ -141,6 +166,28 @@ export function migrate(save) {
   s.finance = { ledger: [], months: [], monthAccum: {}, lastMonth: 0, ...(s.finance || {}) };
   s.tutorial = { step: 0, dismissed: false, seen: {}, ...(s.tutorial || {}) };
   s.organiserHistory = s.organiserHistory || {};
+  s.construction = s.construction || [];
+  // Saves written before the multi-site update carry land and utilities at the
+  // top level; fold them into a single starting site.
+  if (!Array.isArray(s.sites) || s.sites.length === 0) {
+    s.sites = [{
+      id: 'site1',
+      name: s.complexName || 'Riverside',
+      cityId: 'meridian',
+      landTier: s.landTier || 0,
+      boughtDay: 1,
+      utilities: s.utilities || { power: -1, water: -1, sewer: -1, data: -1, climate: -1 },
+    }];
+  }
+  s.activeSite = s.activeSite || s.sites[0].id;
+  for (const site of s.sites) {
+    site.utilities = site.utilities || { power: -1, water: -1, sewer: -1, data: -1, climate: -1 };
+    site.landTier = site.landTier ?? 0;
+    site.cityId = site.cityId || 'meridian';
+  }
+  for (const r of s.venues.registered) r.siteId = r.siteId || s.sites[0].id;
+  delete s.landTier;
+  delete s.utilities;
   s.achievements = s.achievements || [];
   s.version = SAVE_VERSION;
   return save;

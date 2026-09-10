@@ -1,4 +1,4 @@
-import { makeSave, migrate, deserializeWorld } from './serialization.js';
+import { makeSave, migrate, deserializeWorld, deserializeWorlds } from './serialization.js';
 
 const DB_NAME = 'sct3d';
 const STORE = 'saves';
@@ -81,7 +81,7 @@ class SaveManager {
 
   // ------------------------------------------------------------- public API
   async save(game, slot = 'auto') {
-    const data = makeSave(game.state, game.world, { slot });
+    const data = makeSave(game.state, game.worlds, { slot });
     await this.write(slot, data);
     return data.meta;
   }
@@ -90,7 +90,7 @@ class SaveManager {
     const raw = await this.read(slot);
     if (!raw) return null;
     const save = migrate(raw);
-    return { state: save.state, world: deserializeWorld(save.world), meta: save.meta };
+    return { state: save.state, worlds: deserializeWorlds(save), meta: save.meta };
   }
 
   async hasSave(slot = 'auto') {
@@ -105,7 +105,7 @@ class SaveManager {
 
   // ---------------------------------------------------------- export/import
   exportBlob(game) {
-    const data = makeSave(game.state, game.world, { exported: true });
+    const data = makeSave(game.state, game.worlds, { exported: true });
     return new Blob([JSON.stringify(data)], { type: 'application/json' });
   }
 
@@ -119,7 +119,7 @@ class SaveManager {
   async importText(text) {
     const parsed = JSON.parse(text);
     const save = migrate(parsed);
-    return { state: save.state, world: deserializeWorld(save.world), meta: save.meta };
+    return { state: save.state, worlds: deserializeWorlds(save), meta: save.meta };
   }
 }
 

@@ -185,7 +185,21 @@ async function bidForEvent(templateId, seed, shotBase) {
   await page.waitForTimeout(250);
   if (shotBase) await step(shotBase + 1, 'bid-strength');
 
-  await page.getByRole('button', { name: /Submit bid/i }).click();
+  // If the venue does not qualify, say exactly why rather than timing out.
+  const submit = page.getByRole('button', { name: /Submit bid/i });
+  if (!await submit.count()) {
+    const why = await page.evaluate((u) => {
+      const app = window.__sct;
+      const ev = app.game.findEvent(u);
+      const venue = app.game.registeredVenues()[0];
+      const check = app.game.previewBid(u, {
+        amount: ev.bidRange[1], packages: [], terms: [], pricing: 'standard', venueKey: venue?.key,
+      })?.evaluation?.check;
+      return check?.lines.filter((l) => !l.ok).map((l) => `${l.label}: ${l.have} / ${l.need}`);
+    }, uid);
+    throw new Error(`venue does not meet the requirements: ${JSON.stringify(why)}`);
+  }
+  await submit.click();
   await page.waitForTimeout(700);
 
   // A regional-or-better organiser negotiates before deciding.

@@ -119,7 +119,7 @@ class App {
     try {
       const loaded = await saveManager.load(AUTOSAVE_SLOT);
       if (!loaded) return this.newGame('Riverside');
-      this.game.adopt(loaded.state, loaded.world);
+      this.game.adopt(loaded.state, loaded.worlds);
       this.afterWorldReady(false);
       this.offlineCatchUp(loaded.state);
     } catch (e) {
@@ -341,6 +341,7 @@ class App {
       this.worldRenderer.rebuildAll();
       this.worldRenderer.flush();
     });
+    bus.on('sitechange', () => { this.tutorial?.refresh(); });
     bus.on('day', () => {
       if (this.game.state.settings.autosave && this.game.state.day !== this.lastSaveDay) {
         this.lastSaveDay = this.game.state.day;
@@ -560,6 +561,41 @@ class App {
         }, 'Start over'))));
   }
 
+  /** Move the player and the camera to another site. */
+  travelTo(siteId) {
+    const r = this.game.switchSite(siteId);
+    if (r?.error) { this.toast('warn', 'Cannot travel', r.error); return; }
+    const world = this.game.world;
+    this.worldRenderer.world = world;
+    this.show.world = world;
+    this.rig.setWorld(world);
+    this.controller.anchor = null;
+    this.worldRenderer.rebuildAll();
+    this.worldRenderer.flush();
+    const c = (world.size * BLOCK_SIZE) / 2;
+    this.rig.focusOn(c, GROUND_Y * BLOCK_SIZE, c, world.size * BLOCK_SIZE * 0.42);
+    this.rig.pitch = 0.72;
+    this.hud.closeSheet();
+    this.setTab('build');
+    this.toast('info', `Now at ${this.game.site.name}`, this.game.site.name);
+    this.refresh();
+  }
+
+  promptRenameSite(site) {
+    const input = el('input.input', { type: 'text', value: site.name, maxlength: '28' });
+    this.hud.openModal(el('div', {},
+      el('h2', { text: 'Rename site' }),
+      el('div.field', { style: { marginTop: '12px' } }, el('label', { text: 'Site name' }), input),
+      el('div.btnrow', {},
+        el('button.btn', { onclick: () => this.hud.closeModal() }, 'Cancel'),
+        el('button.btn.primary', {
+          onclick: () => {
+            this.game.renameSite(site.id, input.value.trim() || site.name);
+            this.hud.closeModal(); this.screens.openMore('Empire'); this.refresh();
+          },
+        }, 'Save'))));
+  }
+
   /** Jump straight to the infrastructure tab from a Home warning. */
   openInfrastructure() {
     this.hud.closeSheet();
@@ -599,7 +635,7 @@ class App {
       try {
         const loaded = await saveManager.importText(await file.text());
         if (fromSplash) this.splash?.remove();
-        this.game.adopt(loaded.state, loaded.world);
+        this.game.adopt(loaded.state, loaded.worlds);
         this.afterWorldReady(false);
         this.hud.closeSheet();
         this.toast('info', 'Save imported', `${loaded.state.complexName}, day ${loaded.state.day}.`);

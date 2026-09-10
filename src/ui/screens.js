@@ -5,6 +5,7 @@ import { STAFF_ROLES } from '../data/staff.js';
 import { ACHIEVEMENTS } from '../data/achievements.js';
 import { RESEARCH } from '../data/research.js';
 import { UTILITIES } from '../data/utilities.js';
+import { CITIES, city as cityDef } from '../data/cities.js';
 import { ENDGAME_GOALS, GOAL_GROUPS, endgameProgress } from '../data/endgame.js';
 import { MOODS } from '../core/community.js';
 import { BLOCK_BY_KEY } from '../data/blocks.js';
@@ -352,14 +353,15 @@ export class Screens {
 
   // ================================================================== MORE
   openMore(initial = 'Staff') {
-    const tabs = ['Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
-    let active = tabs.includes(initial) ? initial : 'Staff';
+    const tabs = ['Empire', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
+    let active = tabs.includes(initial) ? initial : 'Empire';
     const tabBar = el('div.tabs');
     const render = () => {
       fill(tabBar, ...tabs.map((t) => el('button.tab' + (t === active ? '.on' : ''), {
         onclick: () => { active = t; render(); },
       }, t)));
-      const body = active === 'Staff' ? this.staffBody(render)
+      const body = active === 'Empire' ? this.empireBody(render)
+        : active === 'Staff' ? this.staffBody(render)
         : active === 'Sponsors' ? this.sponsorsBody(render)
         : active === 'Research' ? this.researchBody(render)
         : active === 'Infra' ? this.infrastructureBody(render)
@@ -372,6 +374,79 @@ export class Screens {
       else this.hud.openSheet('Management', body, { tabs: tabBar });
     };
     render();
+  }
+
+  // ================================================================ EMPIRE
+  empireBody(rerender) {
+    const s = this.state;
+    const e = this.game.empire();
+    const owned = new Set(s.sites.map((x) => x.cityId));
+    const available = CITIES.filter((c) => !owned.has(c.id));
+
+    return el('div', {},
+      el('div.card.accent', {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('h3', { text: `${s.complexName} Group` }),
+            el('div.sub', { text: `${e.sites.length} site${e.sites.length > 1 ? 's' : ''} \u00B7 ${e.totalVenues} venue${e.totalVenues === 1 ? '' : 's'} \u00B7 ${fmtNum(e.totalBlocks)} blocks placed` })),
+          pill(`${e.totalRegistered} registered`, e.totalRegistered ? 'ok' : '')),
+        el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px' } },
+          this.kpi('Total capacity', fmtNum(e.totalCapacity), ''),
+          this.kpi('Cash', fmtMoney(s.cash), s.cash < 0 ? 'neg' : 'pos'))),
+
+      section('Your sites', el('div.stack', {}, ...e.sites.map((site) => el('div.card' + (site.active ? '.accent' : ''), {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('h3', { text: site.name }),
+            el('div.sub', { text: `${site.city.name} \u00B7 ${site.city.region} \u00B7 ${site.land.tier.label}` })),
+          site.active ? pill('You are here', 'ok') : null),
+
+        el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '10px' } },
+          this.infraLine('Venues', `${site.venues.length} (${site.registered} live)`),
+          this.infraLine('Capacity', fmtNum(site.capacity)),
+          this.infraLine('Best rating', site.bestRating || '\u2014')),
+
+        site.utilityShort
+          ? el('div.issue.warn', { style: { marginTop: '9px' } },
+              el('span.ic', { text: '\u26A0' }),
+              el('span', { text: `${site.utilityShort} utility network${site.utilityShort > 1 ? 's' : ''} over capacity here.` }))
+          : null,
+
+        el('div.tiny.faint', { style: { marginTop: '8px' }, text: site.city.desc }),
+
+        el('div.btnrow', { style: { marginTop: '10px' } },
+          site.active
+            ? el('button.btn.sm', { disabled: true }, 'Current site')
+            : el('button.btn.sm.primary', {
+                onclick: () => { this.app.travelTo(site.id); },
+              }, 'Travel here'),
+          el('button.btn.sm', { onclick: () => this.app.promptRenameSite(site) }, 'Rename')))))),
+
+      section('Expand into a new city',
+        s.reputation.venue < 55
+          ? el('div.card', {}, emptyState('\u2302',
+              `Operators need a reputation of 55 before another city will sell them land. You are on ${Math.round(s.reputation.venue)}.`))
+          : el('div.stack', {}, ...available.map((c) => el('div.card', {},
+              el('div.rowbetween', {},
+                el('div', {}, el('h3', { text: c.name }), el('div.sub', { text: c.region })),
+                el('div.right', {},
+                  el('div.small.mono.gold', { text: fmtMoney(c.buyCost) }),
+                  el('div.tiny.faint', { text: `land \u00D7${c.landCost} \u00B7 crowds \u00D7${c.audience}` }))),
+              el('div.small.faint', { style: { marginTop: '7px' }, text: c.desc }),
+              el('button.btn.sm.full', {
+                style: { marginTop: '9px' },
+                disabled: s.cash < c.buyCost,
+                onclick: () => {
+                  const r = this.game.buySite(c.id);
+                  if (r?.error) this.app.toast('warn', 'Cannot expand', r.error);
+                  else this.app.toast('info', `Land bought in ${c.name}`, 'Travel there to start building.');
+                  this.app.refresh(); rerender();
+                },
+              }, `Buy land in ${c.name}`))))),
+
+      available.length === 0
+        ? el('div.card.good', {}, emptyState('\u2713', 'You operate in every city there is.'))
+        : null);
   }
 
   staffBody(rerender) {
@@ -528,10 +603,19 @@ export class Screens {
   // ======================================================== INFRASTRUCTURE
   infrastructureBody(rerender) {
     const s = this.state;
+    const site = this.game.site;
     const options = this.game.utilityOptions();
     const short = options.filter((u) => u.status.deficit > 0);
 
     return el('div', {},
+      s.sites.length > 1
+        ? el('div.card.tight', {},
+            el('div.rowbetween', {},
+              el('span.small', { text: `Networks at ${site.name}` }),
+              el('span.tiny.faint', { text: cityDef(site.cityId).name })),
+            el('div.tiny.faint', { style: { marginTop: '4px' },
+              text: 'Each site has its own connections. Travel to another site from the Empire tab to manage its networks.' }))
+        : null,
       short.length
         ? el('div.card.bad', {},
             el('h3', { text: `${short.length} network${short.length > 1 ? 's' : ''} over capacity` }),

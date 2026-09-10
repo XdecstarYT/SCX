@@ -119,14 +119,67 @@ for (const t of ['Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community'
 await openTab('Infra');
 const upgradeBtn = page.locator('.sheet-body button', { hasText: /Upgrade to/ }).first();
 if (await upgradeBtn.count()) {
-  const before = await page.evaluate(() => window.__sct.game.state.utilities.water);
+  const tiers = () => page.evaluate(() => ({ ...window.__sct.game.site.utilities }));
+  const before = await tiers();
   await upgradeBtn.click();
   await page.waitForTimeout(500);
-  const after = await page.evaluate(() => JSON.stringify(window.__sct.game.state.utilities));
-  console.log(`  ✓ utility upgrade purchased (${after})`);
-  if (before === JSON.parse(after).water && !/[1-9]/.test(after)) problems.push('no utility tier changed');
+  const after = await tiers();
+  console.log('  \u2713 utility upgrade purchased (' + JSON.stringify(after) + ')');
+  if (!Object.keys(after).some((k) => after[k] > before[k])) problems.push('no utility tier changed');
 } else {
   problems.push('no utility upgrade button offered');
+}
+
+// The empire screen should list the site you are on, and let you expand.
+await openTab('Empire');
+const empireText = await page.locator('.sheet-body').innerText();
+if (!/Riverside/.test(empireText)) problems.push('Empire tab does not list your site');
+if (!/reputation of 55|Buy land in/.test(empireText)) problems.push('Empire tab does not explain expansion');
+await page.screenshot({ path: `${SHOTS}/S-more-empire.png` });
+
+await page.evaluate(() => {
+  const app = window.__sct;
+  app.game.state.reputation.venue = 70;
+  app.game.state.cash = 300_000_000;
+  app.screens.openMore('Empire');
+});
+await page.waitForTimeout(500);
+const buy = page.locator('.sheet-body button', { hasText: /Buy land in/ }).first();
+if (!await buy.count()) {
+  problems.push('no city available to buy into');
+} else {
+  await buy.click();
+  await page.waitForTimeout(600);
+  const sites = await page.evaluate(() => window.__sct.game.state.sites.length);
+  if (sites !== 2) problems.push('expected 2 sites after buying, got ' + sites);
+  else console.log('  \u2713 bought land in a second city');
+  await page.screenshot({ path: `${SHOTS}/S-more-empire-2.png` });
+
+  const travel = page.locator('.sheet-body button', { hasText: /^Travel here$/ }).first();
+  if (!await travel.count()) {
+    problems.push('cannot travel to the new site');
+  } else {
+    await travel.click();
+    await page.waitForTimeout(1400);
+    const at = await page.evaluate(() => ({
+      site: window.__sct.game.siteId,
+      blocks: window.__sct.game.analysis.complex.totalBlocks,
+      chunks: window.__sct.worldRenderer.meshes.size,
+    }));
+    if (at.site === 'site1') problems.push('travel did not switch sites');
+    console.log('  \u2713 travelled to ' + at.site + ' (' + at.chunks + ' chunks, ' + at.blocks + ' blocks)');
+    await page.screenshot({ path: `${SHOTS}/S-second-site.png` });
+
+    await page.evaluate(() => window.__sct.travelTo('site1'));
+    await page.waitForTimeout(1400);
+    const home = await page.evaluate(() => ({
+      site: window.__sct.game.siteId,
+      venue: window.__sct.game.primaryVenue?.name,
+      cap: window.__sct.game.primaryVenue?.capacity.total,
+    }));
+    if (home.site !== 'site1' || !home.venue) problems.push('the home site did not come back');
+    console.log('  \u2713 returned home to ' + home.venue + ' (' + home.cap + ' capacity)');
+  }
 }
 
 if (errors.length) { console.error('CONSOLE ERRORS:', errors); throw new Error(`${errors.length} console errors`); }

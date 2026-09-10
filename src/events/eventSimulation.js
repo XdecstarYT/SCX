@@ -17,7 +17,10 @@ export function simulateEvent(ev, venue, state, contract) {
   const eff = contractEffects(contract);
 
   // ------------------------------------------------------------- attendance
-  const demandPool = ev.popularity * (0.55 + state.reputation.venue / 220 + state.reputation.fans / 300);
+  // Where the venue is matters: the capital fills a stadium the coast cannot.
+  const audience = venue.audienceMult ?? 1;
+  const demandPool = ev.popularity * audience
+    * (0.55 + state.reputation.venue / 220 + state.reputation.fans / 300);
   const comfortPull = (venue.ratings.comfort / 100) * 0.18 + (venue.ratings.accessibility / 100) * 0.14;
   const marketing = 1 + state.staffBonus.marketing * 0.22;
   let fill = clamp(

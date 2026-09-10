@@ -1,7 +1,8 @@
 import { VoxelWorld } from '../voxel/world.js';
 import { History } from '../voxel/history.js';
 import { EventBus } from './eventBus.js';
-import { createState, attachDerived, applyReputation, landInfo, SAVE_VERSION } from './gameState.js';
+import { createState, attachDerived, applyReputation, landInfo, activeSite, utilityStatusFor, SAVE_VERSION } from './gameState.js';
+import { CITIES, city as cityDef, climateEffects } from '../data/cities.js';
 import { SECONDS_PER_DAY, DAYS_PER_MONTH, LAND_TIERS, GROUND_Y } from './constants.js';
 import { detectVenues, rescoreVenues } from '../venues/venueDetection.js';
 import { generateEvent, boardCapacity, resetEventIds } from '../events/eventGenerator.js';
@@ -33,22 +34,86 @@ const WEATHERS = ['sunny', 'sunny', 'cloudy', 'cloudy', 'rain', 'heat', 'storm']
 export class Game {
   constructor() {
     this.bus = new EventBus();
-    this.world = null;
+    // One voxel world and one cached analysis per site. `world` and `analysis`
+    // always resolve to whichever site the player is standing on.
+    this.worlds = new Map();
+    this.analyses = new Map();
     this.state = null;
     this.history = null;
-    this.analysis = { venues: [], complex: {}, stats: {} };
     this.analysisDirty = true;
     this.lastAnalysisVersion = -1;
     this.planning = null;   // { marker, cost }
     this.accumulator = 0;
   }
 
+  get siteId() { return this.state?.activeSite || 'site1'; }
+  get world() { return this.worlds.get(this.siteId); }
+  set world(w) { this.worlds.set(this.siteId, w); }
+  get site() { return activeSite(this.state); }
+  get analysis() {
+    return this.analyses.get(this.siteId) || { venues: [], complex: {}, stats: {} };
+  }
+  set analysis(a) { this.analyses.set(this.siteId, a); }
+
+  /**
+   * Every detected venue across every site.
+   *
+   * These are the live venue objects, not copies: registering or renaming one
+   * has to stick until the next analysis pass, and analyze() already tags each
+   * venue with the site it belongs to.
+   */
+  allVenues() {
+    const out = [];
+    for (const site of this.state.sites) {
+      const a = this.analyses.get(site.id);
+      if (!a) continue;
+      for (const v of a.venues) out.push(v);
+    }
+    return out;
+  }
+
+  allRegisteredVenues() { return this.allVenues().filter((v) => v.registered); }
+
+  /** Site-by-site rollup for the empire screen and for finance. */
+  empire() {
+    const sites = this.state.sites.map((site) => {
+      const a = this.analyses.get(site.id) || { venues: [], complex: {} };
+      const c = cityDef(site.cityId);
+      const capacity = a.venues.reduce((s, v) => s + v.capacity.total, 0);
+      const status = utilityStatusFor(this.state, site, a);
+      return {
+        ...site,
+        city: c,
+        active: site.id === this.siteId,
+        venues: a.venues,
+        registered: a.venues.filter((v) => v.registered).length,
+        capacity,
+        bestRating: a.venues.length ? Math.max(...a.venues.map((v) => v.ratings.overall)) : 0,
+        maintenance: (a.complex.maintenance || 0),
+        blocks: a.complex.totalBlocks || 0,
+        land: landInfo(this.state, site),
+        utilityStatus: status,
+        utilityShort: Object.values(status).filter((u) => u.deficit > 0).length,
+      };
+    });
+    return {
+      sites,
+      totalCapacity: sites.reduce((s, x) => s + x.capacity, 0),
+      totalVenues: sites.reduce((s, x) => s + x.venues.length, 0),
+      totalRegistered: sites.reduce((s, x) => s + x.registered, 0),
+      totalBlocks: sites.reduce((s, x) => s + x.blocks, 0),
+    };
+  }
+
   // ------------------------------------------------------------- lifecycle
   newGame(opts = {}) {
     this.state = createState(opts);
-    this.world = new VoxelWorld(LAND_TIERS[0].size);
-    this.world.generateTerrain();
-    this.history = new History(this.world);
+    this.worlds.clear();
+    this.analyses.clear();
+    const world = new VoxelWorld(LAND_TIERS[0].size);
+    world.generateTerrain();
+    this.worlds.set('site1', world);
+    this.history = new History(world);
     resetEventIds(1);
     this.analysisDirty = true;
     this.analyze(true);
@@ -58,14 +123,93 @@ export class Game {
     return this;
   }
 
-  adopt(state, world) {
+  /**
+   * @param worlds either a single VoxelWorld (single-site save) or a
+   *               Map/object of siteId -> VoxelWorld.
+   */
+  adopt(state, worlds) {
     this.state = state;
-    this.world = world;
-    this.history = new History(world);
+    this.worlds.clear();
+    this.analyses.clear();
+    if (worlds instanceof Map) {
+      for (const [id, w] of worlds) this.worlds.set(id, w);
+    } else if (worlds && worlds.chunks instanceof Map) {
+      this.worlds.set(state.activeSite || 'site1', worlds);
+    } else {
+      for (const [id, w] of Object.entries(worlds || {})) this.worlds.set(id, w);
+    }
+    // Any site without a world (a corrupt or partial save) gets an empty plot
+    // rather than crashing the game.
+    for (const site of state.sites) {
+      if (!this.worlds.has(site.id)) {
+        const w = new VoxelWorld(LAND_TIERS[site.landTier].size);
+        w.generateTerrain();
+        this.worlds.set(site.id, w);
+      }
+    }
+    this.history = new History(this.world);
     this.analysisDirty = true;
-    this.analyze(true);
+    this.analyzeAll();
     this.bus.emit('state');
     return this;
+  }
+
+  /** Re-scan every site. Used on load and when the empire composition changes. */
+  analyzeAll() {
+    const current = this.siteId;
+    for (const site of this.state.sites) {
+      this.state.activeSite = site.id;
+      this.analysisDirty = true;
+      this.lastAnalysisVersion = -1;
+      this.analyze(true);
+    }
+    this.state.activeSite = current;
+    attachDerived(this.state, this.analysis);
+    return this.analysis;
+  }
+
+  /** Move the player to another site. */
+  switchSite(id) {
+    if (!this.state.sites.some((s) => s.id === id)) return { error: 'Unknown site.' };
+    if (id === this.siteId) return { ok: true };
+    this.state.activeSite = id;
+    this.history = new History(this.world);
+    this.analysisDirty = true;
+    this.analyze(true);
+    this.bus.emit('sitechange', id);
+    this.bus.emit('state');
+    return { ok: true };
+  }
+
+  /** Buy into a new city. */
+  buySite(cityId, name) {
+    const s = this.state;
+    const c = cityDef(cityId);
+    if (s.sites.some((x) => x.cityId === cityId)) return { error: `You already operate in ${c.name}.` };
+    if (s.reputation.venue < 55) return { error: 'Expanding into a second city needs a reputation of 55.' };
+    if (s.cash < c.buyCost) return { error: `Land in ${c.name} costs ${Math.round(c.buyCost / 1e6)}M.` };
+
+    s.cash -= c.buyCost;
+    this.record('land', -c.buyCost);
+    const id = `site${s.sites.length + 1}`;
+    s.sites.push({
+      id, cityId, name: name || `${c.name} Complex`,
+      landTier: 0, boughtDay: s.day,
+      utilities: Object.fromEntries(Object.keys(s.sites[0].utilities).map((k) => [k, -1])),
+    });
+    const world = new VoxelWorld(LAND_TIERS[0].size);
+    world.generateTerrain();
+    this.worlds.set(id, world);
+    this.analyses.set(id, { venues: [], complex: {}, stats: {} });
+    this.notify('land', `Land acquired in ${c.name}`, `${c.desc}`);
+    this.checkAchievements();
+    this.bus.emit('state');
+    return { ok: true, id };
+  }
+
+  renameSite(id, name) {
+    const site = this.state.sites.find((s) => s.id === id);
+    if (site) { site.name = name; this.bus.emit('state'); }
   }
 
   // ----------------------------------------------------------------- clock
@@ -172,7 +316,8 @@ export class Game {
     // Weather
     if (s.day >= s.weatherUntilDay) {
       const rng = makeRng(hashString(`${s.seed}:weather:${s.day}`));
-      s.weather = rng.pick(WEATHERS);
+      // Each city has its own weather table.
+      s.weather = rng.pick(cityDef(this.site.cityId).weather || WEATHERS);
       s.weatherUntilDay = s.day + rng.int(2, 5);
     }
 
@@ -239,15 +384,34 @@ export class Game {
     this.lastAnalysisVersion = this.world.version;
     this.analysisDirty = false;
 
+    const site = this.site;
+    const siteStatus = utilityStatusFor(this.state, site, this.analyses.get(site.id));
+    const siteFactors = Object.fromEntries(
+      Object.entries(siteStatus).map(([k, v]) => [k, v.factor]));
+
     const a = detectVenues(this.world, {
-      complexName: this.state.complexName,
-      powerCapacity: this.state.powerCapacity ?? 15,
-      utilities: this.state.utilityFactors || null,
+      complexName: site.name,
+      siteId: site.id,
+      powerCapacity: siteStatus.power.capacity,
+      utilities: siteFactors,
     });
 
-    // Carry player-chosen names and registration across re-analysis.
+    // Where a venue is changes who turns up and how they get there.
+    const cityInfo = cityDef(site.cityId);
     for (const v of a.venues) {
-      const reg = this.state.venues.registered.find(
+      v.siteId = site.id;
+      v.siteName = site.name;
+      v.cityId = site.cityId;
+      v.cityName = cityInfo.name;
+      v.audienceMult = cityInfo.audience;
+    }
+    a.complex.transitShare = Math.min(0.6, (a.complex.transitShare || 0) + cityInfo.transitBase);
+
+    // Carry player-chosen names and registration across re-analysis, scoped to
+    // this site so two cities cannot claim each other's venues.
+    const onThisSite = this.state.venues.registered.filter((r) => (r.siteId || 'site1') === site.id);
+    for (const v of a.venues) {
+      const reg = onThisSite.find(
         (r) => r.key === v.key || (r.sport === v.sport && Math.hypot(r.cx - v.centre.x, r.cz - v.centre.z) < 26));
       if (reg) {
         v.registered = true;
@@ -263,9 +427,10 @@ export class Game {
       if (this.state.tempSeats) v.capacity.total += Math.round(this.state.tempSeats * (v === a.venues[0] ? 1 : 0));
       if (this.state.capacityPenalty) v.capacity.total = Math.round(v.capacity.total * (1 - this.state.capacityPenalty));
     }
-    // Drop registrations whose venue no longer exists.
+    // Drop registrations on this site whose venue no longer exists. Other
+    // sites' registrations are left alone.
     this.state.venues.registered = this.state.venues.registered.filter(
-      (r) => a.venues.some((v) => v.key === r.key));
+      (r) => (r.siteId || 'site1') !== site.id || a.venues.some((v) => v.key === r.key));
 
     this.analysis = a;
     // Derive the utility networks from the scan, then rescore the venues now
@@ -273,6 +438,7 @@ export class Game {
     attachDerived(this.state, a);
     rescoreVenues(a, this.state.utilityFactors);
     attachDerived(this.state, a);
+    this.rollUpEmpire();
 
     const st = this.state.stats;
     st.venuesDetected = Math.max(st.venuesDetected, a.venues.length);
@@ -284,15 +450,46 @@ export class Game {
     return a;
   }
 
+  /** Totals across every site, for finance and the top bar. */
+  rollUpEmpire() {
+    const s = this.state;
+    let maintenance = 0, passiveRevenue = 0, powerDemand = 0, blocks = 0;
+    let capacity = 0, bestCapacity = 0, bestRating = 0, venueCount = 0, training = 0;
+    for (const site of s.sites) {
+      const a = this.analyses.get(site.id);
+      if (!a) continue;
+      maintenance += a.complex.maintenance || 0;
+      passiveRevenue += a.complex.passiveRevenue || 0;
+      powerDemand += a.complex.powerDemand || 0;
+      blocks += a.complex.totalBlocks || 0;
+      for (const v of a.venues) {
+        capacity += v.capacity.total;
+        venueCount++;
+        training += v.facilities.training;
+        if (v.capacity.total > bestCapacity) bestCapacity = v.capacity.total;
+        if (v.ratings.overall > bestRating) bestRating = v.ratings.overall;
+      }
+    }
+    s.empire = { maintenance, passiveRevenue, powerDemand, blocks, capacity, venueCount };
+    // The derived figures the rest of the game reads are empire-wide.
+    s.derived.totalCapacity = capacity;
+    s.derived.venueCount = venueCount;
+    s.derived.trainingVoxels = training;
+    s.derived.bestCapacity = Math.max(s.derived.bestCapacity, bestCapacity);
+    s.derived.bestRating = Math.max(s.derived.bestRating, bestRating);
+    s.bestCapacityHint = bestCapacity || 8000;
+  }
+
   get venues() { return this.analysis.venues; }
   get primaryVenue() { return this.analysis.venues[0] || null; }
 
   registerVenue(key, name) {
-    const v = this.analysis.venues.find((x) => x.key === key);
+    const v = this.findVenue(key) || this.analysis.venues.find((x) => x.key === key);
     if (!v) return false;
     if (this.state.venues.registered.some((r) => r.key === key)) return false;
     this.state.venues.registered.push({
       key, name: name || v.suggestedName, sport: v.sport,
+      siteId: v.siteId || this.siteId,
       cx: v.centre.x, cz: v.centre.z, registeredDay: this.state.day,
       capacity: v.capacity.total, rating: v.ratings.overall, tier: v.tier,
     });
@@ -307,13 +504,20 @@ export class Game {
   renameVenue(key, name) {
     const reg = this.state.venues.registered.find((r) => r.key === key);
     if (reg) reg.name = name;
-    const v = this.analysis.venues.find((x) => x.key === key);
+    const v = this.findVenue(key);
     if (v) v.name = name;
+    const local = this.analysis.venues.find((x) => x.key === key);
+    if (local) local.name = name;
     this.bus.emit('state');
   }
 
   registeredVenues() {
-    return this.analysis.venues.filter((v) => v.registered);
+    return this.allRegisteredVenues();
+  }
+
+  /** Find a venue by key across every site. */
+  findVenue(key) {
+    return this.allVenues().find((v) => v.key === key) || null;
   }
 
   // ---------------------------------------------------------------- events
@@ -352,7 +556,7 @@ export class Game {
     const ev = this.findEvent(eventUid);
     if (!ev) return null;
     const venue = bid.venueKey
-      ? this.analysis.venues.find((v) => v.key === bid.venueKey)
+      ? this.findVenue(bid.venueKey)
       : bestVenueFor(ev, this.registeredVenues(), this.state).venue;
     const evaluation = evaluateBid(ev, venue, this.state, bid);
     const projection = this.projectEvent(ev, venue, bid);
@@ -382,7 +586,7 @@ export class Game {
     const ev = this.findEvent(eventUid);
     if (!ev || ev.status !== 'open') return null;
     if ((ROUNDS_BY_TIER[ev.tier] || 0) === 0) return null;
-    const venue = this.analysis.venues.find((v) => v.key === bid.venueKey);
+    const venue = this.findVenue(bid.venueKey);
     if (!venue) return null;
     const evaluation = evaluateBid(ev, venue, this.state, { ...bid, negotiation: null });
     if (!evaluation.check.ok) return null;
@@ -395,7 +599,7 @@ export class Game {
     const s = this.state;
     const ev = this.findEvent(eventUid);
     if (!ev || ev.status !== 'open') return { error: 'This event is no longer open.' };
-    const venue = this.analysis.venues.find((v) => v.key === bid.venueKey);
+    const venue = this.findVenue(bid.venueKey);
     if (!venue) return { error: 'Select a registered venue first.' };
     if (!venue.registered) return { error: 'That venue is not registered yet.' };
 
@@ -443,7 +647,7 @@ export class Game {
     const s = this.state;
     const due = s.events.scheduled.filter((e) => e.eventDay <= s.day);
     for (const ev of due) {
-      const venue = this.analysis.venues.find((v) => v.key === ev.bid.venueKey) || this.primaryVenue;
+      const venue = this.findVenue(ev.bid.venueKey) || this.primaryVenue;
       if (!venue) { ev.status = 'cancelled'; continue; }
       const report = simulateEvent(ev, venue, s, ev.bid);
       this.applyEventReport(ev, report);
@@ -691,24 +895,27 @@ export class Game {
   community() { return communityReport(this.state, this.analysis); }
 
   // ------------------------------------------------------------- utilities
-  utilityOptions() {
+  utilityOptions(siteId = this.siteId) {
+    const site = this.state.sites.find((x) => x.id === siteId) || this.site;
+    const status = utilityStatusFor(this.state, site, this.analyses.get(site.id));
     return UTILITIES.map((u) => ({
       ...u,
-      tier: this.state.utilities[u.key] ?? -1,
-      status: this.state.utilityStatus?.[u.key] || { demand: 0, capacity: u.base, deficit: 0, factor: 1 },
-      next: nextTier(u.key, this.state.utilities[u.key] ?? -1),
+      tier: site.utilities[u.key] ?? -1,
+      status: status[u.key] || { demand: 0, capacity: u.base, deficit: 0, factor: 1 },
+      next: nextTier(u.key, site.utilities[u.key] ?? -1),
     }));
   }
 
-  upgradeUtility(key) {
+  upgradeUtility(key, siteId = this.siteId) {
     const s = this.state;
-    const tier = s.utilities[key] ?? -1;
+    const site = s.sites.find((x) => x.id === siteId) || this.site;
+    const tier = site.utilities[key] ?? -1;
     const next = nextTier(key, tier);
     if (!next) return { error: 'This network is already at maximum capacity.' };
     if (s.cash < next.cost) return { error: `You need ${Math.round(next.cost / 1000)}K for this upgrade.` };
     s.cash -= next.cost;
     this.record('construction', -next.cost);
-    s.utilities[key] = next.index;
+    site.utilities[key] = next.index;
     this.analysisDirty = true;
     this.analyze(true);
     const u = UTILITIES.find((x) => x.key === key);
@@ -722,12 +929,15 @@ export class Game {
 
   buyLand() {
     const s = this.state;
-    const { next } = landInfo(s);
-    if (!next) return { error: 'You already own the largest plot.' };
-    if (s.cash < next.cost) return { error: `You need ${Math.round(next.cost / 1e6)}M to expand.` };
-    s.cash -= next.cost;
-    this.record('land', -next.cost);
-    s.landTier++;
+    const site = this.site;
+    const { next } = landInfo(s, site);
+    if (!next) return { error: 'You already own the largest plot here.' };
+    // Land costs what the local market charges.
+    const cost = Math.round(next.cost * cityDef(site.cityId).landCost);
+    if (s.cash < cost) return { error: `You need ${Math.round(cost / 1e6)}M to expand here.` };
+    s.cash -= cost;
+    this.record('land', -cost);
+    site.landTier++;
     this.world.expandTo(next.size);
     this.analysisDirty = true;
     this.analyze(true);

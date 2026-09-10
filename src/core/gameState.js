@@ -2,10 +2,11 @@ import { START_CASH, LAND_TIERS, SECONDS_PER_DAY, DAYS_PER_MONTH } from './const
 import { createRivals } from '../data/rivals.js';
 import { STAFF_CHANNELS, STAFF_ROLES } from '../data/staff.js';
 import { UTILITY_KEYS, capacityOf, upkeepOf, computeDemand, serviceFactor } from '../data/utilities.js';
+import { climateEffects } from '../data/cities.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export function createState(opts = {}) {
   return {
@@ -21,14 +22,22 @@ export function createState(opts = {}) {
     speed: 1,
 
     cash: opts.cash ?? START_CASH,
-    landTier: 0,
+
+    // The complex is a set of sites, each its own voxel world. You start with
+    // one; buying into another city is an endgame move.
+    sites: [{
+      id: 'site1',
+      name: opts.complexName || 'Riverside',
+      cityId: 'meridian',
+      landTier: 0,
+      boughtDay: 1,
+      utilities: Object.fromEntries(UTILITY_KEYS.map((k) => [k, -1])),
+    }],
+    activeSite: 'site1',
 
     reputation: { venue: 8, fans: 50, athletes: 50, organiser: 30, community: 60 },
 
     research: { completed: [], active: null },
-    // Purchased capacity tier per utility network; -1 = the site connection
-    // you started with.
-    utilities: Object.fromEntries(UTILITY_KEYS.map((k) => [k, -1])),
     staff: [],
     sponsors: [],
     loans: [],
@@ -86,30 +95,11 @@ export function attachDerived(state, analysis) {
   state.bestCapacityHint = state.derived.bestCapacity || 8000;
 
   // ---------------------------------------------------------- utilities
-  // Demand is read out of the built world; capacity is bought in tiers.
-  state.utilities = state.utilities || Object.fromEntries(UTILITY_KEYS.map((k) => [k, -1]));
-  const complex = analysis?.complex || {};
-  const demand = computeDemand(
-    complex, complex.zoneVoxels || {}, complex.blockVoxels || {},
-    state.derived.totalCapacity || 0);
-
-  const research = state.research.completed;
-  state.utilityStatus = {};
-  for (const key of UTILITY_KEYS) {
-    let capacity = capacityOf(key, state.utilities[key]);
-    // Research still helps, on top of whatever has been bought.
-    if (key === 'power' && research.includes('power_grid')) capacity += 40;
-    if (key === 'data' && research.includes('broadcast')) capacity += 20;
-    const d = demand[key] || 0;
-    state.utilityStatus[key] = {
-      demand: d,
-      capacity,
-      deficit: Math.max(0, d - capacity),
-      factor: serviceFactor(d, capacity),
-      upkeep: upkeepOf(key, state.utilities[key]),
-    };
-  }
-  state.utilityUpkeep = UTILITY_KEYS.reduce((sum, k) => sum + state.utilityStatus[k].upkeep, 0);
+  // Each site has its own networks. Demand is read out of that site's build.
+  const site = activeSite(state);
+  state.utilityStatus = utilityStatusFor(state, site, analysis);
+  state.utilityUpkeep = state.sites.reduce(
+    (sum, st) => sum + UTILITY_KEYS.reduce((a, k) => a + upkeepOf(k, st.utilities[k] ?? -1), 0), 0);
   state.utilityFactors = Object.fromEntries(
     UTILITY_KEYS.map((k) => [k, state.utilityStatus[k].factor]));
 
@@ -157,10 +147,16 @@ export function attachDerived(state, analysis) {
 }
 
 export const LAND = LAND_TIERS;
-export function landInfo(state) {
-  const tier = LAND_TIERS[state.landTier];
-  const next = LAND_TIERS[state.landTier + 1] || null;
-  return { tier, next, index: state.landTier, max: LAND_TIERS.length - 1 };
+
+/** The site the player is currently standing on. */
+export function activeSite(state) {
+  return state.sites.find((s) => s.id === state.activeSite) || state.sites[0];
+}
+
+export function landInfo(state, site = activeSite(state)) {
+  const tier = LAND_TIERS[site.landTier];
+  const next = LAND_TIERS[site.landTier + 1] || null;
+  return { tier, next, index: site.landTier, max: LAND_TIERS.length - 1, site };
 }
 
 /** Reputation is bounded and drifts gently toward its neighbours. */
@@ -169,6 +165,42 @@ export function applyReputation(state, delta) {
     if (!(k in state.reputation)) continue;
     state.reputation[k] = Math.max(0, Math.min(100, state.reputation[k] + v));
   }
+}
+
+/**
+ * Capacity, demand and service factor for one site's utility networks.
+ * Climate matters: an arid site drinks far more water, a cold one spends far
+ * more on heating.
+ */
+export function utilityStatusFor(state, site, analysis) {
+  const complex = analysis?.complex || {};
+  const climate = climateEffects(site.cityId);
+  const raw = computeDemand(
+    complex, complex.zoneVoxels || {}, complex.blockVoxels || {},
+    analysis?.venues?.reduce((s, v) => s + v.capacity.total, 0) || 0);
+  const demand = {
+    ...raw,
+    water: raw.water * climate.water,
+    climate: raw.climate * climate.climate,
+  };
+
+  const research = state.research.completed;
+  const out = {};
+  for (const key of UTILITY_KEYS) {
+    const tier = site.utilities?.[key] ?? -1;
+    let capacity = capacityOf(key, tier);
+    if (key === 'power' && research.includes('power_grid')) capacity += 40;
+    if (key === 'data' && research.includes('broadcast')) capacity += 20;
+    const d = demand[key] || 0;
+    out[key] = {
+      demand: d,
+      capacity,
+      deficit: Math.max(0, d - capacity),
+      factor: serviceFactor(d, capacity),
+      upkeep: upkeepOf(key, tier),
+    };
+  }
+  return out;
 }
 
 export { SECONDS_PER_DAY, DAYS_PER_MONTH, STAFF_ROLE_MAP };

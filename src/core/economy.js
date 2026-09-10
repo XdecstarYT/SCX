@@ -21,7 +21,9 @@ export const LEDGER_CATEGORIES = {
 
 /** Compute the complex's recurring monthly position. */
 export function monthlyFinance(state, analysis) {
-  const complex = analysis?.complex;
+  // Running costs cover every site the player owns, not just the one they are
+  // standing on.
+  const complex = state.empire || analysis?.complex;
   const income = {};
   const expense = {};
 

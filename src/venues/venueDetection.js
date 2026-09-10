@@ -50,6 +50,7 @@ const emptyFacilities = () => {
 export function detectVenues(world, opts = {}) {
   const powerCapacity = opts.powerCapacity ?? Infinity;
   const utilities = opts.utilities || null;
+  const sitePrefix = opts.siteId ? `${opts.siteId}:` : '';
   const { zoneInfo, stats, size } = scanWorld(world);
   const get = (key) => zoneInfo.get(zoneId(key)) || null;
   const countOf = (key) => (get(key)?.count ?? 0);
@@ -258,7 +259,7 @@ export function detectVenues(world, opts = {}) {
     v.tier = eventTier(v);
     v.type = classify(v);
     v.suggestedName = suggestName(v, opts.complexName);
-    v.key = `${v.sport}:${Math.round(v.centre.x / 8)}:${Math.round(v.centre.z / 8)}`;
+    v.key = `${sitePrefix}${v.sport}:${Math.round(v.centre.x / 8)}:${Math.round(v.centre.z / 8)}`;
     delete v._fieldComp;
   }
 
