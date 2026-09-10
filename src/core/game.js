@@ -11,6 +11,10 @@ import { simulateEvent } from '../events/eventSimulation.js';
 import { bestVenueFor, checkRequirements } from '../events/eventRequirements.js';
 import { applyDailyFinance, monthlyFinance, LEDGER_CATEGORIES } from './economy.js';
 import { driftCommunity, communityReport } from './community.js';
+import {
+  createProject, tickConstruction, rushProject, cancelProject,
+  constructionSummary, shouldStage, projectDays,
+} from './construction.js';
 import { STAFF_ROLES, makeHire } from '../data/staff.js';
 import { SPONSORS, availableSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
@@ -70,6 +74,7 @@ export class Game {
     const s = this.state;
     if (!s || s.paused) { this.maybeAnalyze(); return; }
     const days = (dt * s.speed) / SECONDS_PER_DAY;
+    this.tickConstruction(days);
     s.dayFraction += days;
     let guard = 0;
     while (s.dayFraction >= 1 && guard++ < 40) {
@@ -79,9 +84,55 @@ export class Game {
     this.maybeAnalyze();
   }
 
+  tickConstruction(dayFraction) {
+    if (!this.state.construction?.length) return;
+    const r = tickConstruction(this.state, this.world, dayFraction);
+    if (r.changed) this.markWorldDirty();
+    for (const p of r.completed) {
+      this.notify('construction', 'Construction complete', `${p.label} is finished and operational.`);
+    }
+    if (r.completed.length) this.bus.emit('state');
+  }
+
+  /** Queue or apply an edit, depending on how big it is. */
+  stageOrApply({ label, cells, cost, uniformBlock, uniformZone, count }) {
+    if (!shouldStage(count)) return false;
+    const project = createProject(this.state, { label, cells, cost, uniformBlock, uniformZone });
+    this.state.construction.push(project);
+    this.notify('construction', 'Construction started',
+      `${label}: ${project.total.toLocaleString()} blocks over ${project.days} day${project.days > 1 ? 's' : ''}.`);
+    this.bus.emit('state');
+    return project;
+  }
+
+  construction() { return constructionSummary(this.state); }
+
+  rushConstruction(id) {
+    const r = rushProject(this.state, this.world, id);
+    if (!r || r.error) return r;
+    this.state.cash -= r.surcharge;
+    this.record('construction', -r.surcharge);
+    this.markWorldDirty();
+    this.analyze(true);
+    this.notify('construction', 'Construction rushed', `${r.project.label} finished early for ${Math.round(r.surcharge).toLocaleString()} in overtime.`);
+    this.bus.emit('state');
+    return r;
+  }
+
+  cancelConstruction(id) {
+    const r = cancelProject(this.state, id);
+    if (!r) return null;
+    this.state.cash += r.refund;
+    this.record('construction', r.refund);
+    this.markWorldDirty();
+    this.analyze(true);
+    this.bus.emit('state');
+    return r;
+  }
+
   /** Skip straight to tomorrow. */
   skipDay(n = 1) {
-    for (let i = 0; i < n; i++) this.advanceDay();
+    for (let i = 0; i < n; i++) { this.tickConstruction(1); this.advanceDay(); }
     this.state.dayFraction = 0;
     this.bus.emit('state');
   }

@@ -299,6 +299,27 @@ export class BuildController {
         this.refreshPreview();
         return { error: `You need ${fmt(net)} for this. You have ${fmt(g.state.cash)}.` };
       }
+      // Terrain work is immediate; real structures go up over days.
+      const staged = this.activeTool !== 'raise' && this.activeTool !== 'lower'
+        && this.activeTool !== 'flatten' && this.activeTool !== 'ramp'
+        && !this.planning
+        && g.stageOrApply({
+          label: STRUCTURE_LABEL[this.activeTool] || 'Structure',
+          cells: plan.cells,
+          cost: net,
+          count: price.placed,
+        });
+
+      if (staged) {
+        if (net > 0) g.spendConstruction(net, true);
+        else if (net < 0) g.refund(-net);
+        g.state.stats.blocksPlaced += price.placed;
+        this.anchor = null;
+        this.refreshPreview();
+        this.onChange?.();
+        return `${describePlan(this.activeTool, plan.meta, net)} \u2014 under construction`;
+      }
+
       const batch = applyPlan(g.world, plan.cells, TOOL_LABEL[this.activeTool] || 'Structure');
       g.history.push(batch);
       if (this.planning) { this.planning.cost += net; this.planning.count += batch.size; }
@@ -559,6 +580,10 @@ export class BuildController {
 const BUILD_TOOL_KEYS = ['single', 'line', 'wall', 'floor', 'box', 'hollow', 'fill',
   'replace', 'grandstand', 'garage', 'retaining'];
 const TERRAIN_TOOL_KEYS = ['raise', 'lower', 'flatten', 'ramp'];
+
+const STRUCTURE_LABEL = {
+  grandstand: 'Grandstand', garage: 'Parking garage', retaining: 'Retaining wall',
+};
 
 const TOOL_LABEL = {
   grandstand: 'Build: grandstand', garage: 'Build: parking garage',

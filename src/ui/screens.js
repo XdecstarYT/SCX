@@ -50,6 +50,8 @@ export class Screens {
           this.kpi('Net / month', fmtMoney(fin.net, { sign: true }), fin.net >= 0 ? 'pos' : 'neg'),
           this.kpi('Capacity', fmtNum(s.derived.bestCapacity), ''))),
 
+      this.constructionCard(),
+
       objectives.length ? section('Next Objectives',
         el('div.card.tight', {}, ...objectives.map((o) =>
           el('div.rowbetween', { style: { padding: '5px 0' } },
@@ -88,6 +90,34 @@ export class Screens {
 
       section('Site Infrastructure', this.infraCard(a)),
     );
+  }
+
+  constructionCard() {
+    const c = this.game.construction();
+    if (!c.count) return null;
+    return section('Under Construction', el('div.stack', {}, ...c.projects.map((p) =>
+      el('div.card', {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('h3', { text: p.label }),
+            el('div.sub', { text: `${fmtNum(p.placed)} of ${fmtNum(p.total)} blocks \u00B7 ${p.daysLeft} day${p.daysLeft === 1 ? '' : 's'} left` })),
+          el('span.small.mono.gold', { text: `${Math.round(p.progress * 100)}%` })),
+        el('div', { style: { marginTop: '8px' } }, meter(p.progress * 100, 100, 'gold')),
+        el('div.btnrow', { style: { marginTop: '10px' } },
+          el('button.btn.sm.primary', {
+            onclick: () => {
+              const r = this.game.rushConstruction(p.id);
+              if (r?.error) this.app.toast('warn', 'Cannot rush', r.error);
+              this.app.refresh(); this.refreshHome();
+            },
+          }, `Rush \u00B7 ${fmtMoney(p.cost * (1 - p.progress) * 0.6)}`),
+          el('button.btn.sm.danger', {
+            onclick: () => {
+              const r = this.game.cancelConstruction(p.id);
+              if (r) this.app.toast('info', 'Construction stopped', `${fmtMoney(r.refund)} refunded for the unbuilt remainder.`);
+              this.app.refresh(); this.refreshHome();
+            },
+          }, 'Stop'))))));
   }
 
   kpi(label, value, cls) {

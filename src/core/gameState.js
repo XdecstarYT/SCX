@@ -33,6 +33,7 @@ export function createState(opts = {}) {
     sponsors: [],
     loans: [],
 
+    construction: [],
     events: { board: [], scheduled: [], history: [], lastGeneratedDay: 0 },
     organiserHistory: {},
     rivals: createRivals(),

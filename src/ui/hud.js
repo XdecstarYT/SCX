@@ -61,9 +61,15 @@ export class Hud {
       onclick: () => this.onSpeed?.('skip'),
     }, '⏭');
 
+    this.buildChip = el('button.chip', {
+      'aria-label': 'Construction in progress', title: 'Construction in progress',
+      style: { display: 'none' },
+      onclick: () => this.onTab?.('home'),
+    }, '\u2692 0%');
+
     this.topbar = el('div.topbar', {},
       this.cashStat, this.repStat, this.capStat, this.dayStat,
-      el('div.clockbox', {}, this.weatherChip, this.pauseChip, this.speedChip, this.skipChip));
+      el('div.clockbox', {}, this.buildChip, this.weatherChip, this.pauseChip, this.speedChip, this.skipChip));
 
     // ---------------------------------------------------------- side rails
     this.cameraRail = el('div.railcol');
@@ -139,6 +145,17 @@ export class Hud {
     this.pauseChip.textContent = s.paused ? '▶' : '⏸';
     this.pauseChip.classList.toggle('on', !s.paused);
     this.speedChip.textContent = `${s.speed}x`;
+
+    const projects = s.construction || [];
+    if (projects.length) {
+      const done = projects.reduce((a, p) => a + p.placed, 0);
+      const total = projects.reduce((a, p) => a + p.total, 0) || 1;
+      this.buildChip.style.display = '';
+      this.buildChip.textContent = `\u2692 ${Math.round((done / total) * 100)}%`;
+      this.buildChip.title = `${projects.length} project${projects.length > 1 ? 's' : ''} under construction`;
+    } else {
+      this.buildChip.style.display = 'none';
+    }
 
     const openBids = s.events.board.filter((e) => e.status === 'open').length;
     this.setBadge('events', openBids);

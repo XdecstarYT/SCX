@@ -5,6 +5,7 @@ import { makeRng } from '../core/rng.js';
 
 const MAX_FANS = 1600;
 const MAX_CARS = 420;
+const MAX_PROPS = 200;
 
 /**
  * Event-day visuals.
@@ -50,12 +51,25 @@ export class LiveEventShow {
     this.cars.visible = false;
     scene.add(this.cars);
 
+    // Event-day dressing: vendor stalls, broadcast trucks and screening lanes.
+    // All three are single instanced draws that only exist while an event runs.
+    this.props = new THREE.InstancedMesh(
+      propGeometry(),
+      new THREE.MeshBasicMaterial({ vertexColors: true }),
+      MAX_PROPS);
+    this.props.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.props.count = 0;
+    this.props.frustumCulled = false;
+    this.props.visible = false;
+    scene.add(this.props);
+
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
     this._v = new THREE.Vector3();
     this._s = new THREE.Vector3(1, 1, 1);
     this.fanData = [];
     this.carData = [];
+    this.propData = [];
   }
 
   /** Sample positions of voxels carrying one of `zoneKeys`, capped at `max`. */
@@ -154,12 +168,38 @@ export class LiveEventShow {
     this.cars.count = carCount;
     if (this.cars.instanceColor) this.cars.instanceColor.needsUpdate = true;
 
+    // Vendor stalls at the concessions, broadcast trucks by the media centre,
+    // screening lanes on the gates.
+    this.propData.length = 0;
+    const propColour = new THREE.Color();
+    const addProps = (positions, colour, scale, delay, max) => {
+      const step = Math.max(1, Math.floor((positions.length / 3) / max));
+      for (let i = 0; i < positions.length; i += 3 * step) {
+        if (this.propData.length >= MAX_PROPS) break;
+        this.propData.push({
+          x: (positions[i] + 0.5) * BLOCK_SIZE,
+          y: (positions[i + 1] + 1) * BLOCK_SIZE,
+          z: (positions[i + 2] + 0.5) * BLOCK_SIZE,
+          scale, delay,
+        });
+        propColour.setHex(colour);
+        this.props.setColorAt(this.propData.length - 1, propColour);
+      }
+    };
+    addProps(this.sampleZone(['concession', 'restaurant'], 90, rng, near, radius), 0xe8a93f, 1.0, 0.05, 90);
+    addProps(this.sampleZone(['media', 'broadcast'], 24, rng, near, radius), 0xdfe4e8, 1.9, 0.0, 24);
+    addProps(this.sampleZone(['entrance'], 40, rng, near, radius), 0x2fd08a, 0.7, 0.0, 40);
+    addProps(this.sampleZone(['fanzone'], 40, rng, near, radius), 0x49c5c9, 1.1, 0.1, 40);
+    this.props.count = this.propData.length;
+    if (this.props.instanceColor) this.props.instanceColor.needsUpdate = true;
+
     this.report = report;
     this.venue = venue;
     this.active = true;
     this.t = 0;
     this.fans.visible = true;
     this.cars.visible = true;
+    this.props.visible = this.props.count > 0;
     this.setPhase('arriving');
     return true;
   }
@@ -221,6 +261,19 @@ export class LiveEventShow {
       this.cars.setMatrixAt(i, this._m);
     }
     this.cars.instanceMatrix.needsUpdate = true;
+
+    // Stalls and trucks pop up as the gates open and pack down at the end.
+    for (let i = 0; i < this.props.count; i++) {
+      const d = this.propData[i];
+      const open = p > d.delay && p < 0.92;
+      const grow = open ? Math.min(1, (p - d.delay) * 14) : 0;
+      this._v.set(d.x, d.y, d.z);
+      this._s.set(d.scale * grow, d.scale * grow, d.scale * grow);
+      this._m.compose(this._v, IDENT, this._s);
+      this.props.setMatrixAt(i, this._m);
+    }
+    this._s.set(1, 1, 1);
+    this.props.instanceMatrix.needsUpdate = true;
   }
 
   get progress() { return this.active ? Math.min(1, this.t / this.duration) : 0; }
@@ -231,8 +284,10 @@ export class LiveEventShow {
     this.active = false;
     this.fans.visible = false;
     this.cars.visible = false;
+    this.props.visible = false;
     this.fans.count = 0;
     this.cars.count = 0;
+    this.props.count = 0;
     this.setPhase('idle');
   }
 }
@@ -242,6 +297,14 @@ export class LiveEventShow {
  * geometry used with `vertexColors: true` needs a white base attribute -
  * without it every instance renders black.
  */
+/** A simple stall/awning shape shared by every event-day prop. */
+function propGeometry() {
+  const geo = new THREE.BoxGeometry(2.6, 2.4, 2.6);
+  geo.translate(0, 1.2, 0);
+  whiteVertexColors(geo);
+  return geo;
+}
+
 function whiteVertexColors(geo) {
   const n = geo.attributes.position.count;
   geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));

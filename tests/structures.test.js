@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { VoxelWorld } from '../src/voxel/world.js';
-import { blockId, block } from '../src/data/blocks.js';
+import { blockId } from '../src/data/blocks.js';
 import { zoneId } from '../src/data/zones.js';
 import {
   generateGrandstand, generateParkingGarage, generateTerrainEdit, generateRetainingWall,
@@ -156,4 +156,103 @@ test('plans are priced and reversible like any other edit', () => {
     w.setBlock(p & 511, (p >> 18) & 127, (p >> 9) & 511, batch.prevB[i], batch.prevZ[i]);
   }
   assert.equal(w.getBlock(60, GROUND_Y, 40), before, 'the world is back where it started');
+});
+
+// ---------------------------------------------------------- construction
+
+test('small edits land immediately, big ones become a project', async () => {
+  const { shouldStage, projectDays, createProject, tickConstruction } = await import('../src/core/construction.js');
+  const { Game } = await import('../src/core/game.js');
+  const { createState } = await import('../src/core/gameState.js');
+
+  assert.equal(shouldStage(12), false, 'placing a doorway should not take three days');
+  assert.equal(shouldStage(4000), true);
+  assert.ok(projectDays(400) < projectDays(12_000));
+  assert.ok(projectDays(200_000) <= 16, 'even enormous projects finish inside a season');
+
+  const g = new Game();
+  g.newGame({ seed: 2 });
+  const w = g.world;
+  const plan = generateGrandstand(w, { x: 30, z: 30 }, { x: 80, z: 44 }, {});
+  const project = createProject(g.state, { label: 'Stand', cells: plan.cells, cost: 500_000 });
+
+  // Nothing is built yet.
+  assert.equal(project.placed, 0);
+  assert.ok(project.total > 400);
+
+  // Foundations come first: the first blocks placed are the lowest.
+  g.state.construction.push(project);
+  tickConstruction(g.state, w, 0.2);
+  const builtYs = [];
+  for (let y = 0; y < 30; y++) {
+    for (let x = 30; x <= 80; x += 10) if (w.isSolid(x, y, 32)) { builtYs.push(y); break; }
+  }
+  const topY = Math.max(...builtYs);
+  tickConstruction(g.state, w, 0.9);
+  let laterTop = 0;
+  for (let y = 0; y < 40; y++) if (w.isSolid(55, y, 32)) laterTop = y;
+  assert.ok(laterTop >= topY, 'the structure rises rather than appearing at random');
+
+  // It finishes.
+  tickConstruction(g.state, w, 20);
+  assert.equal(g.state.construction.length, 0);
+  assert.equal(project.placed, project.total);
+});
+
+test('a project can be rushed for a surcharge or stopped for a refund', async () => {
+  const { createProject, tickConstruction } = await import('../src/core/construction.js');
+  const { Game } = await import('../src/core/game.js');
+  const { createState } = await import('../src/core/gameState.js');
+
+  const g = new Game();
+  g.newGame({ seed: 6 });
+  const plan = generateGrandstand(g.world, { x: 30, z: 30 }, { x: 80, z: 44 }, {});
+
+  g.state.construction.push(createProject(g.state, { label: 'Stand', cells: plan.cells, cost: 1_000_000 }));
+  const cashBefore = g.state.cash;
+  const r = g.rushConstruction(g.state.construction[0].id);
+  assert.ok(r.ok, r.error);
+  assert.ok(r.surcharge > 0, 'rushing costs overtime');
+  assert.equal(g.state.cash, cashBefore - r.surcharge);
+  assert.equal(g.state.construction.length, 0);
+  assert.ok(g.world.isSolid(55, 8, 32), 'and everything is built');
+
+  // Stopping halfway refunds the unbuilt remainder.
+  const g2 = new Game();
+  g2.newGame({ seed: 6 });
+  const plan2 = generateGrandstand(g2.world, { x: 30, z: 30 }, { x: 80, z: 44 }, {});
+  g2.state.construction.push(createProject(g2.state, { label: 'Stand', cells: plan2.cells, cost: 1_000_000 }));
+  tickConstruction(g2.state, g2.world, 0.5 * g2.state.construction[0].days);
+  const cash2 = g2.state.cash;
+  const stop = g2.cancelConstruction(g2.state.construction[0].id);
+  assert.ok(stop.refund > 300_000 && stop.refund < 700_000, `refund ${stop.refund}`);
+  assert.equal(g2.state.cash, cash2 + stop.refund);
+});
+
+test('a grandstand built through the controller goes up over days', async () => {
+  const { Game } = await import('../src/core/game.js');
+  const { BuildController } = await import('../src/voxel/buildController.js');
+  const g = new Game();
+  g.newGame({ seed: 4 });
+  g.state.cash = 20_000_000;
+
+  // Minimal stand-in for the scene the controller normally draws into.
+  const fakeScene = { add() {}, remove() {} };
+  const fakeRig = { ray: () => ({ origin: { x: 0, y: 0, z: 0 }, dir: { x: 0, y: -1, z: 0 } }), centreRay() { return this.ray(); } };
+  const bc = new BuildController(g, fakeScene, fakeRig);
+  bc.setTool('grandstand');
+  bc.aim = { x: 30, y: GROUND_Y, z: 30 };
+  bc.anchor = { x: 30, y: GROUND_Y, z: 30 };
+  bc.aim = { x: 80, y: GROUND_Y, z: 44 };
+  bc.refreshPreview();
+  const result = bc.commit();
+
+  assert.match(String(result), /under construction/);
+  assert.equal(g.state.construction.length, 1);
+  assert.ok(g.state.cash < 20_000_000, 'it was paid for up front');
+
+  g.skipDay(20);
+  assert.equal(g.state.construction.length, 0, 'and it completes on its own');
+  g.analyze(true);
+  assert.ok((g.world.blockCounts.get(blockId('seat')) || 0) > 100, 'the seats are really there');
 });
