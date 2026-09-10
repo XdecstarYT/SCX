@@ -11,6 +11,8 @@ import { Sky } from './world/sky.js';
 import { LiveEventShow } from './world/liveEvent.js';
 import { Hud } from './ui/hud.js';
 import { BuildDock } from './ui/buildDock.js';
+import { Hotbar } from './ui/hotbar.js';
+import { HeldBlock } from './world/viewmodel.js';
 import { Screens } from './ui/screens.js';
 import { EventsUi } from './ui/eventsUi.js';
 import { Tutorial } from './ui/tutorial.js';
@@ -18,13 +20,15 @@ import { el, fill, emptyState, pill } from './ui/dom.js';
 import { saveManager } from './save/saveManager.js';
 import { fmtMoney, fmtNum } from './core/economy.js';
 import { audio } from './core/audio.js';
-import { blockId } from './data/blocks.js';
-import { zoneId } from './data/zones.js';
+import { blockId, block, BLOCK_BY_KEY, BLOCK_CATEGORIES } from './data/blocks.js';
+import { zoneId, zone, ZONE_BY_KEY, ZONE_GROUPS } from './data/zones.js';
 import { instantiate } from './events/eventGenerator.js';
 import { EVENT_TEMPLATES } from './data/events.js';
 import { makeRng } from './core/rng.js';
 
 const AUTOSAVE_SLOT = 'auto';
+/** Seconds between repeated placements while a build button is held. */
+const REPEAT_INTERVAL = 0.11;
 
 class App {
   constructor() {
@@ -145,11 +149,21 @@ class App {
       this.zoneOverlay = false;
       this.controller.onChange = () => {
         this.dock?.render();
+        this.hotbar?.syncFromController();
+        this.refreshHeld();
         this.refreshStatus();
         this.syncZoneOverlay();
       };
       this.show = new LiveEventShow(this.scene, world);
+      this.held = new HeldBlock(this.camera);
+      this.scene.add(this.camera);   // so camera children render
+
+      this.hotbar = new Hotbar(this.game, this.controller);
+      this.hotbar.onAssign = (slot) => this.openPalette(slot);
+      this.hotbar.onLocked = (b) => this.toast('warn', `${b.name} is locked`, 'Complete the matching research project to unlock it.');
+
       this.dock = new BuildDock(this.game, this.controller);
+      this.dock.onOpenPalette = () => this.openPalette(this.game.state.hotbar.active);
       this.dock.onPlanAction = (a) => this.planAction(a);
       this.dock.onSaveBlueprint = () => this.promptSaveBlueprint();
       this.dock.onOpenBlueprints = () => this.openBlueprints();
@@ -205,6 +219,9 @@ class App {
       onRedo: () => this.redo(),
       onRotate: (d) => this.controller.rotateClipboard(),
       onCycleCamera: () => this.cycleCamera(),
+      onCycleHotbar: (d) => this.hotbar?.cycle(d),
+      onPick: () => this.pickBlock(),
+      onToggleFirstPerson: () => this.setCamera(this.rig.isWalking ? 'free' : 'first'),
       onSave: () => this.saveNow(),
       onEscape: () => this.onEscape(),
       onLockChange: (locked) => { this.crosshair.style.display = locked || this.rig.isWalking ? '' : 'none'; },
@@ -218,10 +235,26 @@ class App {
     this.joy = el('div.joy', { style: { display: 'none' } }, el('div.knob'));
     this.resetJoy = bindJoystick(this.joy, this.input);
 
-    this.placeBtn = el('button.abtn.place', { 'aria-label': 'Place block', onclick: () => this.onTap(null, 0, true) }, '■');
-    this.removeBtn = el('button.abtn.remove', { 'aria-label': 'Remove block', onclick: () => this.onTap(null, 2, true) }, '✕');
-    this.jumpBtn = el('button.abtn.sm', { 'aria-label': 'Jump', onclick: () => this.rig.jump() }, '↑');
-    this.actionPad = el('div.actionpad', { style: { display: 'none' } }, this.jumpBtn, this.removeBtn, this.placeBtn);
+    // Holding these repeats the action, so a wall is one sweep, not forty taps.
+    const holdButton = (node, button) => {
+      const start = (e) => { e.preventDefault(); this.input.heldAction = button; this.onTap(null, button, true); };
+      const stop = () => { if (this.input.heldAction === button) this.input.releaseHold(); };
+      node.addEventListener('pointerdown', start);
+      node.addEventListener('pointerup', stop);
+      node.addEventListener('pointercancel', stop);
+      node.addEventListener('pointerleave', stop);
+      return node;
+    };
+
+    this.placeBtn = holdButton(el('button.abtn.place', { 'aria-label': 'Place block' }, '\u25A0'), 0);
+    this.removeBtn = holdButton(el('button.abtn.remove', { 'aria-label': 'Remove block' }, '\u2715'), 2);
+    this.pickBtn = el('button.abtn.sm', {
+      'aria-label': 'Hold the block you are looking at', title: 'Pick block',
+      onclick: () => this.pickBlock(),
+    }, '\u2318');
+    this.jumpBtn = el('button.abtn.sm', { 'aria-label': 'Jump', onclick: () => this.rig.jump() }, '\u2191');
+    this.actionPad = el('div.actionpad', { style: { display: 'none' } },
+      this.jumpBtn, this.pickBtn, this.removeBtn, this.placeBtn);
     this.hud.touchLayer.append(this.joy, this.actionPad);
   }
 
@@ -254,6 +287,7 @@ class App {
     if (res.error) { this.toast('warn', 'Cannot build', res.error); audio.play('deny'); return; }
     if (res === 'inspect') { this.showInspector(); return; }
     if (typeof res === 'string') {
+      this.held?.punch();
       audio.play(this.controller.mode === 'demolish' ? 'remove' : 'place');
       this.hud.setStatus(res);
       clearTimeout(this._statusTimer);
@@ -277,8 +311,8 @@ class App {
   }
 
   selectHotbar(i) {
-    const items = this.dock.hotbar.querySelectorAll('.swatch');
-    items[i]?.click();
+    this.hotbar.select(i);
+    this.refreshBuildUi();
   }
 
   cycleCamera() {
@@ -291,10 +325,121 @@ class App {
     const walking = this.rig.isWalking;
     this.joy.style.display = this.isTouch && walking ? '' : 'none';
     this.jumpBtn.style.display = walking ? '' : 'none';
-    this.crosshair.style.display = walking ? '' : 'none';
+    this.pickBtn.style.display = walking ? '' : 'none';
+    this.crosshair.style.display = (walking || (this.isTouch && this.tab === 'build')) ? '' : 'none';
     if (!walking) this.input.exitLock();
     this.resetJoy();
+    if (this.tab === 'build') this.refreshBuildUi();
     this.refresh();
+  }
+
+  /**
+   * Walking around, the full dock is in the way. Collapse it to a hotbar and
+   * a few mode chips - the only chrome you need to build with.
+   */
+  get immersive() { return this.rig.isWalking && this.tab === 'build'; }
+
+  buildImmersiveBar() {
+    const bc = this.controller;
+    const chip = (key, label, cls = '') => el('button.imchip' + (cls ? '.' + cls : '') + (bc.mode === key ? '.on' : ''), {
+      onclick: () => { bc.setMode(key); this.refreshBuildUi(); },
+    }, label);
+    return el('div.immersive', {},
+      chip('build', 'Build'),
+      chip('zone', 'Zone', 'zone'),
+      chip('demolish', 'Break', 'demolish'),
+      chip('inspect', 'Inspect'),
+      el('button.imchip', { onclick: () => this.setCamera('free') }, '\u2191 Overview'),
+      el('button.imchip', { onclick: () => this.openPalette(this.game.state.hotbar.active) }, 'Palette'));
+  }
+
+  /** Rebuild whichever build UI is appropriate for the current camera. */
+  refreshBuildUi() {
+    if (this.tab !== 'build') { this.hud.setDock(null); return; }
+    this.hotbar.render();
+    if (this.immersive) {
+      this.hud.setDock(el('div', {}, this.buildImmersiveBar(), this.hotbar.wrap));
+    } else {
+      this.hud.setDock(el('div', {}, this.dock.node, this.hotbar.wrap));
+      this.dock.render();
+    }
+    this.refreshHeld();
+    this.syncZoneOverlay();
+  }
+
+  /** Show what the player is holding, in-hand and in the hotbar. */
+  refreshHeld() {
+    if (!this.held) return;
+    const zoneMode = this.controller.mode === 'zone';
+    const show = this.rig.isWalking && this.tab === 'build'
+      && ['build', 'zone'].includes(this.controller.mode);
+    this.held.setVisible(show);
+    if (show) this.held.set(zoneMode ? 'zone' : 'block',
+      zoneMode ? this.controller.zoneKey : block(this.controller.material).key);
+  }
+
+  /** Eyedropper: hold whatever is under the crosshair. */
+  pickBlock() {
+    if (this.tab !== 'build') return;
+    this.controller.updateAim(this.aimNdc());
+    const picked = this.controller.pickTarget();
+    if (!picked) { this.toast('info', 'Nothing to pick', 'Point at a block first.'); return; }
+    if (picked.kind === 'zone' && this.controller.mode !== 'zone') this.controller.setMode('zone');
+    if (picked.kind === 'block' && this.controller.mode === 'zone') this.controller.setMode('build');
+    this.hotbar.pick(picked.key);
+    this.refreshBuildUi();
+    audio.play('ui');
+  }
+
+  /**
+   * The full palette, opened from a hotbar slot. Choosing something puts it
+   * straight into that slot.
+   */
+  openPalette(slot) {
+    const bc = this.controller;
+    const zoneMode = bc.mode === 'zone';
+    // Remember where you were last, so picking three roads in a row does not
+    // mean three trips back through the categories.
+    this.paletteGroup = this.paletteGroup || { block: 'structure', zone: 'sport' };
+    const kind = zoneMode ? 'zone' : 'block';
+    let group = this.paletteGroup[kind];
+
+    const body = el('div');
+    const render = () => {
+      const groups = zoneMode ? ZONE_GROUPS : BLOCK_CATEGORIES;
+      const items = zoneMode
+        ? [...ZONE_BY_KEY.values()].filter((z) => z.group === group)
+        : [...BLOCK_BY_KEY.values()].filter((b) => b.category === group);
+
+      fill(body,
+        el('div.small.faint', { style: { marginBottom: '10px' },
+          text: `Choose what goes in slot ${slot + 1}. Long-press any slot to change it again later.` }),
+        el('div.catrow', { style: { marginBottom: '10px' } }, ...groups.map((g) =>
+          el('button.cat' + (group === g.key ? '.on' : ''), {
+            onclick: () => { group = g.key; this.paletteGroup[kind] = g.key; render(); },
+          }, g.name))),
+        el('div.palette', {}, ...items.map((item) => {
+          const locked = !zoneMode && item.unlock && !this.game.isUnlocked(item.unlock);
+          return el('button.palette-item' + (locked ? '.locked' : ''), {
+            'aria-label': `${item.name}${locked ? ' (locked)' : ''}`,
+            onclick: () => {
+              if (locked) { this.toast('warn', `${item.name} is locked`, 'Complete the matching research project to unlock it.'); return; }
+              this.hotbar.assign(item.key, slot);
+              this.refreshBuildUi();
+              // Close on the next frame: tearing the sheet down inside the
+              // click handler lets the release land on whatever was behind it.
+              requestAnimationFrame(() => this.hud.closeSheet());
+            },
+          },
+            el('span.chipc', { style: { background: '#' + item.color.toString(16).padStart(6, '0') } }),
+            el('span.n', { text: item.name }),
+            el('span.c', { text: locked ? '\u{1F512}' : zoneMode
+              ? (item.regulation ? `${item.regulation.w}\u00D7${item.regulation.d}` : item.capacity ? `${item.capacity}/blk` : '\u2014')
+              : '$' + item.cost }));
+        })));
+    };
+    render();
+    this.hud.openSheet(zoneMode ? 'Choose a zone' : 'Choose a material', body);
   }
 
   // =================================================================== TABS
@@ -303,14 +448,13 @@ class App {
     this.hud.setTab(tab);
     this.hud.closeSheet();
     const building = tab === 'build';
-    this.hud.setDock(building ? this.dock.node : null);
     this.controller.setVisible(building);
     this.actionPad.style.display = this.isTouch && building ? '' : 'none';
     if (this.crosshair) {
       this.crosshair.style.display = (this.rig.isWalking || (this.isTouch && building)) ? '' : 'none';
     }
-    if (building) { this.dock.render(); this.syncZoneOverlay(); }
-    else this.worldRenderer.setZoneMode(false);
+    if (building) this.refreshBuildUi();
+    else { this.hud.setDock(null); this.worldRenderer.setZoneMode(false); this.refreshHeld(); }
 
     if (tab === 'home') this.screens.openHome();
     else if (tab === 'events') this.eventsUi.openBoard();
@@ -322,7 +466,9 @@ class App {
   /** ZONE mode always shows the overlay; the rail button toggles it elsewhere. */
   syncZoneOverlay() {
     const want = this.tab === 'build' && (this.zoneOverlay || this.controller.mode === 'zone');
-    this.worldRenderer.setZoneMode(want);
+    // Fading the world back makes zones readable from above; down at ground
+    // level it just makes the place hard to walk around, so ease off.
+    this.worldRenderer.setZoneMode(want, this.rig.isWalking ? 0.62 : 0.35);
   }
 
   // ================================================================= BUS
@@ -777,6 +923,19 @@ class App {
 
     const move = this.input.moveVector;
     this.rig.update(dt, move, this.input.run);
+
+    // Holding place/break sweeps out a run of blocks.
+    if (this.input.isHolding && this.tab === 'build' && !this.show?.active) {
+      this.repeatTimer = (this.repeatTimer || 0) - dt;
+      if (this.repeatTimer <= 0) {
+        this.repeatTimer = REPEAT_INTERVAL;
+        this.onTap(null, this.input.heldButton, true);
+      }
+    } else {
+      this.repeatTimer = 0;
+    }
+
+    this.held?.update(dt, Math.abs(move.x) + Math.abs(move.y) > 0.1);
 
     // Aim follows the camera when walking or pointer-locked.
     if (this.rig.isWalking || this.input.pointerLocked) this.controller.updateAim(null);

@@ -253,9 +253,110 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   background: rgba(255,255,255,.04); border: 1px solid var(--line); color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
 .cat.on { color: var(--text); border-color: var(--line-strong); background: rgba(255,255,255,.1); }
 
-.dockinfo { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-dim); min-height: 18px; }
+.dockinfo { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-dim); min-height: 18px; flex-wrap: wrap; }
+.dockhint { font-size: 11px; color: var(--text-faint); line-height: 1.35; }
+.dockhint:empty { display: none; }
+.tool.palette-btn { border-color: var(--line-strong); background: rgba(255,255,255,.09); color: var(--text); }
 .dockinfo .cost { color: var(--gold); font-weight: 650; }
 .dockinfo .bad { color: var(--red); }
+
+/* ----------------------------------------------------------------- hotbar */
+/* The nine slots you actually build from. Sits low and centred, out of the
+   way of the view, and is the only chrome needed while walking around. */
+.hotbar-wrap {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 0 8px 6px; flex: 0 0 auto; pointer-events: none;
+}
+.hotbar-wrap > * { pointer-events: auto; }
+
+.hotbar-label {
+  font-size: 12.5px; font-weight: 620; color: var(--text);
+  background: rgba(7, 13, 24, 0.82); border: 1px solid var(--line);
+  padding: 3px 11px; border-radius: 20px;
+  opacity: 0; transform: translateY(4px);
+  transition: opacity .18s, transform .18s;
+  white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+}
+.hotbar-label.show { opacity: 1; transform: none; }
+[data-motion='reduced'] .hotbar-label { transition: none; }
+
+.hotbar-bar {
+  display: flex; gap: 4px;
+  background: rgba(7, 13, 24, 0.72); border: 1px solid var(--line);
+  border-radius: 12px; padding: 5px; backdrop-filter: blur(12px);
+}
+.slot {
+  position: relative; width: 46px; height: 46px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .1s, border-color .12s, background .12s;
+}
+.slot .n {
+  position: absolute; top: 1px; left: 4px; font-size: 9px; font-weight: 700;
+  color: var(--text-faint); line-height: 1;
+}
+.slot .sw {
+  width: 28px; height: 28px; border-radius: 5px; margin-top: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 -6px 9px rgba(0, 0, 0, 0.28);
+  display: flex; align-items: center; justify-content: center; font-size: 12px;
+}
+.slot .sw.empty {
+  background: none; border-style: dashed; border-color: var(--line-strong);
+  box-shadow: none; color: var(--text-faint); font-size: 16px;
+}
+.slot.on {
+  border-color: #fff; background: rgba(255, 255, 255, 0.16);
+  transform: translateY(-3px);
+  box-shadow: 0 0 0 1px #fff inset, 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+.slot.on .n { color: var(--text); }
+.slot.locked { opacity: .45; }
+.slot:active { transform: scale(.94); }
+
+@media (max-width: 430px) {
+  .slot { width: 38px; height: 38px; }
+  .slot .sw { width: 23px; height: 23px; }
+}
+@media (max-height: 560px) {
+  .hotbar-wrap { padding-bottom: 3px; }
+  .slot { width: 38px; height: 38px; }
+  .slot .sw { width: 23px; height: 23px; }
+}
+
+/* A compact strip of mode/tool chips that replaces the full dock while you
+   are walking around inside the complex. */
+.immersive {
+  display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;
+  padding: 0 10px 4px; flex: 0 0 auto;
+}
+.imchip {
+  padding: 6px 12px; border-radius: 9px; font-size: 11.5px; font-weight: 640;
+  background: rgba(7, 13, 24, 0.78); border: 1px solid var(--line);
+  color: var(--text-dim); letter-spacing: .04em; text-transform: uppercase;
+  backdrop-filter: blur(10px);
+}
+.imchip.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+.imchip.zone.on { background: var(--green); border-color: var(--green); color: #04231a; }
+.imchip.demolish.on { background: var(--red); border-color: var(--red); color: #fff; }
+
+/* -------------------------------------------------------------- palette */
+.palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 7px; }
+.palette-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 6px; border-radius: 11px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line);
+  min-height: 84px;
+}
+.palette-item .chipc {
+  width: 100%; height: 28px; border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, .35);
+  box-shadow: inset 0 -7px 11px rgba(0, 0, 0, .25);
+}
+.palette-item .n { font-size: 11px; text-align: center; line-height: 1.2; }
+.palette-item .c { font-size: 10px; color: var(--text-faint); }
+.palette-item.locked { opacity: .4; }
+.palette-item:active { transform: scale(.96); }
 
 /* ------------------------------------------------------------------ botnav */
 .botnav {

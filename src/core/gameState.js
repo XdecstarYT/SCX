@@ -3,6 +3,7 @@ import { createRivals } from '../data/rivals.js';
 import { STAFF_CHANNELS, STAFF_ROLES } from '../data/staff.js';
 import { UTILITY_KEYS, capacityOf, upkeepOf, computeDemand, serviceFactor } from '../data/utilities.js';
 import { climateEffects } from '../data/cities.js';
+import { createHotbarState } from '../ui/hotbar.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
 
@@ -56,6 +57,7 @@ export function createState(opts = {}) {
     weatherUntilDay: 4,
 
     achievements: [],
+    hotbar: createHotbarState(),
     tutorial: { step: 0, dismissed: false, seen: {} },
 
     finance: { ledger: [], months: [], monthAccum: {}, lastMonth: 0 },

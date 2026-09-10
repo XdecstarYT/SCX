@@ -9,7 +9,7 @@ const STEPS = [
   {
     id: 'place',
     title: 'Place your first blocks',
-    body: 'Pick a material from the bar below and tap the ground. Pinch to zoom, drag to orbit.',
+    body: 'Pick a material from the hotbar and tap the ground. Or press 1ST to walk in and build up close: look at a face, tap to place, hold to sweep out a run.',
     done: (g) => g.state.stats.blocksPlaced >= 1,
   },
   {

@@ -21,6 +21,14 @@ export const BUILD_MODES = [
 const MAX_GHOST = 3200;
 
 /**
+ * How far you can place from. Walking around, reach is an arm's length plus a
+ * bit, exactly as it should be; from the free camera you are surveying the
+ * site rather than laying bricks, so it opens right up.
+ */
+export const FIRST_PERSON_REACH = 14;   // metres (7 blocks)
+export const FREE_REACH = 400;
+
+/**
  * Owns everything between "player aimed at a voxel" and "the world changed":
  * target resolution, the ghost preview, costing, planning mode and blueprints.
  */
@@ -90,9 +98,13 @@ export class BuildController {
 
   // ----------------------------------------------------------------- aiming
   /** Resolve what the player is pointing at. `ndc` null = screen centre. */
+  get reach() {
+    return this.rig?.isWalking ? FIRST_PERSON_REACH : FREE_REACH;
+  }
+
   updateAim(ndc) {
     const r = ndc ? this.rig.ray(ndc.x, ndc.y) : this.rig.centreRay();
-    const hit = raycastVoxel(this.game.world, r.origin, r.dir, 400);
+    const hit = raycastVoxel(this.game.world, r.origin, r.dir, this.reach);
     if (hit) {
       this.aimFace = hit;
       // Building places into the empty voxel in front of the face; every other
@@ -230,13 +242,16 @@ export class BuildController {
     this.bbox.position.set((minX * BLOCK_SIZE) + sx / 2, (minY * BLOCK_SIZE) + sy / 2, (minZ * BLOCK_SIZE) + sz / 2);
     this.bbox.visible = cells.length > 3;
 
-    // Highlight the exact voxel under the cursor.
-    if (this.aimFace && this.mode !== 'build') {
+    // Outline the block you are pointing at. In BUILD mode that is the face
+    // you are aiming at, so you can see what you are building against; in
+    // every other mode it is the block that will be affected.
+    const target = this.mode === 'build' ? this.aimFace : (this.aimFace || this.aim);
+    if (target) {
       this.outline.scale.setScalar(BLOCK_SIZE * 1.006);
       this.outline.position.set(
-        (this.aimFace.x + 0.5) * BLOCK_SIZE,
-        (this.aimFace.y + 0.5) * BLOCK_SIZE,
-        (this.aimFace.z + 0.5) * BLOCK_SIZE);
+        (target.x + 0.5) * BLOCK_SIZE,
+        (target.y + 0.5) * BLOCK_SIZE,
+        (target.z + 0.5) * BLOCK_SIZE);
       this.outline.visible = true;
     } else {
       this.outline.visible = false;
@@ -410,6 +425,21 @@ export class BuildController {
     this.refreshPreview();
     this.onChange?.();
     return `Removed (+${fmt(batch.refund)})`;
+  }
+
+  /**
+   * Eyedropper. Returns the key of whatever you are looking at, so the hotbar
+   * can hold it - the fastest way to match an existing material.
+   */
+  pickTarget() {
+    if (!this.aimFace) return null;
+    const w = this.game.world;
+    if (this.mode === 'zone') {
+      const zid = w.getZone(this.aimFace.x, this.aimFace.y, this.aimFace.z);
+      return zid ? { kind: 'zone', key: zone(zid).key, name: zone(zid).name } : null;
+    }
+    const bid = w.getBlock(this.aimFace.x, this.aimFace.y, this.aimFace.z);
+    return bid ? { kind: 'block', key: block(bid).key, name: block(bid).name } : null;
   }
 
   doInspect() {

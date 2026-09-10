@@ -78,15 +78,24 @@ const pickTool = async (name) => {
   await page.locator(`.toolrow button[aria-label="${name}"]`).first().click();
   await page.waitForTimeout(120);
 };
-const pickCategory = async (name) => {
-  await page.locator('.catrow button', { hasText: new RegExp(`^${name}$`, 'i') }).first().click();
-  await page.waitForTimeout(120);
+/** Open the palette and choose a category within it. */
+const openPalette = async () => {
+  await page.locator('.toolrow button[aria-label="Open the palette"]').first().click();
+  await page.waitForTimeout(300);
 };
+const pickCategory = async (name) => {
+  if (!await page.locator('.sheet-body .catrow').count()) await openPalette();
+  await page.locator('.sheet-body .catrow button', { hasText: new RegExp(`^${name}$`, 'i') }).first().click();
+  await page.waitForTimeout(150);
+};
+/**
+ * Choose a material or zone from the palette. It lands in the selected hotbar
+ * slot, which is what the player is then holding.
+ */
 const pickSwatch = async (name) => {
-  // Block swatches are labelled "Name, $N per block"; zone swatches just "Name".
-  const sel = `.hotbar button[aria-label="${name}"], .hotbar button[aria-label^="${name}, "]`;
-  await page.locator(sel).first().click();
-  await page.waitForTimeout(120);
+  if (!await page.locator('.sheet-body .palette').count()) await openPalette();
+  await page.locator(`.sheet-body .palette-item[aria-label="${name}"]`).first().click();
+  await page.waitForTimeout(350);
 };
 const count = (key) => page.evaluate((k) => {
   const w = window.__sct.game.world;

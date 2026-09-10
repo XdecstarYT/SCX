@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "test": "node --test tests/*.test.js",
-    "e2e": "node e2e/playthrough.mjs && node e2e/handbuild.mjs && node e2e/screens.mjs && node e2e/layouts.mjs"
+    "e2e": "node e2e/playthrough.mjs && node e2e/firstperson.mjs && node e2e/handbuild.mjs && node e2e/screens.mjs && node e2e/layouts.mjs"
   },
   "dependencies": {
     "three": "^0.186.0"

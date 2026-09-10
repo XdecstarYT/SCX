@@ -245,17 +245,21 @@ export class WorldRenderer {
     return mesh;
   }
 
-  setZoneMode(on) {
-    if (this.zoneMode === on) return;
+  setZoneMode(on, dim = 0.35) {
+    if (this.zoneMode === on) { this.setZoneDim(on ? dim : 1); return; }
     this.zoneMode = on;
     this.zoneGroup.visible = on;
-    for (const m of [this.matOpaque, this.matTransparent]) m.uniforms.uDim.value = on ? 0.35 : 1;
+    this.setZoneDim(on ? dim : 1);
     if (on) {
       this.world.forEachChunk((c) => this.remeshZone(c));
     } else {
       for (const m of this.zoneMeshes.values()) { this.zoneGroup.remove(m); m.geometry.dispose(); }
       this.zoneMeshes.clear();
     }
+  }
+
+  setZoneDim(v) {
+    for (const m of [this.matOpaque, this.matTransparent]) m.uniforms.uDim.value = v;
   }
 
   /** Push environment uniforms (day/night, weather) to both voxel materials. */

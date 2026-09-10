@@ -384,3 +384,46 @@ test('weather wears an open pitch and slows a building site', async () => {
   g.analyze(true);
   assert.ok(g.primaryVenue.ratings.measures.field >= dry - 0.001, 'the surface is as good as new');
 });
+
+// ------------------------------------------------------------------ hotbar
+
+test('the hotbar starts with a usable set of blocks and zones', async () => {
+  const { createHotbarState, SLOTS, DEFAULT_BLOCK_SLOTS, DEFAULT_ZONE_SLOTS } =
+    await import('../src/ui/hotbar.js');
+  const { BLOCK_BY_KEY } = await import('../src/data/blocks.js');
+  const { ZONE_BY_KEY } = await import('../src/data/zones.js');
+
+  const h = createHotbarState();
+  assert.equal(h.blocks.length, SLOTS);
+  assert.equal(h.zones.length, SLOTS);
+  assert.equal(h.active, 0);
+
+  for (const key of DEFAULT_BLOCK_SLOTS) {
+    const b = BLOCK_BY_KEY.get(key);
+    assert.ok(b, `default hotbar block "${key}" does not exist`);
+    assert.ok(!b.unlock, `default hotbar block "${key}" is locked behind research`);
+  }
+  for (const key of DEFAULT_ZONE_SLOTS) {
+    assert.ok(ZONE_BY_KEY.has(key), `default hotbar zone "${key}" does not exist`);
+  }
+  // The starting set should cover the first stadium: a surface, seats and a gate.
+  assert.ok(DEFAULT_BLOCK_SLOTS.includes('turf'));
+  assert.ok(DEFAULT_BLOCK_SLOTS.includes('seat'));
+  assert.ok(DEFAULT_ZONE_SLOTS.includes('entrance'));
+});
+
+test('a save without a hotbar gets one on load', async () => {
+  const { migrate } = await import('../src/save/serialization.js');
+  const g = new Game();
+  g.newGame({ seed: 3 });
+  const raw = { version: 4, state: { ...g.state }, world: { size: 8, chunks: [] } };
+  delete raw.state.hotbar;
+  const save = migrate(raw);
+  assert.equal(save.state.hotbar.blocks.length, 9);
+  assert.equal(save.state.hotbar.zones.length, 9);
+
+  // A partially-written hotbar is repaired rather than crashing.
+  const partial = migrate({ version: 4, state: { ...g.state, hotbar: { blocks: ['turf'] } }, world: { size: 8, chunks: [] } });
+  assert.equal(partial.state.hotbar.zones.length, 9);
+  assert.equal(partial.state.hotbar.active, 0);
+});

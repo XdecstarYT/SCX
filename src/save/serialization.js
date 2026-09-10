@@ -1,5 +1,6 @@
 import { VoxelWorld, Chunk } from '../voxel/world.js';
 import { SAVE_VERSION } from '../core/gameState.js';
+import { createHotbarState } from '../ui/hotbar.js';
 
 /**
  * Chunks are stored run-length encoded, not as raw geometry. A 16x64x16 chunk
@@ -167,6 +168,9 @@ export function migrate(save) {
   s.tutorial = { step: 0, dismissed: false, seen: {}, ...(s.tutorial || {}) };
   s.organiserHistory = s.organiserHistory || {};
   s.construction = s.construction || [];
+  if (!s.hotbar || !Array.isArray(s.hotbar.blocks)) s.hotbar = createHotbarState();
+  s.hotbar.zones = Array.isArray(s.hotbar.zones) ? s.hotbar.zones : createHotbarState().zones;
+  s.hotbar.active = s.hotbar.active ?? 0;
   // Saves written before the multi-site update carry land and utilities at the
   // top level; fold them into a single starting site.
   if (!Array.isArray(s.sites) || s.sites.length === 0) {

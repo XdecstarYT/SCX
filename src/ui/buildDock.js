@@ -1,6 +1,6 @@
 import { el, fill, clear } from './dom.js';
-import { BLOCK_CATEGORIES, BLOCK_BY_ID, block } from '../data/blocks.js';
-import { ZONE_GROUPS, ZONE_BY_ID, zone } from '../data/zones.js';
+import { block } from '../data/blocks.js';
+import { zone } from '../data/zones.js';
 import { TOOLS } from '../voxel/buildTools.js';
 import { BUILD_MODES } from '../voxel/buildController.js';
 import { fmtMoney } from '../core/economy.js';
@@ -37,6 +37,7 @@ const TOOL_PARAMS = {
  */
 export class BuildDock {
   constructor(game, controller) {
+    this.onPick = null;      // (key) => put this in the active hotbar slot
     this.game = game;
     this.bc = controller;
     this.category = 'structure';
@@ -49,16 +50,15 @@ export class BuildDock {
   buildStatic() {
     this.modebar = el('div.modebar', { role: 'tablist', 'aria-label': 'Build mode' });
     this.toolrow = el('div.toolrow', { role: 'toolbar', 'aria-label': 'Build tools' });
-    this.catrow = el('div.catrow');
-    this.hotbar = el('div.hotbar', { role: 'listbox', 'aria-label': 'Materials' });
+    this.hint = el('div.dockhint');
     this.info = el('div.dockinfo');
-    this.node.append(this.modebar, this.toolrow, this.info, this.catrow, this.hotbar);
+    this.node.append(this.modebar, this.toolrow, this.info, this.hint);
   }
 
   render() {
     this.renderModes();
     this.renderTools();
-    this.renderPalette();
+    this.renderHint();
     this.renderInfo();
   }
 
@@ -110,6 +110,14 @@ export class BuildDock {
       }, el('span.i', { text: '↕' }), el('span.n', { text: `H ${h}` })));
     }
 
+    if (['build', 'zone'].includes(this.bc.mode)) {
+      this.toolrow.append(el('button.tool.palette-btn', {
+        title: 'Choose what goes in the selected hotbar slot',
+        'aria-label': 'Open the palette',
+        onclick: () => this.onOpenPalette?.(),
+      }, el('span.i', { text: '\u229E' }), el('span.n', { text: 'Palette' })));
+    }
+
     if (this.bc.mode === 'blueprint') {
       this.toolrow.append(el('button.tool', {
         title: 'Rotate the copied structure 90 degrees', disabled: !this.bc.clipboard,
@@ -126,97 +134,26 @@ export class BuildDock {
     }
   }
 
-  renderPalette() {
-    clear(this.catrow); clear(this.hotbar);
-
-    if (this.bc.mode === 'zone') {
-      for (const g of ZONE_GROUPS) {
-        this.catrow.append(el('button.cat' + (this.zoneGroup === g.key ? '.on' : ''), {
-          onclick: () => { this.zoneGroup = g.key; this.renderPalette(); },
-        }, g.name));
-      }
-      for (const z of ZONE_BY_ID) {
-        if (z.group !== this.zoneGroup) continue;
-        this.hotbar.append(this.zoneSwatch(z));
-      }
-      return;
-    }
-
-    if (this.bc.mode === 'demolish') {
-      this.hotbar.append(el('div.small.faint', {
-        style: { padding: '8px 4px' },
-        text: 'Tap a block to remove it, or use a tool to clear an area. Demolition refunds 30%.',
-      }));
-      return;
-    }
-
-    if (this.bc.mode === 'terrain') {
-      this.hotbar.append(el('div.small.faint', {
-        style: { padding: '8px 4px' },
-        text: 'Reshape the ground. Raise and Lower move by the set amount; Flatten levels everything to the first point you tap; Ramp slopes between the two points. The surface material is preserved.',
-      }));
-      return;
-    }
-
-    if (this.bc.mode === 'inspect') {
-      this.hotbar.append(el('div.small.faint', {
-        style: { padding: '8px 4px' },
-        text: 'Tap any block to see what the game thinks it is, and which venue it belongs to.',
-      }));
-      return;
-    }
+  /**
+   * A single line of guidance for the modes where what to do next is not
+   * obvious. What you are *holding* lives in the hotbar, not here.
+   */
+  renderHint() {
+    const text = {
+      demolish: 'Tap a block to remove it, or use a tool to clear an area. Demolition refunds 30%.',
+      inspect: 'Tap any block to see what the game thinks it is, and which venue it belongs to.',
+      terrain: 'Raise and Lower move by the set amount; Flatten levels everything to the first point you tap; Ramp slopes between the two. The surface material is preserved.',
+    }[this.bc.mode];
 
     if (this.bc.mode === 'blueprint') {
       const c = this.bc.clipboard;
-      this.hotbar.append(el('div.small.faint', {
-        style: { padding: '8px 4px' },
-        text: c
-          ? `Clipboard: ${c.count} blocks, ${c.size.x}x${c.size.y}x${c.size.z}. Tap to stamp it.`
-          : 'Pick Copy, then tap two opposite corners of a structure.',
-      }));
+      fill(this.hint, el('span', { text: c
+        ? `Clipboard: ${c.count} blocks, ${c.size.x}x${c.size.y}x${c.size.z}. Tap to stamp it.`
+        : 'Pick Copy, then tap two opposite corners of a structure.' }));
       return;
     }
-
-    for (const c of BLOCK_CATEGORIES) {
-      this.catrow.append(el('button.cat' + (this.category === c.key ? '.on' : ''), {
-        onclick: () => { this.category = c.key; this.renderPalette(); },
-      }, c.name));
-    }
-    for (const b of BLOCK_BY_ID) {
-      if (b.category !== this.category) continue;
-      this.hotbar.append(this.blockSwatch(b));
-    }
-  }
-
-  blockSwatch(b) {
-    const locked = b.unlock && !this.game.isUnlocked(b.unlock);
-    const on = this.bc.material === b.id && !locked;
-    return el('button.swatch' + (on ? '.on' : '') + (locked ? '.locked' : ''), {
-      role: 'option', 'aria-selected': String(on),
-      'aria-label': `${b.name}, ${locked ? 'locked' : '$' + b.cost + ' per block'}`,
-      title: locked ? `${b.name} - unlock with research` : `${b.name} - $${b.cost}/block`,
-      onclick: () => {
-        if (locked) { this.onLocked?.(b); return; }
-        this.bc.setMaterial(b.id); this.renderPalette(); this.renderInfo();
-      },
-    },
-      el('span.chipc', { style: { background: '#' + b.color.toString(16).padStart(6, '0') } }),
-      el('span.n', { text: b.name }),
-      el('span.c', { text: locked ? '\u{1F512}' : '$' + b.cost }));
-  }
-
-  zoneSwatch(z) {
-    const on = this.bc.zoneKey === z.key;
-    return el('button.swatch' + (on ? '.on' : ''), {
-      role: 'option', 'aria-selected': String(on), 'aria-label': z.name,
-      title: z.regulation
-        ? `${z.name} - needs at least ${z.regulation.w}x${z.regulation.d} blocks`
-        : z.name,
-      onclick: () => { this.bc.setZone(z.key); this.renderPalette(); this.renderInfo(); },
-    },
-      el('span.chipc', { style: { background: '#' + z.color.toString(16).padStart(6, '0') } }),
-      el('span.n', { text: z.name }),
-      el('span.c', { text: z.capacity ? `${z.capacity}/blk` : (z.regulation ? `${z.regulation.w}x${z.regulation.d}` : '—') }));
+    if (text) fill(this.hint, el('span', { text }));
+    else clear(this.hint);
   }
 
   renderInfo() {

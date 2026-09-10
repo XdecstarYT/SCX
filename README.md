@@ -20,7 +20,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test           # 72 headless simulation tests
+npm test           # 74 headless simulation tests
 npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
@@ -29,10 +29,17 @@ loaded.
 
 ## The loop, concretely
 
-1. **Build.** Place blocks from a palette of ~70 materials with single-block,
-   line, wall, floor, rectangle, room, flood-fill, replace, copy and paste
-   tools. Undo/redo throughout. Planning mode lets you design an entire stand
-   and see the price before committing a penny.
+1. **Build.** Press **1ST** and you are standing on your plot with a crosshair,
+   a block in your hand and a nine-slot hotbar. Look at a face, tap to place
+   against it, hold to sweep out a run, right-click to break, middle-click to
+   eyedropper whatever you are looking at. Number keys and the scroll wheel
+   change slots; long-press a slot to swap what lives there. Reach is an arm's
+   length, so you build where you stand.
+
+   From the overview camera the same hotbar drives bulk tools: single-block,
+   line, wall, floor, rectangle, room, flood-fill, replace, copy and paste.
+   Undo/redo throughout. Planning mode lets you design an entire stand and see
+   the price before committing a penny.
 
    Three **procedural structures** handle the parts that are pure repetition:
    *Stand* works out which way the pitch is and lays a raked seating tier with
@@ -45,7 +52,9 @@ loaded.
    the ground over several days, lowest blocks first. You cannot throw up a
    12,000-seat tier the day before an event you have already won — though you
    can pay overtime to rush it.
-2. **Zone.** Paint what areas are *for*: pitch, seating, concourse, entrance,
+2. **Zone.** The hotbar holds zones too, so painting what an area is *for* is
+   the same motion as building it — walk along a stand holding "seating" and
+   paint it in. Areas can be: pitch, seating, concourse, entrance,
    emergency exit, locker room, medical, media, broadcast, restrooms,
    concessions, retail, hospitality, security, parking, roads. Placing an
    unambiguous surface (turf, hardwood, ice, asphalt…) auto-zones it; you can
@@ -128,17 +137,19 @@ is a new row in `src/data/`.
 
 ## Controls
 
-|                | Touch                                   | Desktop                          |
-| -------------- | --------------------------------------- | -------------------------------- |
-| Look / orbit   | one-finger drag                         | left-drag (mouse look when locked) |
-| Pan            | two-finger drag                         | right-drag                       |
-| Zoom           | pinch                                   | scroll wheel                     |
-| Place          | tap, or the ■ button (aims at crosshair) | left click                       |
-| Remove         | tap in Demolish mode, or the ✕ button   | right click                      |
-| Move (1st/3rd) | on-screen stick                         | WASD, Shift to run, Space to jump |
-| Materials      | hotbar                                  | 1–9                              |
-| Undo / redo    | rail buttons                            | Ctrl+Z / Ctrl+Shift+Z            |
-| Camera         | FREE / 1ST / 3RD / MAP rail             | C to cycle, F to fly             |
+|                    | Touch                                    | Desktop                            |
+| ------------------ | ---------------------------------------- | ---------------------------------- |
+| Look / orbit       | one-finger drag                          | left-drag (mouse look when locked) |
+| Pan                | two-finger drag                          | right-drag                         |
+| Zoom               | pinch                                    | scroll wheel (overview only)       |
+| Place              | tap, or hold ■ to sweep                  | left click, hold to sweep          |
+| Remove             | Break mode, or hold ✕                    | right click, hold to sweep         |
+| Pick block         | ⌘ button                                 | middle click, or Z                 |
+| Hotbar slot        | tap a slot; long-press to change it      | 1–9, or the scroll wheel           |
+| Move (1st/3rd)     | on-screen stick, ↑ to jump               | WASD, Shift to run, Space to jump  |
+| Undo / redo        | rail buttons                             | Ctrl+Z / Ctrl+Shift+Z              |
+| Camera             | FREE / 1ST / 3RD / MAP rail              | C to cycle, B for first person, F to fly |
+| Release the cursor | —                                        | Escape                             |
 
 ## Accessibility
 
@@ -172,6 +183,10 @@ to license.
   which research projects unlock, which sponsors will talk to you, and it moves
   based on how well you actually deliver events. One number the player can
   reason about beats two.
+- **First person is the tactile way to build; the overview is the efficient
+  one.** Both use the same hotbar and the same modes. Walking around you get
+  reach, a crosshair and a block in hand; from above you get tools that lay a
+  thousand blocks at once. Neither is a lesser mode.
 - **Zones can be painted on open ground.** A "locker room" does not have to be
   an enclosed box. Enclosure would be more realistic but adds friction without
   adding a decision; provision is measured by area against capacity instead.

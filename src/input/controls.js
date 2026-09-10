@@ -29,6 +29,9 @@ export class InputController {
     this.pointerLocked = false;
     this.lastPinch = 0;
     this.lastMid = null;
+    // While a build button is held we repeat the action, so you can sweep out
+    // a wall rather than tapping forty times.
+    this.heldAction = null;
     this.longTimer = null;
     this.suppressTap = false;
     this.bind();
@@ -69,11 +72,15 @@ export class InputController {
   onDown = (e) => {
     if (!this.enabled) return;
     if (this.pointerLocked) {
-      // In pointer lock the mouse is already captured; clicks are actions.
+      // In pointer lock the mouse is already captured; clicks are actions, and
+      // holding repeats them.
       e.preventDefault();
+      if (e.button === 1) { this.h.onPick?.(); return; }
+      this.heldAction = e.button;
       this.h.onTap?.({ x: 0, y: 0 }, e.button, true);
       return;
     }
+    if (e.button === 1) { e.preventDefault(); this.h.onPick?.(); return; }
     this.canvas.setPointerCapture?.(e.pointerId);
     this.pointers.set(e.pointerId, {
       startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY,
@@ -138,6 +145,7 @@ export class InputController {
   };
 
   onUp = (e) => {
+    this.heldAction = null;
     const p = this.pointers.get(e.pointerId);
     clearTimeout(this.longTimer);
     if (!p) return;
@@ -159,6 +167,12 @@ export class InputController {
   onWheel = (e) => {
     if (!this.enabled) return;
     e.preventDefault();
+    // Walking around, the wheel cycles the hotbar. Surveying from the free
+    // camera, it zooms.
+    if (this.rig.isWalking || this.pointerLocked) {
+      this.h.onCycleHotbar?.(e.deltaY > 0 ? 1 : -1);
+      return;
+    }
     this.rig.zoom(e.deltaY > 0 ? 1.12 : 1 / 1.12);
     this.h.onAim?.();
   };
@@ -174,6 +188,8 @@ export class InputController {
     if (k === '0') { this.h.onHotbar?.(9); return; }
     if (k === ' ') { this.rig.jump(); e.preventDefault(); }
     if (k === 'f' && !e.ctrlKey && !e.metaKey) this.rig.toggleFly();
+    if (k === 'b') this.h.onToggleFirstPerson?.();
+    if (k === 'z' && !e.ctrlKey && !e.metaKey) this.h.onPick?.();
     if (k === 'c') this.h.onCycleCamera?.();
     if (k === 'q') this.h.onRotate?.(-1);
     if (k === 'e') this.h.onRotate?.(1);
@@ -199,6 +215,11 @@ export class InputController {
     if (k.has('s') || k.has('arrowdown')) y -= 1;
     this.move.x = x; this.move.y = y;
   }
+
+  /** True while a build action button is held down. */
+  get isHolding() { return this.heldAction !== null; }
+  get heldButton() { return this.heldAction; }
+  releaseHold() { this.heldAction = null; }
 
   /** Combined keyboard + on-screen joystick, normalised. */
   get moveVector() {
