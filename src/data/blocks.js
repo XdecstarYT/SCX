@@ -10,7 +10,7 @@
  *   category     hotbar grouping
  *   color        base colour (hex int)
  *   cost         construction cost per voxel
- *   maintenance  monthly upkeep per voxel
+ *   maintenance  upkeep weight per voxel (scaled by MAINTENANCE_RATE)
  *   solid        blocks movement / occludes faces
  *   transparent  rendered in the transparent pass, does not occlude
  *   support      structural support strength (columns/beams are high)
@@ -23,7 +23,7 @@
 
 export const BLOCKS = [
   // ---------------------------------------------------------------- natural
-  { key: 'grass',      name: 'Grass',            category: 'terrain', color: 0x5f9b52, cost: 12,   maintenance: 0.4, solid: true, support: 4 },
+  { key: 'grass',      name: 'Grass',            category: 'terrain', color: 0x6d9c56, cost: 12,   maintenance: 0.4, solid: true, support: 4 },
   { key: 'dirt',       name: 'Dirt',             category: 'terrain', color: 0x6b5342, cost: 6,    maintenance: 0,   solid: true, support: 4 },
   { key: 'sand',       name: 'Sand',             category: 'terrain', color: 0xc9b083, cost: 8,    maintenance: 0.1, solid: true, support: 3 },
   { key: 'water',      name: 'Water',            category: 'terrain', color: 0x2f7fb5, cost: 30,   maintenance: 1.2, solid: false, transparent: true, opacity: 0.72, support: 0 },
@@ -51,8 +51,8 @@ export const BLOCKS = [
   { key: 'tile',       name: 'Tile',             category: 'surface', color: 0xdfe4e8, cost: 88,  maintenance: 1.1, solid: true, support: 6, appearance: 2 },
   { key: 'hardwood',   name: 'Hardwood Court',   category: 'surface', color: 0xc8974f, cost: 165, maintenance: 2.4, solid: true, support: 5, autoZone: 'court_basketball' },
   { key: 'rubber',     name: 'Rubber Floor',     category: 'surface', color: 0x4b5158, cost: 95,  maintenance: 1.4, solid: true, support: 5, autoZone: 'training' },
-  { key: 'turf',       name: 'Natural Turf',     category: 'surface', color: 0x4f9c48, cost: 130, maintenance: 3.6, solid: true, support: 4, autoZone: 'pitch_football' },
-  { key: 'turf_synth', name: 'Synthetic Turf',   category: 'surface', color: 0x489c62, cost: 175, maintenance: 1.5, solid: true, support: 4, autoZone: 'pitch_football', unlock: 'adv_surfaces' },
+  { key: 'turf',       name: 'Natural Turf',     category: 'surface', color: 0x357f3c, cost: 130, maintenance: 3.6, solid: true, support: 4, autoZone: 'pitch_football' },
+  { key: 'turf_synth', name: 'Synthetic Turf',   category: 'surface', color: 0x2f8f57, cost: 175, maintenance: 1.5, solid: true, support: 4, autoZone: 'pitch_football', unlock: 'adv_surfaces' },
   { key: 'clay',       name: 'Clay Court',       category: 'surface', color: 0xc4744a, cost: 120, maintenance: 2.8, solid: true, support: 4, autoZone: 'court_tennis' },
   { key: 'track',      name: 'Running Track',    category: 'surface', color: 0xb4553d, cost: 190, maintenance: 2.2, solid: true, support: 5, autoZone: 'track_athletics' },
   { key: 'ice',        name: 'Ice Surface',      category: 'surface', color: 0xd3ecf5, cost: 240, maintenance: 6.5, solid: true, support: 4, power: 0.9, autoZone: 'rink_ice', unlock: 'ice_tech' },

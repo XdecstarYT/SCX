@@ -224,11 +224,12 @@ export class BuildDock {
       return;
     }
 
+    const n = (v) => `${v} block${v === 1 ? '' : 's'}`;
     const label = this.bc.mode === 'zone'
-      ? `${s.count} blocks → ${zone(this.bc.zoneKey).name}`
+      ? `${n(s.count)} → ${zone(this.bc.zoneKey).name}`
       : this.bc.mode === 'demolish'
-        ? `${s.removed} blocks to remove`
-        : `${s.placed} blocks`;
+        ? `${n(s.removed)} to remove`
+        : n(s.placed);
 
     this.info.append(el('span', { text: label }));
     if (this.bc.mode !== 'zone' && this.bc.mode !== 'inspect') {

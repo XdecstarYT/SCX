@@ -131,18 +131,41 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 }
 .railcol::-webkit-scrollbar { display: none; }
 
-/* Landscape phones are short: lay the rails out horizontally and tighten the
-   dock so the 3D view keeps most of the screen. */
+/* ---------------------------------------------------------------------------
+   Short viewports (landscape phones). Stacking the dock under the 3D view
+   would push the tab bar off-screen, so the dock becomes a scrollable side
+   panel instead and the view keeps its height.
+   --------------------------------------------------------------------------- */
 @media (max-height: 560px) {
-  .midrow { align-items: flex-start; }
-  .railcol { flex-direction: row; max-width: 46%; }
-  .rail-btn { width: 42px; height: 42px; }
-  .tool { height: 40px; min-width: 48px; }
-  .swatch { width: 52px; }
+  :root { --dock-h: 52px; --side-dock: 138px; }
+
+  .builddock {
+    position: absolute; z-index: 10;
+    right: 0; top: calc(var(--sat) + 44px);
+    bottom: calc(var(--dock-h) + var(--sab));
+    width: var(--side-dock);
+    border-top: 0; border-left: 1px solid var(--line);
+    overflow-y: auto; scrollbar-width: none;
+    padding: 6px calc(var(--sar) + 6px) 8px 6px;
+  }
+  .builddock::-webkit-scrollbar { display: none; }
+
+  .modebar { flex-direction: column; overflow: visible; }
+  .mode { width: 100%; text-align: center; padding: 6px 8px; }
+  .toolrow, .catrow, .hotbar { flex-wrap: wrap; overflow: visible; }
+  .tool { flex: 0 0 auto; min-width: 0; width: calc(50% - 3px); height: 40px; }
+  .cat { flex: 0 0 auto; }
+  .swatch { width: calc(50% - 3px); }
   .swatch .chipc { height: 18px; }
-  .builddock { gap: 4px; }
+  .dockinfo { flex-wrap: wrap; font-size: 10.5px; }
+
+  .midrow { margin-right: var(--side-dock); }
+  .inspector, .tutorial { width: min(420px, calc(100% - var(--side-dock) - 20px)); margin-right: calc(var(--side-dock) + 10px); }
   .tutorial .b { display: none; }
-  --dock-h: 54px;
+  .actionpad { right: calc(var(--side-dock) + 12px); }
+  .rail-btn { width: 42px; height: 42px; }
+  .toasts { top: calc(var(--sat) + 50px); width: min(340px, calc(100% - var(--side-dock) - 120px)); }
+  .sheet { bottom: calc(var(--dock-h) + var(--sab)); }
 }
 .rail-btn {
   width: 46px; height: 46px; border-radius: 12px; font-weight: 700; letter-spacing: .02em;
@@ -330,7 +353,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .pill.no { background: var(--red-soft); color: var(--red); }
 
 /* ------------------------------------------------------------------- meters */
-.meter { height: 6px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; }
+.meter { display: block; height: 6px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; }
 .meter > i { display: block; height: 100%; border-radius: 4px; background: var(--blue); transition: width .5s cubic-bezier(.2,.9,.3,1); }
 .meter.g > i { background: var(--green); }
 .meter.gold > i { background: var(--gold); }

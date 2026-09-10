@@ -28,7 +28,7 @@ export class BuildController {
     this.mode = 'build';
     this.tool = 'single';
     this.material = blockId('concrete');
-    this.zoneKey = 'seating';
+    this.zoneKey = 'pitch_football';
     this.wallHeight = 3;
     this.anchor = null;
     this.aim = null;

@@ -45,6 +45,7 @@ const emptyFacilities = () => {
  * complex-wide infrastructure figures.
  */
 export function detectVenues(world, opts = {}) {
+  const powerCapacity = opts.powerCapacity ?? Infinity;
   const { zoneInfo, stats, size } = scanWorld(world);
   const get = (key) => zoneInfo.get(zoneId(key)) || null;
   const countOf = (key) => (get(key)?.count ?? 0);
@@ -73,6 +74,9 @@ export function detectVenues(world, opts = {}) {
     maxHeight: stats.maxY,
     landSize: size,
   };
+  complex.powerCapacity = powerCapacity;
+  complex.powerDeficit = Math.max(0, complex.powerDemand - powerCapacity);
+
   // Roads must actually reach the parking to be worth anything.
   complex.roadServiceRatio = complex.parkingCars > 0
     ? Math.min(1, roadVox / Math.max(20, complex.parkingCars * 0.6)) : (roadVox > 20 ? 1 : 0);

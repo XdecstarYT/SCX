@@ -80,6 +80,14 @@ export function attachDerived(state, analysis) {
     * (1 + (state.research.completed.includes('transport') ? 0.6 : 0));
   state.bestCapacityHint = state.derived.bestCapacity || 8000;
 
+  // Site power. Capacity grows with research and with the scale of the build;
+  // a deficit is a real problem, not just a warning label.
+  state.powerCapacity = 15
+    + (state.research.completed.includes('power_grid') ? 40 : 0)
+    + Math.floor((state.derived.bestCapacity || 0) / 20000) * 5;
+  state.powerDemand = analysis?.complex.powerDemand || 0;
+  state.powerDeficit = Math.max(0, state.powerDemand - state.powerCapacity);
+
   // Staff bonuses, per channel, scaled by skill and morale.
   const bonus = {};
   for (const c of STAFF_CHANNELS) bonus[c] = 0;

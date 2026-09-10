@@ -136,6 +136,12 @@ export function rateVenue(v, complex) {
   if (m.broadcast < 0.4) issues.push({ key: 'broadcast', severity: 'info', text: 'A Broadcast Centre is required for national and international events.' });
   if (m.hospitality < 0.4) issues.push({ key: 'hospitality', severity: 'info', text: 'VIP seating and hospitality suites would raise prestige and revenue.' });
   if (v.seatRoofCoverage > 0.75) strengths.push({ key: 'roof', text: 'Nearly all seating is under cover.' });
+  if (complex.powerDeficit > 0) {
+    issues.push({
+      key: 'power', severity: 'error',
+      text: `Power demand exceeds site capacity by ${complex.powerDeficit.toFixed(1)}MW. Research a Grid Upgrade or remove powered equipment.`,
+    });
+  }
   if (v.structuralWarnings > 0) {
     issues.push({ key: 'structure', severity: 'error', text: `${v.structuralWarnings} roof sections lack adequate support. Add columns or beams beneath them.` });
   }

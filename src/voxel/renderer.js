@@ -46,6 +46,7 @@ const FRAG = /* glsl */`
   uniform float uSeam;
   uniform vec3 uHighlight;
   uniform float uHighlightAmt;
+  uniform float uDim;
   varying vec3 vColor;
   varying vec2 vUv;
   varying vec3 vNormal;
@@ -73,6 +74,8 @@ const FRAG = /* glsl */`
     // Emissive elements (screens, floodlights) glow after dark.
     lit += vColor * vEmis * (0.25 + uNight * 1.9);
     lit = mix(lit, uHighlight, uHighlightAmt);
+    // ZONE mode fades the world back so the painted overlay reads clearly.
+    lit = mix(lit, vec3(dot(lit, vec3(0.3, 0.59, 0.11))) * 0.55, 1.0 - uDim);
 
     float fogF = smoothstep(uFogNear, uFogFar, vDist);
     vec3 outc = mix(lit, uFogColor, fogF);
@@ -95,6 +98,7 @@ export function createVoxelMaterial(opts = {}) {
       uSeam: { value: opts.seam ?? 0.16 },
       uHighlight: { value: new THREE.Color(0x39e08a) },
       uHighlightAmt: { value: 0 },
+      uDim: { value: 1 },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
@@ -134,7 +138,7 @@ export class WorldRenderer {
     this.matOpaque = createVoxelMaterial();
     this.matTransparent = createVoxelMaterial({ transparent: true, opacity: 0.55, seam: 0.1 });
     this.matZone = new THREE.ShaderMaterial({
-      uniforms: { uOpacity: { value: 0.5 } },
+      uniforms: { uOpacity: { value: 0.82 } },
       vertexShader: `
         attribute vec3 color; attribute vec2 quadUv;
         varying vec3 vColor; varying vec2 vUv;
@@ -146,11 +150,17 @@ export class WorldRenderer {
           vec2 f=fract(vUv); vec2 d=min(f,1.0-f);
           vec2 w=fwidth(vUv)*1.5+0.02; vec2 g=smoothstep(vec2(0.0),w,d);
           float seam=min(g.x,g.y);
-          vec3 c=mix(vColor*1.6, vColor, seam);
-          gl_FragColor=vec4(c, uOpacity*mix(0.95,0.62,seam));
+          vec3 c=mix(vColor*1.9, vColor*1.25, seam);
+          gl_FragColor=vec4(c, uOpacity*mix(1.0,0.78,seam));
         }`,
       transparent: true,
       depthWrite: false,
+      // The overlay sits flush on top of the block faces it describes, so it
+      // needs a depth bias or it z-fights into invisibility at any distance.
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -8,
+      side: THREE.DoubleSide,
     });
 
     this.meshes = new Map();     // chunkKey -> { opaque, transparent }
@@ -239,6 +249,7 @@ export class WorldRenderer {
     if (this.zoneMode === on) return;
     this.zoneMode = on;
     this.zoneGroup.visible = on;
+    for (const m of [this.matOpaque, this.matTransparent]) m.uniforms.uDim.value = on ? 0.35 : 1;
     if (on) {
       this.world.forEachChunk((c) => this.remeshZone(c));
     } else {

@@ -51,6 +51,7 @@ class App {
     this.fpsNode = el('div.fps', { style: { display: 'none' } });
     this.root.append(this.fpsNode);
 
+    this.hud.onSheetClose = () => { if (this.tab !== 'build') this.setTab('build'); };
     this.wireBus();
     document.getElementById('loading')?.classList.add('hidden');
 
@@ -139,7 +140,12 @@ class App {
       this.rig = new CameraRig(this.camera, world);
       this.controller = new BuildController(this.game, this.scene, this.rig);
       this.controller.restoreBlueprints();
-      this.controller.onChange = () => { this.dock?.render(); this.refreshStatus(); };
+      this.zoneOverlay = false;
+      this.controller.onChange = () => {
+        this.dock?.render();
+        this.refreshStatus();
+        this.syncZoneOverlay();
+      };
       this.show = new LiveEventShow(this.scene, world);
       this.dock = new BuildDock(this.game, this.controller);
       this.dock.onPlanAction = (a) => this.planAction(a);
@@ -227,7 +233,10 @@ class App {
     if (this.show?.active) { this.show.skip(); return; }
     if (this.tab !== 'build') { this.setTab('build'); return; }
 
+    // Tapping the world aims where you tapped; the action buttons aim at the
+    // crosshair in the middle of the screen.
     if (ndc) this.lastNdc = ndc;
+    else if (fromButton) this.lastNdc = { x: 0, y: 0 };
     // In first person on desktop, the first click grabs the pointer.
     if (!this.isTouch && this.rig.isWalking && !this.input.pointerLocked && !fromButton) {
       this.input.requestLock();
@@ -295,7 +304,10 @@ class App {
     this.hud.setDock(building ? this.dock.node : null);
     this.controller.setVisible(building);
     this.actionPad.style.display = this.isTouch && building ? '' : 'none';
-    if (building) { this.worldRenderer.setZoneMode(this.controller.mode === 'zone'); this.dock.render(); }
+    if (this.crosshair) {
+      this.crosshair.style.display = (this.rig.isWalking || (this.isTouch && building)) ? '' : 'none';
+    }
+    if (building) { this.dock.render(); this.syncZoneOverlay(); }
     else this.worldRenderer.setZoneMode(false);
 
     if (tab === 'home') this.screens.openHome();
@@ -303,6 +315,12 @@ class App {
     else if (tab === 'finance') this.screens.openFinance();
     else if (tab === 'more') this.screens.openMore();
     this.refresh();
+  }
+
+  /** ZONE mode always shows the overlay; the rail button toggles it elsewhere. */
+  syncZoneOverlay() {
+    const want = this.tab === 'build' && (this.zoneOverlay || this.controller.mode === 'zone');
+    this.worldRenderer.setZoneMode(want);
   }
 
   // ================================================================= BUS

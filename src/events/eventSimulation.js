@@ -48,6 +48,14 @@ export function simulateEvent(ev, venue, state, contract) {
   if (congestion > 0.42 && rng.chance(0.55 + congestion * 0.4)) {
     incidents.push({ key: 'congestion', text: 'Serious congestion at the gates delayed kick-off.', satisfaction: -18, reputation: -2 });
   }
+  const overloaded = (state.powerDeficit || 0) > 0;
+  if (overloaded && rng.chance(0.45 + Math.min(0.4, state.powerDeficit / 20))) {
+    incidents.push({
+      key: 'power',
+      text: 'The site drew more power than the grid could supply. Screens and lighting cut out mid-event.',
+      satisfaction: -14, reputation: -3, cost: 60_000,
+    });
+  }
   if (m.lighting < 0.5 && rng.chance(0.25)) {
     incidents.push({ key: 'lighting', text: 'A floodlight bank failed and play was briefly suspended.', satisfaction: -10, reputation: -2, cost: 40_000 });
   }

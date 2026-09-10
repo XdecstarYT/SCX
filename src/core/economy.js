@@ -1,5 +1,13 @@
 import { DAYS_PER_MONTH } from './constants.js';
 
+/**
+ * Block `maintenance` and `revenue` values are per-voxel weights, not currency.
+ * These rates turn them into a monthly figure that sits sensibly against event
+ * income: a 10,000-seat ground lands around $70K/month of upkeep.
+ */
+export const MAINTENANCE_RATE = 3;
+export const PASSIVE_REVENUE_RATE = 4;
+
 export const LEDGER_CATEGORIES = {
   tickets: 'Ticketing', vip: 'VIP & Hospitality', food: 'Food & Beverage',
   merch: 'Merchandise', parking: 'Parking', sponsorship: 'Sponsorship',
@@ -23,7 +31,7 @@ export function monthlyFinance(state, analysis) {
   income.sponsorship = Math.round(sponsorship);
 
   const passive = complex ? complex.passiveRevenue : 0;
-  income.retail = Math.round(passive * 30);
+  income.retail = Math.round(passive * PASSIVE_REVENUE_RATE);
 
   const trainingVox = state.derived.trainingVoxels || 0;
   income.training = Math.round(trainingVox * 220 + state.staffBonus.sports * 40_000);
@@ -31,7 +39,7 @@ export function monthlyFinance(state, analysis) {
   // --- expense ------------------------------------------------------------
   const financeCut = 1 - state.staffBonus.finance * 0.10;
   const maintFactor = (1 - state.staffBonus.operations * 0.14) * state.wearFactor;
-  expense.maintenance = Math.round((complex ? complex.maintenance : 0) * 30 * maintFactor * financeCut);
+  expense.maintenance = Math.round((complex ? complex.maintenance : 0) * MAINTENANCE_RATE * maintFactor * financeCut);
   expense.staff = Math.round(state.staff.reduce((s, h) => s + h.salary, 0) * state.salaryMult);
   expense.utilities = Math.round(((complex ? complex.powerDemand : 0) * 900 + 12_000) * financeCut);
   expense.insurance = Math.round((5_000 + (state.derived.bestCapacity || 0) * 1.1) * financeCut);

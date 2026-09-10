@@ -231,10 +231,11 @@ export function meshZoneOverlay(world, chunk) {
         }
         const zc = zone(c).color;
         const r = ((zc >> 16) & 255) / 255, g = ((zc >> 8) & 255) / 255, b = (zc & 255) / 255;
-        const px = i * S + ox, py = (y + 1) * S + 0.06, pz = j * S + oz;
+        const px = i * S + ox, py = (y + 1) * S + 0.02, pz = j * S + oz;
+        // Wound counter-clockwise seen from above so the +Y face is the front.
         mb.quad(
-          [[px, py, pz], [px + w * S, py, pz], [px + w * S, py, pz + h * S], [px, py, pz + h * S]],
-          [0, 1, 0], r, g, b, w, h, 0
+          [[px, py, pz], [px, py, pz + h * S], [px + w * S, py, pz + h * S], [px + w * S, py, pz]],
+          [0, 1, 0], r, g, b, h, w, 0
         );
         for (let l = 0; l < h; l++) for (let k = 0; k < w; k++) mask[n + k + l * CX] = 0;
         i += w; n += w;

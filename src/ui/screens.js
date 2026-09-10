@@ -1,5 +1,5 @@
 import { el, fill, section, ratingCell, meter, pill, toggleRow, sliderRow, issueRow, emptyState, animateNumber } from './dom.js';
-import { fmtMoney, fmtNum, monthlyFinance, LEDGER_CATEGORIES, takeLoan, loanCapacity, repayLoan } from '../core/economy.js';
+import { fmtMoney, fmtNum, monthlyFinance, LEDGER_CATEGORIES, takeLoan, loanCapacity, repayLoan, MAINTENANCE_RATE } from '../core/economy.js';
 import { TIER_LABEL } from '../venues/ratings.js';
 import { STAFF_ROLES } from '../data/staff.js';
 import { ACHIEVEMENTS } from '../data/achievements.js';
@@ -96,9 +96,8 @@ export class Screens {
   infraCard(a) {
     const c = a.complex || {};
     const s = this.state;
-    const powerCap = 15 + (s.research.completed.includes('power_grid') ? 40 : 0)
-      + Math.floor((s.derived.bestCapacity || 0) / 20000) * 5;
-    const demand = c.powerDemand || 0;
+    const powerCap = s.powerCapacity ?? 15;
+    const demand = s.powerDemand || 0;
     const over = demand > powerCap;
     return el('div.card', {},
       el('div.rowbetween', {}, el('span.small', { text: 'Power grid' }),
@@ -106,7 +105,7 @@ export class Screens {
       meter(Math.min(demand, powerCap), powerCap, over ? 'r' : 'g'),
       over && el('div.issue.error', { style: { marginTop: '8px' } },
         el('span.ic', { text: '⚠' }),
-        el('span', { text: 'Power capacity insufficient. Research a Grid Upgrade or reduce powered equipment.' })),
+        el('span', { text: 'Power capacity insufficient. Expect equipment failures on event day until you research a Grid Upgrade.' })),
       el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '10px' } },
         this.infraLine('Parking', `${fmtNum(c.parkingCars || 0)} cars`),
         this.infraLine('VIP parking', `${fmtNum(c.vipParkingCars || 0)} cars`),
@@ -115,7 +114,7 @@ export class Screens {
         this.infraLine('Road network', `${fmtNum(c.roadVoxels || 0)} blocks`),
         this.infraLine('Floodlights', fmtNum(c.floodlights || 0)),
         this.infraLine('Blocks placed', fmtNum(c.totalBlocks || 0)),
-        this.infraLine('Upkeep', `${fmtMoney((c.maintenance || 0) * 30)}/mo`)));
+        this.infraLine('Upkeep', `${fmtMoney((c.maintenance || 0) * MAINTENANCE_RATE)}/mo`)));
   }
 
   infraLine(k, v) {

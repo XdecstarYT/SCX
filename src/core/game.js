@@ -137,6 +137,18 @@ export class Game {
     this.tickRivals();
     this.maybeRandomEvent();
 
+    // Insolvency: a real pinch, but never an instant loss.
+    if (s.cash < 0) {
+      applyReputation(s, { venue: -0.06, organiser: -0.08 });
+      if (!s._insolventSince) {
+        s._insolventSince = s.day;
+        this.notify('warn', 'You are running a deficit',
+          'Cut costs, host an event, or take a loan from the Finance tab.');
+      }
+    } else if (s._insolventSince) {
+      delete s._insolventSince;
+    }
+
     // Monthly rollup
     const month = Math.floor(s.day / DAYS_PER_MONTH);
     if (month !== s.finance.lastMonth) {
@@ -169,7 +181,10 @@ export class Game {
     this.lastAnalysisVersion = this.world.version;
     this.analysisDirty = false;
 
-    const a = detectVenues(this.world, { complexName: this.state.complexName });
+    const a = detectVenues(this.world, {
+      complexName: this.state.complexName,
+      powerCapacity: this.state.powerCapacity ?? 15,
+    });
 
     // Carry player-chosen names and registration across re-analysis.
     for (const v of a.venues) {
