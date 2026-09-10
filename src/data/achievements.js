@@ -1,0 +1,23 @@
+/** Achievements double as a soft objective list for new players. */
+export const ACHIEVEMENTS = [
+  { id: 'first_block',   name: 'Ground Broken',        desc: 'Place your first block.',                     check: (s) => s.stats.blocksPlaced >= 1 },
+  { id: 'first_pitch',   name: 'A Place To Play',      desc: 'Create a regulation sport surface.',          check: (s) => s.stats.regulationFields >= 1 },
+  { id: 'first_venue',   name: 'Venue Detected',       desc: 'Have the game recognise a venue.',            check: (s) => s.stats.venuesDetected >= 1 },
+  { id: 'first_reg',     name: 'Open For Business',    desc: 'Register a venue.',                           check: (s) => s.venues.registered.length >= 1 },
+  { id: 'first_bid',     name: 'In The Running',       desc: 'Submit your first event bid.',                check: (s) => s.stats.bidsPlaced >= 1 },
+  { id: 'first_event',   name: 'Opening Night',        desc: 'Host your first event.',                      check: (s) => s.stats.eventsHosted >= 1 },
+  { id: 'first_million', name: 'First Million',        desc: 'Hold $1,000,000 in profit lifetime.',         check: (s) => s.stats.lifetimeProfit >= 1_000_000 },
+  { id: 'sellout',       name: 'Not A Seat Left',      desc: 'Sell out an event.',                          check: (s) => s.stats.sellouts >= 1 },
+  { id: 'ten_k',         name: 'Five Figures',         desc: 'Build a venue holding 10,000+.',              check: (s) => s.stats.bestCapacity >= 10_000 },
+  { id: 'fifty_k',       name: 'Cathedral Of Sport',   desc: 'Build a venue holding 50,000+.',              check: (s) => s.stats.bestCapacity >= 50_000 },
+  { id: 'five_star',     name: 'Five-Star Venue',      desc: 'Reach a venue rating of 85.',                 check: (s) => s.stats.bestRating >= 85 },
+  { id: 'national',      name: 'National Standard',    desc: 'Host a national-tier event.',                 check: (s) => s.stats.tiersHosted.includes('national') },
+  { id: 'international', name: 'International Venue',  desc: 'Host an international-tier event.',           check: (s) => s.stats.tiersHosted.includes('international') },
+  { id: 'world',         name: 'World Championship Host', desc: 'Host a world-tier event.',                 check: (s) => s.stats.tiersHosted.includes('world') },
+  { id: 'hundred_k',     name: '100,000 Fans',         desc: 'Welcome 100,000 total spectators.',           check: (s) => s.stats.totalAttendance >= 100_000 },
+  { id: 'multi_sport',   name: 'Multi-Sport Complex',  desc: 'Operate venues for three different sports.',  check: (s) => s.stats.sportsHosted.length >= 3 },
+  { id: 'big_sponsor',   name: 'Naming Rights',        desc: 'Sign a naming-rights sponsor.',               check: (s) => s.sponsors.some((x) => x.naming) },
+  { id: 'perfect',       name: 'Perfect Event',        desc: 'Finish an event at 95%+ fan satisfaction.',   check: (s) => s.stats.bestSatisfaction >= 95 },
+  { id: 'land_max',      name: 'Mega Sports District', desc: 'Own the largest land tier.',                  check: (s) => s.landTier >= 3 },
+  { id: 'empire',        name: 'Global Sports Empire', desc: 'Reach 90 venue reputation.',                  check: (s) => s.reputation.venue >= 90 },
+];
