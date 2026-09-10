@@ -58,6 +58,9 @@ export const BLOCKS = [
   { key: 'track',      name: 'Running Track',    category: 'surface', color: 0xb4553d, cost: 190, maintenance: 2.2, solid: true, support: 5, autoZone: 'track_athletics' },
   { key: 'ice',        name: 'Ice Surface',      category: 'surface', color: 0xd3ecf5, cost: 240, maintenance: 6.5, solid: true, support: 4, power: 0.004, autoZone: 'rink_ice', unlock: 'ice_tech' },
   { key: 'pool',       name: 'Pool Water',       category: 'surface', color: 0x35a5cf, cost: 260, maintenance: 5.4, solid: true, transparent: true, opacity: 0.62, support: 3, power: 0.002, autoZone: 'pool_swimming', unlock: 'aquatics' },
+  { key: 'infield',    name: 'Baseball Infield',  category: 'surface', color: 0xb08a5e, cost: 145, maintenance: 2.6, solid: true, support: 4, autoZone: 'field_baseball', unlock: 'diamond' },
+  { key: 'stage',      name: 'Stage Deck',        category: 'surface', color: 0x2a2d33, cost: 210, maintenance: 2.2, solid: true, support: 6, autoZone: 'stage_event' },
+  { key: 'esports',    name: 'Esports Stage',     category: 'surface', color: 0x2b2f52, emissive: 0x4455cc, cost: 320, maintenance: 3.4, solid: true, support: 5, power: 0.008, autoZone: 'arena_esports', appearance: 4, unlock: 'esports' },
   { key: 'asphalt',    name: 'Asphalt',          category: 'surface', color: 0x40464c, cost: 38,  maintenance: 0.5, solid: true, support: 7, autoZone: 'parking' },
   { key: 'pavement',   name: 'Pavement',         category: 'surface', color: 0xa5aab0, cost: 42,  maintenance: 0.5, solid: true, support: 7, autoZone: 'concourse' },
   { key: 'road',       name: 'Local Road',       category: 'roads', color: 0x33383d, cost: 60,  maintenance: 1.0, solid: true, support: 7, autoZone: 'road', traffic: 1.0 },
@@ -75,6 +78,7 @@ export const BLOCKS = [
   // ---------------------------------------------------------------- seating
   { key: 'seat',       name: 'Seating',          category: 'seating', color: 0x2f6fd0, cost: 320, maintenance: 4.2, solid: true, support: 5, autoZone: 'seating' },
   { key: 'seat_alt',   name: 'Seating (Accent)', category: 'seating', color: 0xd8b13a, cost: 320, maintenance: 4.2, solid: true, support: 5, autoZone: 'seating', appearance: 2 },
+  { key: 'seat_box',   name: 'Luxury Box',       category: 'seating', color: 0x8a6ad0, cost: 2600, maintenance: 26.0, solid: true, support: 5, autoZone: 'luxury_box', appearance: 6, revenue: 340, unlock: 'hospitality' },
   { key: 'seat_vip',   name: 'VIP Seating',      category: 'seating', color: 0x7b4fd0, cost: 980, maintenance: 12.0, solid: true, support: 5, autoZone: 'seating_vip', appearance: 3, unlock: 'hospitality' },
   { key: 'terrace',    name: 'Standing Terrace', category: 'seating', color: 0x6c7480, cost: 140, maintenance: 1.8, solid: true, support: 6, autoZone: 'seating_standing' },
   { key: 'stair',      name: 'Stairs',           category: 'seating', color: 0x9b9fa4, cost: 90,  maintenance: 1.0, solid: true, support: 6, autoZone: 'stairs' },

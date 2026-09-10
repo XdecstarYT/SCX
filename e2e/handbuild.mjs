@@ -161,15 +161,26 @@ if (tiles < 200) throw new Error(`Room tool produced only ${tiles} blocks`);
 // -------------------------------------------------- 4. parking and approach
 console.log('  laying parking and roads...');
 await frame(62, 52, 340);   // pull back to reach the plot edges
-await pickSwatch('Asphalt');
-await pickTool('Rectangle');
-await tap(10, GY, 6);
-await tap(115, GY, 24);
-await pickSwatch('Road');
+await pickCategory('Roads & Parking');
+await pickSwatch('Local Road');
 await pickTool('Floor');
 await tap(10, GY, 26);
 await tap(115, GY, 28);
-console.log(`  ✓ ${await count('asphalt')} parking blocks, ${await count('road')} road blocks`);
+await pickSwatch('Main Road');
+await tap(10, GY, 29);
+await tap(115, GY, 31);
+await pickSwatch('Emergency Route');
+await tap(10, GY, 24);
+await tap(60, GY, 25);
+
+await pickCategory('Surfaces');
+await pickSwatch('Asphalt');
+await pickTool('Rectangle');
+await tap(10, GY, 6);
+await tap(115, GY, 22);
+console.log('  \u2713 ' + (await count('asphalt')) + ' parking blocks, ' +
+  (await count('road')) + ' local + ' + (await count('road_main')) + ' main + ' +
+  (await count('road_emerg')) + ' emergency road blocks');
 
 // ------------------------------------------------------- 5. zone the rooms
 console.log('  zoning through ZONE mode...');
@@ -215,7 +226,32 @@ for (const [k, v] of Object.entries(zones)) {
   if (v === 0) throw new Error(`zone "${k}" was not painted by the UI`);
 }
 
-// --------------------------------------------------------- 6. floodlights
+// -------------------------------------------------- 6. a generated stand
+console.log('  raising a grandstand with the Stand tool...');
+await pickMode('BUILD');
+await frame(66, 58, 250);
+await pickCategory('Seating');
+await pickSwatch('Seating');
+await pickTool('Stand');
+await tap(PITCH.x0 - 10, GY, PITCH.z0 - 12);
+await tap(PITCH.x1 + 10, GY, PITCH.z0 - 5);
+await page.waitForTimeout(400);
+const staged = await page.evaluate(() => window.__sct.game.construction());
+console.log(`  \u2713 ${staged.count} project(s) under construction, ${staged.blocks} blocks queued`);
+if (staged.count === 0) throw new Error('the Stand tool did not queue a construction project');
+await page.screenshot({ path: `${SHOTS}/H-03-construction.png` });
+await page.evaluate(() => {
+  const app = window.__sct;
+  app.game.state.cash = 40_000_000;
+  app.game.rushConstruction(app.game.state.construction[0].id);
+  app.worldRenderer.rebuildAll(); app.worldRenderer.flush();
+});
+await page.waitForTimeout(600);
+const standSeats = await count('seat');
+console.log(`  \u2713 grandstand finished; ${standSeats} seating blocks on site`);
+if (standSeats <= seats) throw new Error('the grandstand added no seats');
+
+// --------------------------------------------------------- 7. floodlights
 await pickMode('BUILD');
 await pickCategory('Decor');
 await pickSwatch('Floodlight');

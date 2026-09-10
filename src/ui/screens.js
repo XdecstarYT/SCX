@@ -8,6 +8,7 @@ import { UTILITIES } from '../data/utilities.js';
 import { ENDGAME_GOALS, GOAL_GROUPS, endgameProgress } from '../data/endgame.js';
 import { MOODS } from '../core/community.js';
 import { BLOCK_BY_KEY } from '../data/blocks.js';
+import { zone as zoneDef } from '../data/zones.js';
 
 /**
  * All the management sheets. Each `openX` builds a fresh DOM tree and hands it
@@ -447,8 +448,13 @@ export class Screens {
                 el('div', {}, el('h3', { text: sp.name }), el('div.sub', { text: `${sp.sector} · ${sp.years}-year contract` })),
                 el('div.right', {}, el('div.small.mono.gold', { text: fmtMoney(sp.annual) + '/yr' }),
                   el('div.tiny.faint', { text: fmtMoney(sp.perEvent) + ' per event' }))),
+              sp.scope ? el('div.tiny.faint', { style: { marginTop: '4px' }, text: sp.scope }) : null,
               el('div.small', { style: { marginTop: '8px' }, text: sp.bonus }),
-              sp.community ? el('div.tiny.neg', { style: { marginTop: '4px' }, text: `Community reputation ${sp.community}` }) : null,
+              sp.community ? el('div', {
+                class: sp.community > 0 ? 'tiny pos' : 'tiny neg',
+                style: { marginTop: '4px' },
+                text: `Community reputation ${sp.community > 0 ? '+' : ''}${sp.community}`,
+              }) : null,
               el('button.btn.sm.full.gold', {
                 style: { marginTop: '9px' },
                 onclick: () => {
@@ -459,6 +465,26 @@ export class Screens {
               }, 'Sign deal'))))
           : el('div.card', {}, emptyState('…',
               `No offers yet. Sponsors want reputation ${SPONSOR_NEXT(s)} and a bigger venue.`))));
+  }
+
+  /** Deals the player has earned but cannot host yet, and what is missing. */
+  blockedSponsorsCard() {
+    const blocked = this.game.sponsorsBlocked();
+    if (!blocked.length) return null;
+    return section('Interested, but waiting on you',
+      el('div.stack', {}, ...blocked.map((sp) => el('div.card.tight', {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('div.small', { text: sp.name }),
+            el('div.tiny.faint', { text: sp.scope || sp.sector })),
+          el('span.small.mono.faint', { text: fmtMoney(sp.annual) + '/yr' })),
+        el('div.issue.info', { style: { marginTop: '7px' } },
+          el('span.ic', { text: '\u2139' }),
+          el('span', {
+            text: sp.needsZone
+              ? `Wants at least ${sp.needsVoxels} blocks zoned as ${zoneName(sp.needsZone)} before they will put their name on it.`
+              : `Wants at least ${sp.needsVoxels} ${sp.needsBlock} blocks on site.`,
+          }))))));
   }
 
   researchBody(rerender) {
@@ -762,6 +788,8 @@ function fmtUnit(v) {
   if (v >= 10) return v.toFixed(0);
   return v.toFixed(1);
 }
+
+function zoneName(key) { return zoneDef(key).name; }
 
 function SPONSOR_NEXT(s) {
   const next = [12, 20, 34, 45, 60, 72, 84].find((r) => r > s.reputation.venue);

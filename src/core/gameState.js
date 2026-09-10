@@ -140,8 +140,9 @@ export function attachDerived(state, analysis) {
     acc.merch += s.merchBonus || 0;
     acc.sponsor += s.sponsorBonus || 0;
     acc.broadcast += s.broadcastBonus || 0;
+    acc.athlete += s.athleteBonus || 0;
     return acc;
-  }, { food: 0, merch: 0, sponsor: 0, broadcast: 0 });
+  }, { food: 0, merch: 0, sponsor: 0, broadcast: 0, athlete: 0 });
 
   // Active temporary modifiers.
   const mods = state.modifiers.filter((m) => m.untilDay > state.day);

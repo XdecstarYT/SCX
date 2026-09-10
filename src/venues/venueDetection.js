@@ -15,6 +15,9 @@ const VENUE_TYPES = {
   swimming:   'Aquatic Centre',
   ice:        'Ice Arena',
   combat:     'Combat Sports Arena',
+  baseball:   'Baseball Stadium',
+  esports:    'Esports Arena',
+  concert:    'Concert Venue',
 };
 
 const SCALE_PREFIX = [
@@ -100,6 +103,8 @@ export function detectVenues(world, opts = {}) {
     // Complete zone and block tallies, for the utility networks.
     zoneVoxels: zoneTotals(zoneInfo),
     blockVoxels: Object.fromEntries(world.blockCounts),
+    blockKeyCounts: Object.fromEntries(
+      [...world.blockCounts].map(([id, n]) => [block(id).key, n])),
   };
   complex.powerCapacity = powerCapacity;
   complex.powerDeficit = Math.max(0, complex.powerDemand - powerCapacity);
@@ -124,9 +129,12 @@ export function detectVenues(world, opts = {}) {
       const d = Math.min(rect.w, rect.h);
       const minW = Math.max(reg.w, reg.d), minD = Math.min(reg.w, reg.d);
       const idealW = Math.max(reg.ideal.w, reg.ideal.d), idealD = Math.min(reg.ideal.w, reg.ideal.d);
-      const regulation = Math.min(1, Math.min(w / minW, d / minD)) >= 1
-        ? Math.min(1, 0.85 + 0.15 * Math.min(1, Math.min(w / idealW, d / idealD)))
-        : Math.min(w / minW, d / minD);
+      // Meeting the published minimum is genuinely regulation - the figure the
+      // zone swatch and the venue report both quote. Building out toward the
+      // ideal dimensions is rewarded separately, through sizeQuality.
+      const meetsMinimum = w >= minW && d >= minD;
+      const regulation = meetsMinimum ? 1 : Math.min(w / minW, d / minD);
+      const sizeQuality = Math.min(1, Math.min(w / idealW, d / idealD));
 
       // Is the rectangle actually laid on an approved surface material?
       let surfaceOk = false;
@@ -143,7 +151,9 @@ export function detectVenues(world, opts = {}) {
 
       fields.push({
         sport: sz.sport, sportName: sz.name, zoneKey: sz.key,
-        comp, rect, w, d, minW, minD, regulation: Math.min(1, regulation),
+        comp, rect, w, d, minW, minD,
+        regulation: Math.min(1, regulation),
+        sizeQuality,
         surfaceOk, area: comp.area,
         cx: comp.cx, cz: comp.cz,
         y: topZonedY(world, Math.round(comp.cx), Math.round(comp.cz), sz.id),
@@ -159,13 +169,13 @@ export function detectVenues(world, opts = {}) {
     sportName: f.sportName,
     field: {
       w: f.w, d: f.d, minW: f.minW, minD: f.minD,
-      regulation: f.regulation, surfaceOk: f.surfaceOk,
+      regulation: f.regulation, sizeQuality: f.sizeQuality, surfaceOk: f.surfaceOk,
       area: f.area, y: f.y,
     },
     centre: { x: f.cx, z: f.cz },
     reach: Math.max(46, Math.hypot(f.w, f.d) * 1.9),
-    capacity: { seated: 0, vip: 0, standing: 0, total: 0 },
-    seatVoxels: 0, vipVoxels: 0, standVoxels: 0,
+    capacity: { seated: 0, vip: 0, standing: 0, boxes: 0, total: 0 },
+    seatVoxels: 0, vipVoxels: 0, standVoxels: 0, boxVoxels: 0,
     facilities: emptyFacilities(),
     footprintVoxels: f.area,
     appearance: 0, screens: 0,
@@ -202,6 +212,7 @@ export function detectVenues(world, opts = {}) {
   assign('seating', (v, c) => { v.seatVoxels += c.area; v.footprintVoxels += c.area; });
   assign('seating_vip', (v, c) => { v.vipVoxels += c.area; v.footprintVoxels += c.area; });
   assign('seating_standing', (v, c) => { v.standVoxels += c.area; v.footprintVoxels += c.area; });
+  assign('luxury_box', (v, c) => { v.boxVoxels += c.area; v.footprintVoxels += c.area; });
 
   // Facilities -> counted voxels, and gate counts for entrances/exits
   for (const key of FACILITY_ZONES) {
@@ -224,7 +235,10 @@ export function detectVenues(world, opts = {}) {
     v.capacity.seated = Math.round(v.seatVoxels * SEATS_PER_VOXEL);
     v.capacity.vip = Math.round(v.vipVoxels * VIP_SEATS_PER_VOXEL);
     v.capacity.standing = Math.round(v.standVoxels * 9);
-    v.capacity.total = v.capacity.seated + v.capacity.vip + v.capacity.standing;
+    // A luxury box is one voxel of premium seating that sells for many times
+    // an ordinary seat, so it counts small but earns large.
+    v.capacity.boxes = Math.round(v.boxVoxels);
+    v.capacity.total = v.capacity.seated + v.capacity.vip + v.capacity.standing + v.capacity.boxes;
 
     v.lighting = lightsNear(stats.floodlights, v.centre.x, v.centre.z, v.reach);
     v.screens = countNear(world, stats, v, 'screen');
@@ -268,6 +282,7 @@ function applyVolumetricSeating(zoneInfo, venues, size) {
     ['seating', 'seatVoxels'],
     ['seating_vip', 'vipVoxels'],
     ['seating_standing', 'standVoxels'],
+    ['luxury_box', 'boxVoxels'],
   ];
   for (const [zk, prop] of keys) {
     const info = zoneInfo.get(zoneId(zk));
@@ -387,7 +402,7 @@ function classify(v) {
     return v.facilities.training > 20 ? 'Training Centre' : 'Community Sports Ground';
   }
   if (v.indoor && v.capacity.total >= 3000) {
-    if (['basketball', 'ice', 'combat'].includes(v.sport)) return base;
+    if (['basketball', 'ice', 'combat', 'esports'].includes(v.sport)) return base;
     return `Indoor ${base}`;
   }
   const prefix = SCALE_PREFIX.find((p) => v.capacity.total < p.max).name;

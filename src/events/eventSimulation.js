@@ -116,21 +116,29 @@ export function simulateEvent(ev, venue, state, contract) {
 
   const tickets = Math.round(attendance * ev.base * priceMult * q * perDay);
   const vipAttend = Math.min(venue.capacity.vip, Math.round(venue.capacity.vip * clamp(fill + 0.15, 0, 1)));
+  const boxes = venue.capacity.boxes || 0;
   const vip = Math.round(vipAttend * ev.base * 5.4 * priceMult * perDay
+    + boxes * ev.base * 34 * priceMult * perDay
     + m.hospitality * venue.capacity.total * 0.9 * perDay);
 
   const spendBase = ev.audience === 'premium' ? 16 : ev.audience === 'family' ? 12 : 9;
-  const food = Math.round(attendance * spendBase * Math.min(1.25, 0.3 + m.concession * 0.95) * perDay);
-  const merch = Math.round(attendance * (spendBase * 0.55) * Math.min(1.2, 0.15 + m.retail * 1.1) * perDay);
+  const sponsorBonus = state.sponsorBonuses || { food: 0, merch: 0, sponsor: 0, broadcast: 0, athlete: 0 };
+  const food = Math.round(attendance * spendBase * Math.min(1.25, 0.3 + m.concession * 0.95)
+    * perDay * (1 + sponsorBonus.food));
+  const merch = Math.round(attendance * (spendBase * 0.55) * Math.min(1.2, 0.15 + m.retail * 1.1)
+    * perDay * (1 + sponsorBonus.merch));
   const carsUsed = Math.min(venue.parkingCars, Math.round(attendance / 2.6 * (1 - state.transitShare)));
   const parking = Math.round(carsUsed * 14 * perDay);
 
-  const sponsorship = Math.round(
+  const sponsorship = Math.round((
     state.sponsorPerEvent * (1 - eff.sponsorPenalty) * (0.6 + ev.popularity * 0.7)
-    + venue.screens * 2400 + state.complex.adverts * 90);
+    + venue.screens * 2400 + state.complex.adverts * 90
+  ) * (1 + sponsorBonus.sponsor));
 
   const broadcastBase = (TIER_BROADCAST[ev.tier] || 0) * (0.4 + m.broadcast * 0.9);
-  const broadcast = Math.round(broadcastBase * (1 + eff.broadcastBonus));
+  const researchBroadcast = state.research.completed.includes('broadcast') ? 0.12 : 0;
+  const broadcast = Math.round(broadcastBase
+    * (1 + eff.broadcastBonus + sponsorBonus.broadcast + researchBroadcast));
 
   const venueFee = Math.round(ev.fee * (1 + (eff.feeUplift || 0)));
 
@@ -185,7 +193,7 @@ export function simulateEvent(ev, venue, state, contract) {
     venue: +(prestigeGain * 0.5 + (delivery - 0.55) * 6).toFixed(2),
     fans: +((satisfaction - 55) * 0.16).toFixed(2),
     athletes: +((((m.locker + m.medical + (venue.field?.regulation ?? 0)) / 3 - 0.55) * 9)
-      + (contract.negotiation?.athleteBonus || 0)).toFixed(2),
+      + (contract.negotiation?.athleteBonus || 0) + (sponsorBonus.athlete || 0)).toFixed(2),
     organiser: +((delivery - 0.5) * 11).toFixed(2),
     community: +((ev.community || 0) * 0.4 + (m.parking - 0.6) * 5 + (contract.negotiation?.communityBonus || 0) * 0.5).toFixed(2),
   };

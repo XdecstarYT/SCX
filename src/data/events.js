@@ -141,6 +141,49 @@ export const EVENT_TEMPLATES = [
     community: -4,
   },
 
+  {
+    id: 'baseball_series', name: 'Regional Baseball Series', sport: 'baseball', tier: 'regional',
+    organiser: 'Continental Diamond League', popularity: 0.5, base: 31, fee: 190_000,
+    bid: [35_000, 300_000], days: 3, risk: 0.16, prestige: 6, audience: 'family',
+    req: [req.field('baseball'), req.cap(6000), req.rating(46), req.m('concession', 0.6, 'Food and beverage')],
+    blurb: 'Three days of baseball and a crowd that eats its way through the afternoon.',
+  },
+  {
+    id: 'baseball_final', name: 'National Baseball Final', sport: 'baseball', tier: 'national',
+    organiser: 'Continental Diamond League', popularity: 0.74, base: 62, fee: 1_050_000,
+    bid: [300_000, 1_800_000], days: 2, risk: 0.2, prestige: 13, audience: 'family',
+    req: [req.field('baseball'), req.cap(20000), req.rating(62), req.rep(45),
+          req.m('broadcast', 0.5, 'Broadcast centre'), req.m('hospitality', 0.4, 'VIP hospitality'),
+          req.parking(4000)],
+    blurb: 'The championship series decider, with a national broadcast and a very long afternoon.',
+  },
+  {
+    id: 'esports_major', name: 'Esports Major', sport: 'esports', tier: 'national',
+    organiser: 'Vertex Esports Circuit', popularity: 0.82, base: 68, fee: 900_000,
+    bid: [250_000, 1_600_000], days: 3, risk: 0.18, prestige: 12, audience: 'premium',
+    req: [req.field('esports'), req.cap(9000), req.rating(60), req.rep(42),
+          req.m('broadcast', 0.7, 'Broadcast centre'), req.m('media', 0.6, 'Media centre')],
+    blurb: 'A sold-out arena, a global stream, and bandwidth demands that dwarf a football final.',
+  },
+  {
+    id: 'esports_worlds', name: 'Esports World Finals', sport: 'esports', tier: 'international',
+    organiser: 'Vertex Esports Circuit', popularity: 0.95, base: 96, fee: 3_800_000,
+    bid: [1_200_000, 6_000_000], days: 5, risk: 0.26, prestige: 22, audience: 'premium',
+    req: [req.field('esports'), req.cap(18000), req.rating(72), req.rep(60),
+          req.m('broadcast', 0.9, 'Broadcast centre'), req.m('media', 0.8, 'Media centre'),
+          req.m('hospitality', 0.6, 'VIP hospitality')],
+    blurb: 'Five days, forty million concurrent viewers, and a production crew that never sleeps.',
+  },
+  {
+    id: 'concert_arena', name: 'Arena Residency', sport: 'concert', tier: 'national',
+    organiser: 'Halcyon Live', popularity: 0.88, base: 74, fee: 1_600_000,
+    bid: [400_000, 2_400_000], days: 5, risk: 0.28, prestige: 9, audience: 'premium',
+    req: [req.cap(16000), req.rating(60), req.m('exit', 0.8, 'Emergency egress'),
+          req.m('concession', 0.7, 'Food and beverage'), req.m('hospitality', 0.4, 'VIP hospitality')],
+    blurb: 'Five nights in a row. Enormous money, and your pitch will not thank you.',
+    community: -10, wear: 2.6,
+  },
+
   // ---------------------------------------------------------- international
   {
     id: 'intl_friendly', name: 'International Friendly', sport: 'football', tier: 'international',

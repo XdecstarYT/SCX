@@ -38,7 +38,12 @@ export function rateVenue(v, complex) {
 
   // --- individual measures -------------------------------------------------
   const m = {
-    field: v.field ? v.field.regulation * (v.field.surfaceOk ? 1 : 0.55) * (0.55 + uf('water') * 0.45) : 0,
+    // Regulation is a gate; playing out toward the ideal dimensions is a bonus
+    // on top of it.
+    field: v.field
+      ? v.field.regulation * (0.85 + 0.15 * (v.field.sizeQuality ?? 1))
+        * (v.field.surfaceOk ? 1 : 0.55) * (0.55 + uf('water') * 0.45)
+      : 0,
     seating: clamp01(Math.log10(Math.max(cap, 10)) / 5),
     restroom: pct(f.restroom, R.restroomVoxels(cap)) * Math.min(uf('water'), uf('sewer')),
     concession: pct(f.concession, R.concessionVoxels(cap)),
@@ -52,7 +57,7 @@ export function rateVenue(v, complex) {
     media: pct(f.media, R.mediaVoxels(cap)) * uf('data'),
     broadcast: pct(f.broadcast, R.broadcastVoxels(cap)) * uf('data'),
     hospitality: pct(
-      f.hospitality + v.capacity.vip * 0.3 + (complex.vipRoad || 0) * 0.4,
+      f.hospitality + v.capacity.vip * 0.3 + v.capacity.boxes * 2.2 + (complex.vipRoad || 0) * 0.4,
       R.hospitalityVoxels(cap)),
     parking: pct(v.parkingCars, R.parkingCars(cap, complex.transitShare)),
     lighting: pct(v.lighting, R.floodlights(cap)) * uf('power'),
@@ -127,7 +132,17 @@ export function rateVenue(v, complex) {
   } else if (!v.field.surfaceOk) {
     issues.push({ key: 'field', severity: 'warn', text: `The ${v.sportName} zone is not on an approved surface material.` });
   } else {
-    strengths.push({ key: 'field', text: `Regulation ${v.sportName} surface (${v.field.w * 2}m x ${v.field.d * 2}m).` });
+    const ideal = (v.field.sizeQuality ?? 1) >= 0.999;
+    strengths.push({
+      key: 'field',
+      text: `Regulation ${v.sportName} surface (${v.field.w * 2}m x ${v.field.d * 2}m)${ideal ? ', at full championship dimensions' : ''}.`,
+    });
+    if (!ideal) {
+      issues.push({
+        key: 'field_size', severity: 'info',
+        text: `The ${v.sportName.toLowerCase()} meets regulation but is under championship dimensions. Enlarging it would raise the venue's functionality score.`,
+      });
+    }
   }
 
   note(0.6, 'Insufficient restrooms for this capacity. Zone more Restroom space.', 'Restroom provision exceeds expectations.', 'restroom');

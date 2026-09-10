@@ -19,10 +19,14 @@ export const ZONES = [
   { key: 'pool_swimming',   name: 'Swimming Pool',    group: 'sport', color: 0x2fb0d8, sport: 'swimming',   regulation: { w: 25, d: 12, ideal: { w: 25, d: 13 } }, surfaces: ['pool'] },
   { key: 'rink_ice',        name: 'Ice Rink',         group: 'sport', color: 0x9fdcef, sport: 'ice',        regulation: { w: 28, d: 14, ideal: { w: 30, d: 15 } }, surfaces: ['ice'] },
   { key: 'ring_combat',     name: 'Combat Arena Floor',group:'sport', color: 0xb5443f, sport: 'combat',     regulation: { w: 8, d: 8, ideal: { w: 12, d: 12 } },  surfaces: ['rubber', 'hardwood', 'floor_conc'] },
+  { key: 'field_baseball',  name: 'Baseball Field',   group: 'sport', color: 0xc79a63, sport: 'baseball',   regulation: { w: 45, d: 45, ideal: { w: 55, d: 55 } }, surfaces: ['turf', 'turf_synth', 'infield'] },
+  { key: 'arena_esports',   name: 'Esports Stage',    group: 'sport', color: 0x6f7ae0, sport: 'esports',    regulation: { w: 10, d: 8, ideal: { w: 16, d: 12 } },  surfaces: ['esports', 'stage', 'rubber'] },
+  { key: 'stage_event',     name: 'Concert Stage',    group: 'sport', color: 0x9a6bd0, sport: 'concert',    regulation: { w: 14, d: 8, ideal: { w: 22, d: 12 } },  surfaces: ['stage', 'floor_conc', 'hardwood'] },
 
   // -------------------------------------------------------------- spectator
   { key: 'seating',          name: 'Seating',          group: 'spectator', color: 0x3f7fe0, capacity: 6 },
   { key: 'seating_vip',      name: 'VIP Seating',      group: 'spectator', color: 0x9a63e8, capacity: 2, vip: true },
+  { key: 'luxury_box',       name: 'Luxury Box',       group: 'spectator', color: 0xc0a0ff, capacity: 1, vip: true },
   { key: 'seating_standing', name: 'Standing Terrace', group: 'spectator', color: 0x6f7c8c, capacity: 9 },
   { key: 'concourse',        name: 'Concourse',        group: 'spectator', color: 0xc3cad2 },
   { key: 'stairs',           name: 'Stairs / Vomitory',group: 'spectator', color: 0xa2acb8 },

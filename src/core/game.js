@@ -16,7 +16,7 @@ import {
   constructionSummary, shouldStage, projectDays,
 } from './construction.js';
 import { STAFF_ROLES, makeHire } from '../data/staff.js';
-import { SPONSORS, availableSponsors } from '../data/sponsors.js';
+import { SPONSORS, ALL_SPONSORS, availableSponsors, blockedSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
 import { UTILITIES, UTILITY_KEYS, nextTier } from '../data/utilities.js';
 import { RANDOM_EVENTS } from '../data/randomEvents.js';
@@ -635,12 +635,17 @@ export class Game {
   // -------------------------------------------------------------- sponsors
   sponsorOffers() {
     if (this.state.sponsorLocked) return [];
-    return availableSponsors(this.state, this.state.derived.bestCapacity || 0);
+    return availableSponsors(this.state, this.state.derived.bestCapacity || 0, this.analysis.complex);
+  }
+
+  /** Deals the player has earned on reputation but cannot yet host. */
+  sponsorsBlocked() {
+    return blockedSponsors(this.state, this.state.derived.bestCapacity || 0, this.analysis.complex);
   }
 
   signSponsor(id) {
     const s = this.state;
-    const sp = SPONSORS.find((x) => x.id === id);
+    const sp = ALL_SPONSORS.find((x) => x.id === id);
     if (!sp) return { error: 'Unknown sponsor.' };
     if (s.sponsors.some((x) => x.id === id)) return { error: 'Already signed.' };
     if (s.sponsorLocked) return { error: 'An exclusivity deal blocks new sponsors.' };

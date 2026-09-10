@@ -16,9 +16,65 @@ export const SPONSORS = [
     reqRep: 84, reqCap: 60_000, bonus: 'Global naming partner. Huge money, total brand takeover.', naming: true, sponsorBonus: 0.15, community: -10, prestige: 14 },
 ];
 
-export function availableSponsors(state, bestCapacity) {
-  return SPONSORS.filter((s) =>
+/**
+ * Facility sponsorships sit alongside the venue-wide deals: smaller money, but
+ * they stack, and each one wants a specific thing to exist before it will pay
+ * for its name to be on it.
+ */
+export const FACILITY_SPONSORS = [
+  { id: 'harvest', name: 'Harvest Kitchen', sector: 'Catering', scope: 'Food court naming',
+    annual: 320_000, perEvent: 24_000, years: 3, reqRep: 16, reqCap: 2_000,
+    needsZone: 'concession', needsVoxels: 60, foodBonus: 0.10,
+    bonus: 'Names your food court. +10% food and beverage revenue.', prestige: 1 },
+  { id: 'quarry', name: 'Quarry Outfitters', sector: 'Retail', scope: 'Merchandise store naming',
+    annual: 260_000, perEvent: 20_000, years: 3, reqRep: 18, reqCap: 3_000,
+    needsZone: 'retail', needsVoxels: 30, merchBonus: 0.12,
+    bonus: 'Names the club store. +12% merchandise revenue.', prestige: 1 },
+  { id: 'lumen', name: 'Lumen Displays', sector: 'Technology', scope: 'Screen and signage partner',
+    annual: 780_000, perEvent: 55_000, years: 4, reqRep: 34, reqCap: 12_000,
+    needsBlock: 'screen', needsVoxels: 20, sponsorBonus: 0.08,
+    bonus: 'Sponsors every screen on site. +8% sponsorship revenue.', prestige: 3 },
+  { id: 'atlas_health', name: 'Atlas Health', sector: 'Healthcare', scope: 'Medical centre naming',
+    annual: 340_000, perEvent: 18_000, years: 4, reqRep: 24, reqCap: 6_000,
+    needsZone: 'medical', needsVoxels: 20, athleteBonus: 3,
+    bonus: 'Names the medical centre. Athletes rate the venue more highly.', prestige: 2 },
+  { id: 'cobalt', name: 'Cobalt Lounge', sector: 'Hospitality', scope: 'Hospitality suite naming',
+    annual: 1_400_000, perEvent: 96_000, years: 5, reqRep: 48, reqCap: 20_000,
+    needsZone: 'hospitality', needsVoxels: 60,
+    bonus: 'Names your hospitality level. Substantial guaranteed income.', prestige: 5 },
+  { id: 'northwind', name: 'Northwind Transit', sector: 'Transport', scope: 'Transport partner',
+    annual: 900_000, perEvent: 40_000, years: 5, reqRep: 40, reqCap: 18_000,
+    needsZone: 'transit', needsVoxels: 60, community: 6,
+    bonus: 'Funds the transport interchange. The local authority approves.', prestige: 3 },
+];
+
+export const ALL_SPONSORS = [...SPONSORS, ...FACILITY_SPONSORS];
+
+/** A facility sponsor will only sign if the thing they want to name exists. */
+export function sponsorRequirementMet(sponsor, complex) {
+  if (sponsor.needsZone) {
+    return (complex?.zoneVoxels?.[sponsor.needsZone] || 0) >= (sponsor.needsVoxels || 1);
+  }
+  if (sponsor.needsBlock) {
+    const id = complex?.blockKeyCounts?.[sponsor.needsBlock] || 0;
+    return id >= (sponsor.needsVoxels || 1);
+  }
+  return true;
+}
+
+export function availableSponsors(state, bestCapacity, complex) {
+  return ALL_SPONSORS.filter((s) =>
     state.reputation.venue >= s.reqRep &&
     bestCapacity >= s.reqCap &&
+    sponsorRequirementMet(s, complex) &&
+    !state.sponsors.some((x) => x.id === s.id));
+}
+
+/** Sponsors the player qualifies for on reputation but cannot yet satisfy. */
+export function blockedSponsors(state, bestCapacity, complex) {
+  return ALL_SPONSORS.filter((s) =>
+    state.reputation.venue >= s.reqRep &&
+    bestCapacity >= s.reqCap &&
+    !sponsorRequirementMet(s, complex) &&
     !state.sponsors.some((x) => x.id === s.id));
 }
