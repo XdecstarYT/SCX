@@ -65,7 +65,9 @@ class App {
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isTouch, powerPreference: 'high-performance', alpha: false,
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.isTouch ? 2 : 2));
+    // Phones gain far more from headroom than from the last few percent of
+    // sharpness, and the flat-colour art style hides the difference.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.isTouch ? 1.75 : 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setClearColor(0x0a1424);
     this.viewport.append(this.renderer.domElement);
@@ -776,6 +778,21 @@ window.__sct = app;
 window.__sct.dev = {
   blockId,
   zoneId,
+  /**
+   * Project a voxel's top face to client pixels. Used by the end-to-end tests
+   * to aim real taps at known blocks, and handy for debugging aim problems.
+   */
+  project(vx, vy, vz) {
+    const v = new THREE.Vector3(
+      (vx + 0.5) * BLOCK_SIZE, (vy + 0.98) * BLOCK_SIZE, (vz + 0.5) * BLOCK_SIZE);
+    v.project(app.camera);
+    const r = app.canvas.getBoundingClientRect();
+    return {
+      x: r.left + (v.x * 0.5 + 0.5) * r.width,
+      y: r.top + (-v.y * 0.5 + 0.5) * r.height,
+      onScreen: Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 && v.z < 1,
+    };
+  },
   /** Push a specific catalogue event onto the board. */
   makeEvent(templateId, seed = Date.now() & 0xffff) {
     const tpl = EVENT_TEMPLATES.find((t) => t.id === templateId);

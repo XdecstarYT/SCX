@@ -21,6 +21,7 @@ npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
 npm test           # 25 headless simulation tests
+npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
 The build is a plain static site. It installs as a PWA and works offline once
@@ -123,6 +124,20 @@ Every team, league, organiser, sponsor, athlete and event is fictional. There
 are no third-party trademarks, logos or likenesses anywhere in the project, and
 all art is generated at runtime from the block data — there are no image assets
 to license.
+
+## Deliberate design calls
+
+- **Reputation replaces XP.** Rather than a separate experience bar, venue
+  reputation is the single progression axis: it gates which event tiers appear,
+  which research projects unlock, which sponsors will talk to you, and it moves
+  based on how well you actually deliver events. One number the player can
+  reason about beats two.
+- **Zones can be painted on open ground.** A "locker room" does not have to be
+  an enclosed box. Enclosure would be more realistic but adds friction without
+  adding a decision; provision is measured by area against capacity instead.
+- **No structural collapse.** Roofs that outrun their supports are flagged and
+  can cause an inspector incident on event day, but nothing ever falls down.
+  The goal is creativity, not punishment.
 
 ## What is deliberately not here yet
 
