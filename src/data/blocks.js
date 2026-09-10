@@ -16,7 +16,8 @@
  *   support      structural support strength (columns/beams are high)
  *   spans        how far this block can cantilever from support (roofs)
  *   light        emits floodlight (counts toward lighting rating)
- *   power        kW drawn per voxel
+ *   power        MW drawn per voxel. A full-size stadium screen is ~200
+ *                voxels, so these are deliberately small numbers.
  *   autoZone     zone key auto-painted when placed (player can repaint)
  *   unlock       research/level id required, null = available from the start
  */
@@ -55,8 +56,8 @@ export const BLOCKS = [
   { key: 'turf_synth', name: 'Synthetic Turf',   category: 'surface', color: 0x2f8f57, cost: 175, maintenance: 1.5, solid: true, support: 4, autoZone: 'pitch_football', unlock: 'adv_surfaces' },
   { key: 'clay',       name: 'Clay Court',       category: 'surface', color: 0xc4744a, cost: 120, maintenance: 2.8, solid: true, support: 4, autoZone: 'court_tennis' },
   { key: 'track',      name: 'Running Track',    category: 'surface', color: 0xb4553d, cost: 190, maintenance: 2.2, solid: true, support: 5, autoZone: 'track_athletics' },
-  { key: 'ice',        name: 'Ice Surface',      category: 'surface', color: 0xd3ecf5, cost: 240, maintenance: 6.5, solid: true, support: 4, power: 0.9, autoZone: 'rink_ice', unlock: 'ice_tech' },
-  { key: 'pool',       name: 'Pool Water',       category: 'surface', color: 0x35a5cf, cost: 260, maintenance: 5.4, solid: true, transparent: true, opacity: 0.62, support: 3, power: 0.4, autoZone: 'pool_swimming', unlock: 'aquatics' },
+  { key: 'ice',        name: 'Ice Surface',      category: 'surface', color: 0xd3ecf5, cost: 240, maintenance: 6.5, solid: true, support: 4, power: 0.004, autoZone: 'rink_ice', unlock: 'ice_tech' },
+  { key: 'pool',       name: 'Pool Water',       category: 'surface', color: 0x35a5cf, cost: 260, maintenance: 5.4, solid: true, transparent: true, opacity: 0.62, support: 3, power: 0.002, autoZone: 'pool_swimming', unlock: 'aquatics' },
   { key: 'asphalt',    name: 'Asphalt',          category: 'surface', color: 0x40464c, cost: 38,  maintenance: 0.5, solid: true, support: 7, autoZone: 'parking' },
   { key: 'pavement',   name: 'Pavement',         category: 'surface', color: 0xa5aab0, cost: 42,  maintenance: 0.5, solid: true, support: 7, autoZone: 'concourse' },
   { key: 'road',       name: 'Road',             category: 'surface', color: 0x33383d, cost: 60,  maintenance: 1.0, solid: true, support: 7, autoZone: 'road' },
@@ -75,17 +76,17 @@ export const BLOCKS = [
   { key: 'roof_metal', name: 'Metal Roof',       category: 'roof', color: 0xb6bfc8, cost: 175, maintenance: 1.9, solid: true, support: 3, spans: 8, appearance: 2 },
   { key: 'roof_glass', name: 'Glass Roof',       category: 'roof', color: 0xbfe2ef, cost: 320, maintenance: 3.4, solid: true, transparent: true, opacity: 0.4, support: 2, spans: 6, appearance: 4, unlock: 'adv_materials' },
   { key: 'roof_stadium', name: 'Stadium Canopy', category: 'roof', color: 0xe3e8ec, cost: 420, maintenance: 4.2, solid: true, support: 3, spans: 14, appearance: 5, unlock: 'canopy' },
-  { key: 'roof_retract', name: 'Retractable Panel', category: 'roof', color: 0xcfd8e0, cost: 980, maintenance: 11.0, solid: true, support: 3, spans: 12, appearance: 7, power: 0.6, unlock: 'retractable' },
+  { key: 'roof_retract', name: 'Retractable Panel', category: 'roof', color: 0xcfd8e0, cost: 980, maintenance: 11.0, solid: true, support: 3, spans: 12, appearance: 7, power: 0.004, unlock: 'retractable' },
 
   // ------------------------------------------------------------- decorative
   { key: 'team_a',     name: 'Team Colour A',    category: 'decor', color: 0x1f4fa0, cost: 60,  maintenance: 0.7, solid: true, support: 5, appearance: 2 },
   { key: 'team_b',     name: 'Team Colour B',    category: 'decor', color: 0xc23a3a, cost: 60,  maintenance: 0.7, solid: true, support: 5, appearance: 2 },
   { key: 'team_c',     name: 'Team Colour C',    category: 'decor', color: 0xf0f2f4, cost: 60,  maintenance: 0.7, solid: true, support: 5, appearance: 2 },
   { key: 'advert',     name: 'Advertising Panel',category: 'decor', color: 0xe8ac2a, cost: 240, maintenance: 2.0, solid: true, support: 3, appearance: 3, revenue: 55 },
-  { key: 'screen',     name: 'Digital Screen',   category: 'decor', color: 0x14202e, emissive: 0x2c6fd8, cost: 1400, maintenance: 16, solid: true, support: 3, appearance: 8, power: 2.2, revenue: 260, unlock: 'broadcast' },
+  { key: 'screen',     name: 'Digital Screen',   category: 'decor', color: 0x14202e, emissive: 0x2c6fd8, cost: 1400, maintenance: 16, solid: true, support: 3, appearance: 8, power: 0.015, revenue: 260, unlock: 'broadcast' },
   { key: 'banner',     name: 'Banner',           category: 'decor', color: 0xb0273f, cost: 70,  maintenance: 1.0, solid: true, support: 1, appearance: 3 },
   { key: 'flag',       name: 'Flag',             category: 'decor', color: 0xe4e9ee, cost: 110, maintenance: 1.4, solid: true, support: 1, appearance: 3 },
-  { key: 'floodlight', name: 'Floodlight',       category: 'decor', color: 0xf5f1d8, emissive: 0xfff3c0, cost: 1600, maintenance: 22, solid: true, support: 4, appearance: 4, power: 3.4, light: true },
+  { key: 'floodlight', name: 'Floodlight',       category: 'decor', color: 0xf5f1d8, emissive: 0xfff3c0, cost: 1600, maintenance: 22, solid: true, support: 4, appearance: 4, power: 0.3, light: true },
   { key: 'railing',    name: 'Railing',          category: 'decor', color: 0xc2c8ce, cost: 80,  maintenance: 1.1, solid: true, support: 2, appearance: 2, safety: 1 },
   { key: 'bench',      name: 'Bench',            category: 'decor', color: 0x8a6a44, cost: 95,  maintenance: 1.0, solid: true, support: 2, appearance: 2 },
   { key: 'planter',    name: 'Planter',          category: 'decor', color: 0x4d7a4a, cost: 120, maintenance: 2.4, solid: true, support: 2, appearance: 3 },

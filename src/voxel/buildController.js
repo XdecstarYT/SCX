@@ -3,13 +3,18 @@ import { BLOCK_SIZE, CHUNK_Y, GROUND_Y } from '../core/constants.js';
 import { block, blockId, AIR } from '../data/blocks.js';
 import { zone, zoneId, ZONE_NONE } from '../data/zones.js';
 import { raycastVoxel, raycastPlane } from './raycast.js';
-import { toolCells, priceEdit, applyEdit, copyRegion, rotateClipboard, TOOLS, CLIP_STRIDE } from './buildTools.js';
+import {
+  toolCells, priceEdit, applyEdit, copyRegion, rotateClipboard,
+  TOOLS, CLIP_STRIDE, PLAN_TOOLS, pricePlan, applyPlan, planPositions,
+} from './buildTools.js';
+import { generateGrandstand, generateParkingGarage, generateRetainingWall, generateTerrainEdit } from './structures.js';
 
 export const BUILD_MODES = [
   { key: 'build',     name: 'Build',     hint: 'Place blocks' },
   { key: 'zone',      name: 'Zone',      hint: 'Paint what an area is for' },
   { key: 'demolish',  name: 'Demolish',  hint: 'Remove blocks (30% refund)' },
   { key: 'inspect',   name: 'Inspect',   hint: 'See what the game thinks you built' },
+  { key: 'terrain',   name: 'Terrain',   hint: 'Raise, lower, flatten and slope the ground' },
   { key: 'blueprint', name: 'Blueprint', hint: 'Copy, save and stamp structures' },
 ];
 
@@ -30,6 +35,11 @@ export class BuildController {
     this.material = blockId('concrete');
     this.zoneKey = 'pitch_football';
     this.wallHeight = 3;
+    this.standRise = 1;        // voxels of climb per seating row
+    this.standGap = 14;        // columns between vomitories
+    this.garageLevels = 3;
+    this.terrainAmount = 2;
+    this.lastPlan = null;
     this.anchor = null;
     this.aim = null;
     this.aimFace = null;
@@ -111,11 +121,51 @@ export class BuildController {
     return !!t?.drag;
   }
 
+  /** True when the active tool generates a multi-material structure. */
+  get isPlanTool() { return PLAN_TOOLS.has(this.activeTool); }
+
+  /**
+   * Build the plan for a procedural tool. Pure: safe to call every frame for
+   * the ghost preview.
+   */
+  buildPlan(a, b) {
+    const w = this.game.world;
+    switch (this.activeTool) {
+      case 'grandstand': {
+        // If the player has a seating material selected, use it.
+        const mat = block(this.material);
+        const seatBlock = mat.category === 'seating' ? this.material : blockId('seat');
+        return generateGrandstand(w, a, b, {
+          seatBlock,
+          rise: this.standRise,
+          gapEvery: this.standGap,
+        });
+      }
+      case 'garage':
+        return generateParkingGarage(w, a, b, { levels: this.garageLevels });
+      case 'retaining':
+        return generateRetainingWall(w, a, b, { block: this.material });
+      case 'raise': case 'lower': case 'flatten': case 'ramp':
+        return generateTerrainEdit(w, a, b, this.activeTool, { amount: this.terrainAmount });
+      default:
+        return { cells: [], meta: {} };
+    }
+  }
+
   previewCells() {
     if (!this.aim) return null;
     const tool = this.activeTool;
     const a = this.anchor || this.aim;
-    const b = this.anchor ? this.aim : this.aim;
+    const b = this.aim;
+
+    if (this.isPlanTool) {
+      // A structure only makes sense once both corners are known.
+      if (!this.anchor) { this.lastPlan = null; return []; }
+      const plan = this.buildPlan(a, b);
+      this.lastPlan = plan;
+      return planPositions(plan.cells);
+    }
+    this.lastPlan = null;
     return toolCells(tool, this.game.world, a, b, {
       wallHeight: this.wallHeight,
       clipboard: this.clipboard,
@@ -134,8 +184,14 @@ export class BuildController {
     }
 
     // Price it.
+    if (this.isPlanTool && this.lastPlan) {
+      this.lastPrice = pricePlan(this.game.world, this.lastPlan.cells);
+      this.lastPrice.count = cells.length / 3;
+    }
     const mode = this.mode === 'demolish' ? 'demolish' : this.mode === 'zone' ? 'zone' : (this.tool === 'paste' ? 'paste' : 'build');
-    if (mode === 'zone') {
+    if (this.isPlanTool && this.lastPlan) {
+      // already priced above
+    } else if (mode === 'zone') {
       this.lastPrice = { cost: 0, refund: 0, placed: cells.length / 3, removed: 0, net: 0 };
     } else {
       this.lastPrice = priceEdit(this.game.world, cells, mode, this.material, {
@@ -144,7 +200,8 @@ export class BuildController {
       });
     }
 
-    const colour = this.mode === 'demolish' ? 0xff5f6d
+    const colour = this.mode === 'terrain' ? 0x8a6a44
+      : this.mode === 'demolish' ? 0xff5f6d
       : this.mode === 'zone' ? zone(this.zoneKey).color
       : this.mode === 'inspect' ? 0xf2b73d
       : (this.lastPrice.net > this.game.state.cash && !this.planning) ? 0xff5f6d : 0x39e08a;
@@ -231,6 +288,26 @@ export class BuildController {
     const cells = this.previewCells();
     if (!cells || cells.length === 0) { this.anchor = null; return null; }
     const g = this.game;
+
+    // Procedural structures take the plan path: multi-material, one batch.
+    if (this.isPlanTool && this.lastPlan) {
+      const plan = this.lastPlan;
+      const price = pricePlan(g.world, plan.cells);
+      const net = price.net * (g.state.buildCostMult || 1);
+      if (!this.planning && net > 0 && net > g.state.cash) {
+        this.anchor = null;
+        this.refreshPreview();
+        return { error: `You need ${fmt(net)} for this. You have ${fmt(g.state.cash)}.` };
+      }
+      const batch = applyPlan(g.world, plan.cells, TOOL_LABEL[this.activeTool] || 'Structure');
+      g.history.push(batch);
+      if (this.planning) { this.planning.cost += net; this.planning.count += batch.size; }
+      else if (net > 0) g.spendConstruction(net, true);
+      else if (net < 0) g.refund(-net);
+      g.state.stats.blocksPlaced += price.placed;
+      this.finish(batch, batch.size);
+      return describePlan(this.activeTool, plan.meta, net);
+    }
 
     // Blueprint copy does not modify anything.
     if (this.mode === 'blueprint' && this.tool === 'copy') {
@@ -440,11 +517,14 @@ export class BuildController {
   }
 
   setMode(mode) {
+    const prev = this.mode;
     this.mode = mode;
     this.anchor = null;
     if (mode === 'blueprint' && !this.clipboard) this.tool = 'copy';
-    if (mode === 'build' && !TOOLS.some((t) => t.key === this.tool)) this.tool = 'single';
-    if (mode === 'zone' && ['copy', 'paste', 'replace'].includes(this.tool)) this.tool = 'floor';
+    if (mode === 'build' && !BUILD_TOOL_KEYS.includes(this.tool)) this.tool = 'single';
+    if (mode === 'terrain' && !TERRAIN_TOOL_KEYS.includes(this.tool)) this.tool = 'raise';
+    if (mode !== 'terrain' && TERRAIN_TOOL_KEYS.includes(this.tool)) this.tool = 'single';
+    if (mode === 'zone' && !['single', 'floor', 'box', 'line'].includes(this.tool)) this.tool = 'floor';
     if (mode === 'demolish' && ['copy', 'paste', 'replace', 'fill'].includes(this.tool)) this.tool = 'box';
     this.refreshPreview();
     this.onChange?.();
@@ -476,6 +556,33 @@ export class BuildController {
   }
 }
 
+const BUILD_TOOL_KEYS = ['single', 'line', 'wall', 'floor', 'box', 'hollow', 'fill',
+  'replace', 'grandstand', 'garage', 'retaining'];
+const TERRAIN_TOOL_KEYS = ['raise', 'lower', 'flatten', 'ramp'];
+
+const TOOL_LABEL = {
+  grandstand: 'Build: grandstand', garage: 'Build: parking garage',
+  retaining: 'Build: retaining wall', raise: 'Terrain: raise',
+  lower: 'Terrain: lower', flatten: 'Terrain: flatten', ramp: 'Terrain: ramp',
+};
+
+/** A human-readable result line for a procedural structure. */
+function describePlan(tool, meta, net) {
+  const money = net >= 0 ? fmt(net) : `refund ${fmt(-net)}`;
+  switch (tool) {
+    case 'grandstand':
+      return `Grandstand: ${meta.rows} rows, ${meta.capacity.toLocaleString()} seats (${money})`;
+    case 'garage':
+      return `Parking garage: ${meta.levels} levels, ${meta.spaces.toLocaleString()} spaces (${money})`;
+    case 'retaining':
+      return `Retaining wall built (${money})`;
+    case 'raise': case 'lower': case 'flatten': case 'ramp':
+      return `Terrain reshaped across ${meta.columns.toLocaleString()} columns (${money})`;
+    default:
+      return `Structure built (${money})`;
+  }
+}
+
 function nearestVenue(venues, x, z) {
   let best = null, bd = Infinity;
   for (const v of venues) {
@@ -493,4 +600,4 @@ const fmt = (v) => {
   return `${s}$${a.toLocaleString()}`;
 };
 
-export { TOOLS };
+export { TOOLS, BUILD_TOOL_KEYS, TERRAIN_TOOL_KEYS };

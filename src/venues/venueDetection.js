@@ -63,7 +63,9 @@ export function detectVenues(world, opts = {}) {
     busBays: Math.floor(busVox / 8),
     roadVoxels: roadVox,
     transitVoxels: transitVox,
-    transitShare: Math.min(0.5, transitVox * 0.012 + Math.floor(busVox / 8) * 0.006),
+    // A transit stop that moves half a 60,000 crowd is a station, not a bus
+    // shelter, so it has to be built at a believable size.
+    transitShare: Math.min(0.45, transitVox * 0.004 + Math.floor(busVox / 8) * 0.01),
     powerDemand: stats.power,
     totalBlocks: stats.blocks,
     maintenance: stats.maintenance,
@@ -77,9 +79,12 @@ export function detectVenues(world, opts = {}) {
   complex.powerCapacity = powerCapacity;
   complex.powerDeficit = Math.max(0, complex.powerDemand - powerCapacity);
 
-  // Roads must actually reach the parking to be worth anything.
+  // Roads must actually reach the parking for it to be usable. Without any
+  // road network some drivers still find their way in, so the floor is 0.3
+  // rather than nothing.
   complex.roadServiceRatio = complex.parkingCars > 0
-    ? Math.min(1, roadVox / Math.max(20, complex.parkingCars * 0.6)) : (roadVox > 20 ? 1 : 0);
+    ? Math.max(0.3, Math.min(1, roadVox / Math.max(60, complex.parkingCars * 0.25)))
+    : 1;
 
   // --------------------------------------------------------- find the fields
   const fields = [];

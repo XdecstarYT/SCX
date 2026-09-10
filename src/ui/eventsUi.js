@@ -287,10 +287,87 @@ export class EventsUi {
   }
 
   submit(ev, bid) {
+    // Serious organisers negotiate before they decide.
+    const session = this.game.negotiationFor(ev.uid, bid);
+    if (session) { this.hud.closeSheet(); this.runNegotiation(ev, bid, session); return; }
+    this.finishSubmit(ev, bid);
+  }
+
+  finishSubmit(ev, bid) {
     const res = this.game.submitBid(ev.uid, bid);
     if (res.error) { this.app.toast('warn', 'Bid rejected', res.error); return; }
     this.hud.closeSheet();
     this.showBidOutcome(res);
+  }
+
+  /**
+   * Walk the player through the organiser's demands one round at a time, then
+   * submit the bid with whatever was agreed folded into it.
+   */
+  runNegotiation(ev, bid, session) {
+    const step = () => {
+      if (!session.active) {
+        const outcome = session.result();
+        this.showNegotiationSummary(ev, bid, outcome, () => {
+          this.finishSubmit(ev, { ...bid, negotiation: outcome });
+        });
+        return;
+      }
+      const round = session.current;
+      const { round: n, total } = session.progress;
+      const options = session.currentOptions();
+
+      this.hud.openModal(el('div', {},
+        el('div.hero', { style: { paddingBottom: '6px' } },
+          el('div.k', { text: `NEGOTIATION \u00B7 ROUND ${n} OF ${total}` }),
+          el('h2', { text: ev.name, style: { fontSize: '19px', marginTop: '4px' } })),
+        el('div.card.tight', { style: { marginBottom: '12px' } },
+          el('div.tiny.faint', { text: `${ev.organiser} \u00B7 ${round.speaker}`.toUpperCase() }),
+          el('div.small', { style: { marginTop: '5px', fontStyle: 'italic' }, text: `\u201C${round.demand}\u201D` })),
+        el('div.optlist', {}, ...options.map((o) => el('button.opt', {
+          onclick: () => { session.answer(o.key); step(); },
+        },
+          el('span.box', { text: o.strength >= 0.1 ? '\u2713' : o.strength > 0 ? '\u00B7' : '\u2715' }),
+          el('span', {},
+            el('span.t', { text: o.label }),
+            el('span.d', { text: o.desc }),
+            o.warning ? el('span.d', { style: { color: 'var(--red)' }, text: '\u26A0 ' + o.warning }) : null),
+          el('span.x', {
+            class: 'x ' + (o.strength >= 0 ? 'pos' : 'neg'),
+            text: `${o.strength >= 0 ? '+' : ''}${Math.round(o.strength * 100)}`,
+          })))),
+        el('div.tiny.faint', { style: { marginTop: '10px', textAlign: 'center' },
+          text: 'The number is the shift in organiser goodwill. Costs land on event day.' })),
+        { dismissable: false });
+    };
+    step();
+  }
+
+  showNegotiationSummary(ev, bid, outcome, onContinue) {
+    const line = (label, value, cls) => value
+      ? el('div.resultline', {}, el('span', { text: label }), el('span', { class: 'v ' + (cls || ''), text: value }))
+      : null;
+    this.hud.openModal(el('div', {},
+      el('div.hero', { style: { paddingBottom: '6px' } },
+        el('div.k', { text: 'TERMS AGREED' }),
+        el('h2', { text: ev.name, style: { fontSize: '19px', marginTop: '4px' } })),
+      el('div.card.tight', {}, ...outcome.commitments.map((c) =>
+        el('div', { style: { padding: '6px 0', borderBottom: '1px solid var(--line)' } },
+          el('div.tiny.faint', { text: c.demand }),
+          el('div.small', { text: '\u2192 ' + c.answer })))),
+      el('div', { style: { marginTop: '12px' } },
+        line('Organiser goodwill', `${outcome.strength >= 0 ? '+' : ''}${Math.round(outcome.strength * 100)}%`,
+          outcome.strength >= 0 ? 'pos' : 'neg'),
+        line('Extra running cost', outcome.cost ? `${Math.round(outcome.cost * 100)}% of revenue` : '', 'neg'),
+        line('Venue fee', outcome.fee ? `${outcome.fee > 0 ? '+' : ''}${Math.round(outcome.fee * 100)}%` : '',
+          outcome.fee >= 0 ? 'pos' : 'neg'),
+        line('Revenue share', outcome.revenueShare ? `${outcome.revenueShare > 0 ? '+' : ''}${Math.round(outcome.revenueShare * 100)}%` : '',
+          outcome.revenueShare >= 0 ? 'pos' : 'neg'),
+        line('Extra days', outcome.extraDays ? `+${outcome.extraDays}` : '', 'neg'),
+        line('Multi-year deal', outcome.multiYear ? `${outcome.multiYear} years` : '', 'pos'),
+        line('Delivery risk', outcome.risk ? `+${Math.round(outcome.risk * 100)}%` : '', 'neg')),
+      el('button.btn.full.primary', { style: { marginTop: '14px' }, onclick: onContinue },
+        'Submit the bid')), { dismissable: false });
   }
 
   showBidOutcome(res) {

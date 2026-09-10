@@ -47,6 +47,7 @@ export function evaluateBid(ev, venue, state, bid) {
     if (t) termStrength += t.strength;
   }
 
+  const negotiated = bid.negotiation || null;
   const history = state.organiserHistory?.[ev.organiser] || 0;
   const loyalty = Math.min(0.14, history * 0.045) * traits.loyalty;
 
@@ -59,6 +60,7 @@ export function evaluateBid(ev, venue, state, bid) {
     venueRep * 0.10 +
     packageStrength +
     termStrength +
+    (negotiated?.strength || 0) +
     loyalty;
 
   const strength = clamp(raw, 0.02, 0.97);
@@ -83,6 +85,7 @@ export function evaluateBid(ev, venue, state, bid) {
       { label: 'Packages offered', value: packageStrength },
       { label: 'Contract terms', value: termStrength },
       { label: 'Past dealings', value: loyalty },
+      { label: 'Negotiation', value: negotiated?.strength || 0 },
     ].filter((c) => Math.abs(c.value) > 0.001),
     packageNotes,
   };
@@ -117,7 +120,8 @@ export function rivalBids(ev, state) {
 export function resolveBid(ev, evaluation, bid) {
   // Keyed on the event's own generation seed (stable across saves and
   // reloads) plus the exact offer, so the outcome can never be rerolled.
-  const sig = `${ev.seed}:${ev.templateId}:${bid.amount}:${bid.packages.slice().sort().join()}:${bid.terms.slice().sort().join()}:${bid.pricing}`;
+  const negotiated = (bid.negotiation?.commitments || []).map((c) => c.answer).join('|');
+  const sig = `${ev.seed}:${ev.templateId}:${bid.amount}:${bid.packages.slice().sort().join()}:${bid.terms.slice().sort().join()}:${bid.pricing}:${negotiated}`;
   const rng = makeRng(hashString(sig));
   const roll = rng();
   const won = roll < evaluation.winChance;
@@ -136,7 +140,7 @@ export function resolveBid(ev, evaluation, bid) {
 }
 
 export function bidCostMultiplier(bid) {
-  let m = 0;
+  let m = bid.negotiation?.cost || 0;
   for (const key of bid.packages) {
     const p = BID_PACKAGES.find((x) => x.key === key);
     if (p) m += p.cost;
@@ -145,7 +149,16 @@ export function bidCostMultiplier(bid) {
 }
 
 export function contractEffects(bid) {
-  const eff = { revenueShare: 0, multiYear: 0, sponsorPenalty: 0, broadcastBonus: 0 };
+  const n = bid.negotiation;
+  const eff = {
+    revenueShare: n?.revenueShare || 0,
+    multiYear: n?.multiYear || 0,
+    sponsorPenalty: 0,
+    broadcastBonus: 0,
+    feeUplift: n?.fee || 0,
+    extraDays: n?.extraDays || 0,
+    extraRisk: n?.risk || 0,
+  };
   for (const key of bid.terms) {
     const t = CONTRACT_TERMS.find((x) => x.key === key);
     if (!t) continue;

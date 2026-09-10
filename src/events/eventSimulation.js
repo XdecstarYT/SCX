@@ -71,6 +71,14 @@ export function simulateEvent(ev, venue, state, contract) {
   if (venue.structuralWarnings > 0 && rng.chance(0.3)) {
     incidents.push({ key: 'structure', text: 'A safety inspector flagged unsupported roof sections. A section was closed.', satisfaction: -8, reputation: -4, cost: 120_000 });
   }
+  const promiseRisk = eff.extraRisk || 0;
+  if (promiseRisk > 0 && rng.chance(Math.min(0.7, promiseRisk * 2))) {
+    incidents.push({
+      key: 'promise',
+      text: 'The organiser found the venue fell short of what was agreed in negotiation.',
+      satisfaction: -8, reputation: -4,
+    });
+  }
   if (soldOut && venue.ratings.overall > 70 && rng.chance(0.3)) {
     incidents.push({ key: 'atmosphere', text: 'A sell-out crowd and a great atmosphere made the highlight reels.', satisfaction: 8, reputation: 3 });
   }
@@ -78,6 +86,7 @@ export function simulateEvent(ev, venue, state, contract) {
   // ------------------------------------------------------------------ revenue
   const q = 0.65 + (venue.ratings.overall / 100) * 0.5;
   const priceMult = pricing.mult;
+  const days = ev.days + (eff.extraDays || 0);
   const perDay = Math.max(1, ev.days * 0.55 + 0.45);
 
   const tickets = Math.round(attendance * ev.base * priceMult * q * perDay);
@@ -98,7 +107,7 @@ export function simulateEvent(ev, venue, state, contract) {
   const broadcastBase = (TIER_BROADCAST[ev.tier] || 0) * (0.4 + m.broadcast * 0.9);
   const broadcast = Math.round(broadcastBase * (1 + eff.broadcastBonus));
 
-  const venueFee = Math.round(ev.fee);
+  const venueFee = Math.round(ev.fee * (1 + (eff.feeUplift || 0)));
 
   const grossRevenue = tickets + vip + food + merch + parking + sponsorship + broadcast + venueFee;
   const revenueShareLoss = Math.round(grossRevenue * Math.max(0, -eff.revenueShare));
@@ -113,11 +122,11 @@ export function simulateEvent(ev, venue, state, contract) {
   // -------------------------------------------------------------------- costs
   const staffRate = TIER_STAFF_RATE[ev.tier] || 1;
   const eventStaff = Math.round((attendance / 240 + 26) * staffRate);
-  const staffCost = Math.round(eventStaff * 320 * ev.days * (1 - state.staffBonus.operations * 0.12));
-  const securityCost = Math.round(attendance * 3.1 * staffRate * ev.days);
-  const cleaning = Math.round(attendance * 1.4 * ev.days);
-  const utilities = Math.round((state.complex.powerDemand * 42 + 5_000) * ev.days);
-  const setup = Math.round((18_000 + venue.capacity.total * 2.4) * ev.days * ev.wear);
+  const staffCost = Math.round(eventStaff * 320 * days * (1 - state.staffBonus.operations * 0.12));
+  const securityCost = Math.round(attendance * 3.1 * staffRate * days);
+  const cleaning = Math.round(attendance * 1.4 * days);
+  const utilities = Math.round((state.complex.powerDemand * 42 + 5_000) * days);
+  const setup = Math.round((18_000 + venue.capacity.total * 2.4) * days * ev.wear);
   const insurance = Math.round(totalRevenue * (0.018 + ev.risk * 0.03));
   const marketingCost = Math.round(20_000 + attendance * 1.9);
   const transport = Math.round(carsUsed * 2.4 + attendance * 0.6);
@@ -150,9 +159,10 @@ export function simulateEvent(ev, venue, state, contract) {
   const repDelta = {
     venue: +(prestigeGain * 0.5 + (delivery - 0.55) * 6).toFixed(2),
     fans: +((satisfaction - 55) * 0.16).toFixed(2),
-    athletes: +(((m.locker + m.medical + (venue.field?.regulation ?? 0)) / 3 - 0.55) * 9).toFixed(2),
+    athletes: +((((m.locker + m.medical + (venue.field?.regulation ?? 0)) / 3 - 0.55) * 9)
+      + (contract.negotiation?.athleteBonus || 0)).toFixed(2),
     organiser: +((delivery - 0.5) * 11).toFixed(2),
-    community: +((ev.community || 0) * 0.4 + (m.parking - 0.6) * 5).toFixed(2),
+    community: +((ev.community || 0) * 0.4 + (m.parking - 0.6) * 5 + (contract.negotiation?.communityBonus || 0) * 0.5).toFixed(2),
   };
   for (const i of incidents) {
     if (i.reputation) repDelta.venue += i.reputation;
@@ -167,6 +177,7 @@ export function simulateEvent(ev, venue, state, contract) {
     venueName: venue.name || venue.type,
     venueKey: venue.key,
     day: state.day,
+    days,
     attendance,
     capacity: venue.capacity.total,
     fill: attendance / Math.max(1, venue.capacity.total),

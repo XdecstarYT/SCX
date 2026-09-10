@@ -6,11 +6,26 @@ import { BUILD_MODES } from '../voxel/buildController.js';
 import { fmtMoney } from '../core/economy.js';
 
 const TOOL_SETS = {
-  build: ['single', 'line', 'wall', 'floor', 'box', 'hollow', 'fill', 'replace'],
+  build: ['single', 'line', 'wall', 'floor', 'box', 'hollow', 'fill', 'replace',
+          'grandstand', 'garage', 'retaining'],
   zone: ['single', 'floor', 'box', 'line'],
   demolish: ['single', 'box', 'floor', 'wall', 'line'],
   inspect: ['single'],
+  terrain: ['raise', 'lower', 'flatten', 'ramp'],
   blueprint: ['copy', 'paste'],
+};
+
+/**
+ * The contextual parameter button. Each tool that takes a number gets one
+ * cycling control rather than a settings panel nobody would open.
+ */
+const TOOL_PARAMS = {
+  wall:       { prop: 'wallHeight',    label: (v) => `H ${v}`,    title: 'Wall height in blocks', cycle: (v) => (v >= 12 ? 1 : v + (v >= 6 ? 3 : 1)) },
+  hollow:     { prop: 'wallHeight',    label: (v) => `H ${v}`,    title: 'Room height in blocks', cycle: (v) => (v >= 12 ? 1 : v + (v >= 6 ? 3 : 1)) },
+  grandstand: { prop: 'standRise',     label: (v) => (v === 1 ? 'Steep' : v === 2 ? 'V.Steep' : 'Shallow'), title: 'Rake: how fast the rows climb', cycle: (v) => (v === 1 ? 2 : v === 2 ? 0.5 : 1) },
+  garage:     { prop: 'garageLevels',  label: (v) => `${v} lvl`,  title: 'Number of parking decks', cycle: (v) => (v >= 6 ? 1 : v + 1) },
+  raise:      { prop: 'terrainAmount', label: (v) => `${v * 2}m`, title: 'How far to move the ground', cycle: (v) => (v >= 8 ? 1 : v + 1) },
+  lower:      { prop: 'terrainAmount', label: (v) => `${v * 2}m`, title: 'How far to move the ground', cycle: (v) => (v >= 8 ? 1 : v + 1) },
 };
 
 /**
@@ -135,6 +150,14 @@ export class BuildDock {
       return;
     }
 
+    if (this.bc.mode === 'terrain') {
+      this.hotbar.append(el('div.small.faint', {
+        style: { padding: '8px 4px' },
+        text: 'Reshape the ground. Raise and Lower move by the set amount; Flatten levels everything to the first point you tap; Ramp slopes between the two points. The surface material is preserved.',
+      }));
+      return;
+    }
+
     if (this.bc.mode === 'inspect') {
       this.hotbar.append(el('div.small.faint', {
         style: { padding: '8px 4px' },
@@ -221,6 +244,27 @@ export class BuildDock {
 
     if (s.awaitingSecondPoint) {
       this.info.append(el('span.bluetx', { text: '◎ Tap the second point' }));
+      return;
+    }
+
+    const structure = this.bc.lastPlan;
+    if (structure && structure.meta) {
+      const m = structure.meta;
+      const bits = [];
+      if (m.capacity) bits.push(`${m.capacity.toLocaleString()} seats`);
+      if (m.rows) bits.push(`${m.rows} rows`);
+      if (m.vomitories) bits.push(`${m.vomitories} vomitories`);
+      if (m.spaces) bits.push(`${m.spaces.toLocaleString()} spaces`);
+      if (m.levels) bits.push(`${m.levels} levels`);
+      if (m.raised) bits.push(`+${m.raised} blocks of fill`);
+      if (m.lowered) bits.push(`-${m.lowered} blocks cut`);
+      if (m.columns && !m.raised && !m.lowered) bits.push(`${m.columns.toLocaleString()} columns`);
+      this.info.append(el('span', { text: bits.join(' \u00B7 ') || 'Ready' }));
+      this.info.append(el('span', {
+        class: 'cost' + (s.affordable ? '' : ' bad'),
+        text: s.cost >= 0 ? fmtMoney(s.cost) : `refund ${fmtMoney(-s.cost)}`,
+      }));
+      if (!s.affordable) this.info.append(el('span.bad', { text: '\u2014 not enough cash' }));
       return;
     }
 

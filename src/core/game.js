@@ -6,6 +6,7 @@ import { SECONDS_PER_DAY, DAYS_PER_MONTH, LAND_TIERS, GROUND_Y } from './constan
 import { detectVenues } from '../venues/venueDetection.js';
 import { generateEvent, boardCapacity, resetEventIds } from '../events/eventGenerator.js';
 import { evaluateBid, resolveBid, PRICING_TIERS } from '../events/bidding.js';
+import { Negotiation, ROUNDS_BY_TIER } from '../events/negotiation.js';
 import { simulateEvent } from '../events/eventSimulation.js';
 import { bestVenueFor, checkRequirements } from '../events/eventRequirements.js';
 import { applyDailyFinance, monthlyFinance, LEDGER_CATEGORIES } from './economy.js';
@@ -308,6 +309,24 @@ export class Game {
       profit: sim.profit - bid.amount,
       satisfaction: sim.satisfaction,
     };
+  }
+
+  /**
+   * Does this offer trigger a negotiation? Organisers only bother haggling
+   * when the bid is already credible, which makes reaching one feel like
+   * progress rather than an obstacle.
+   */
+  negotiationFor(eventUid, bid) {
+    const ev = this.findEvent(eventUid);
+    if (!ev || ev.status !== 'open') return null;
+    if ((ROUNDS_BY_TIER[ev.tier] || 0) === 0) return null;
+    const venue = this.analysis.venues.find((v) => v.key === bid.venueKey);
+    if (!venue) return null;
+    const evaluation = evaluateBid(ev, venue, this.state, { ...bid, negotiation: null });
+    if (!evaluation.check.ok) return null;
+    if (evaluation.winChance < 0.18) return null;
+    const session = new Negotiation(ev, venue, this.state);
+    return session.rounds.length ? session : null;
   }
 
   submitBid(eventUid, bid) {

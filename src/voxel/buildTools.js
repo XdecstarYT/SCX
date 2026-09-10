@@ -2,6 +2,15 @@ import { AIR, block, blockId } from '../data/blocks.js';
 import { zone, ZONE_NONE } from '../data/zones.js';
 import { EditBatch } from './history.js';
 import { CHUNK_Y } from '../core/constants.js';
+import { PLAN_STRIDE } from './structures.js';
+
+/**
+ * Tools that emit a multi-material PLAN rather than a single-material cell
+ * list. They are priced and applied through pricePlan/applyPlan.
+ */
+export const PLAN_TOOLS = new Set([
+  'grandstand', 'garage', 'retaining', 'raise', 'lower', 'flatten', 'ramp',
+]);
 
 export const TOOLS = [
   { key: 'single',   name: 'Block',     icon: '■', drag: false, hint: 'Tap to place one block' },
@@ -14,11 +23,24 @@ export const TOOLS = [
   { key: 'replace',  name: 'Replace',   icon: '⇄', drag: true,  hint: 'Tap two corners; swaps the material you first tapped' },
   { key: 'copy',     name: 'Copy',      icon: '⧉', drag: true,  hint: 'Tap two corners to copy a structure' },
   { key: 'paste',    name: 'Paste',     icon: '⎘', drag: false, hint: 'Tap to stamp the copied structure' },
+
+  // Procedural structures: the player sets the footprint, the engine lays the
+  // repetitive rows, supports, columns and vomitories.
+  { key: 'grandstand', name: 'Stand',   icon: '\u25E4', drag: true, hint: 'Tap two corners; builds a raked seating tier facing the pitch' },
+  { key: 'garage',     name: 'Garage',  icon: '\u26DB', drag: true, hint: 'Tap two corners; builds a multi-level car park' },
+  { key: 'retaining',  name: 'Retain',  icon: '\u2261', drag: true, hint: 'Tap two points; builds a retaining wall along the line' },
+
+  // Terrain shaping.
+  { key: 'raise',   name: 'Raise',   icon: '\u25B2', drag: true, hint: 'Tap two corners; raises the ground' },
+  { key: 'lower',   name: 'Lower',   icon: '\u25BC', drag: true, hint: 'Tap two corners; lowers the ground' },
+  { key: 'flatten', name: 'Flatten', icon: '\u25AC', drag: true, hint: 'Tap the level you want, then the far corner' },
+  { key: 'ramp',    name: 'Ramp',    icon: '\u25E2', drag: true, hint: 'Tap two points; slopes the ground between them' },
 ];
 
 export const MAX_TOOL_VOXELS = 60000;
 /** Clipboard record layout: dx, dy, dz, blockId, zoneId. */
 export const CLIP_STRIDE = 5;
+export { PLAN_STRIDE };
 
 const clampY = (y) => Math.max(0, Math.min(CHUNK_Y - 1, y));
 
@@ -222,6 +244,47 @@ export function applyEdit(world, cells, mode, materialId, opts = {}) {
     if (filterId !== null && prevB !== filterId) continue;
     if (prevB === id) continue;
 
+    if (prevB !== AIR) batch.refund += block(prevB).cost * 0.3;
+    if (id !== AIR) batch.cost += block(id).cost;
+    world.setBlock(x, y, z, id, zid);
+    batch.record(x, y, z, prevB, prevZ, id, world.getZone(x, y, z));
+  }
+  return batch;
+}
+
+// ---------------------------------------------------------------- plans
+
+/** Positions only, for the ghost preview. */
+export function planPositions(plan) {
+  const out = [];
+  for (let i = 0; i < plan.length; i += PLAN_STRIDE) out.push(plan[i], plan[i + 1], plan[i + 2]);
+  return out;
+}
+
+/** Price a multi-material plan without touching the world. */
+export function pricePlan(world, plan) {
+  let cost = 0, refund = 0, placed = 0, removed = 0;
+  for (let i = 0; i < plan.length; i += PLAN_STRIDE) {
+    const x = plan[i], y = plan[i + 1], z = plan[i + 2], id = plan[i + 3];
+    if (!world.inBounds(x, y, z)) continue;
+    const prev = world.getBlock(x, y, z);
+    if (prev === id) continue;
+    if (prev !== AIR) refund += block(prev).cost * 0.3;
+    if (id !== AIR) { cost += block(id).cost; placed++; } else if (prev !== AIR) removed++;
+  }
+  return { cost, refund, placed, removed, net: cost - refund };
+}
+
+/** Apply a multi-material plan and return a reversible batch. */
+export function applyPlan(world, plan, label = 'Structure') {
+  const batch = new EditBatch(label);
+  for (let i = 0; i < plan.length; i += PLAN_STRIDE) {
+    const x = plan[i], y = plan[i + 1], z = plan[i + 2];
+    const id = plan[i + 3], zid = plan[i + 4];
+    if (!world.inBounds(x, y, z)) continue;
+    const prevB = world.getBlock(x, y, z);
+    const prevZ = world.getZone(x, y, z);
+    if (prevB === id && prevZ === zid) continue;
     if (prevB !== AIR) batch.refund += block(prevB).cost * 0.3;
     if (id !== AIR) batch.cost += block(id).cost;
     world.setBlock(x, y, z, id, zid);

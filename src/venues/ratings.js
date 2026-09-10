@@ -13,7 +13,7 @@ const pct = (have, need) => (need <= 0 ? 1 : clamp01(have / need));
 export const REQUIREMENTS = {
   restroomVoxels:   (cap) => cap / 120,
   concessionVoxels: (cap) => cap / 200,
-  concourseVoxels:  (cap) => cap / 13,
+  concourseVoxels:  (cap) => cap / 18,   // ~0.22 sq m of circulation per seat
   entranceVoxels:   (cap) => cap / 900,   // ~400 people/hr per 2m lane, 2.2hr fill
   exitVoxels:       (cap) => cap / 600,   // 8-minute emergency egress
   stairVoxels:      (cap) => cap / 700,
