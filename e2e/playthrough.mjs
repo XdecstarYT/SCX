@@ -147,46 +147,93 @@ await page.getByRole('tab', { name: 'Events' }).click();
 await page.waitForTimeout(700);
 await step(7, 'events-board');
 
-// Guarantee a biddable event exists rather than waiting on the RNG.
-const targetUid = await page.evaluate(() => {
-  const app = window.__sct;
-  const ev = app.dev.makeEvent('regional_final', 12345);
-  ev.bidDeadline = app.game.state.day + 8;
-  ev.eventDay = app.game.state.day + 4;
-  app.game.state.events.board.push(ev);
-  app.eventsUi.openBoard();
-  return ev.uid;
-});
-await page.waitForTimeout(400);
-// Open the bid screen for this exact event, not whichever card sorts first.
-await page.evaluate((uid) => window.__sct.eventsUi.openBid(uid), targetUid);
-await page.waitForTimeout(700);
-await step(8, 'bid-screen');
+/**
+ * Run one full bid: open the event, push the offer to the top of the range,
+ * work through any negotiation, and read the outcome. Losing a bid is a real
+ * outcome, so this retries with a fresh event until one lands.
+ */
+async function bidForEvent(templateId, seed, shotBase) {
+  const uid = await page.evaluate(([id, sd]) => {
+    const app = window.__sct;
+    const ev = app.dev.makeEvent(id, sd);
+    ev.bidDeadline = app.game.state.day + 8;
+    ev.eventDay = app.game.state.day + 4;
+    app.game.state.events.board.push(ev);
+    app.eventsUi.openBoard();
+    return ev.uid;
+  }, [templateId, seed]);
+  await page.waitForTimeout(300);
+  await page.evaluate((u) => window.__sct.eventsUi.openBid(u), uid);
+  await page.waitForTimeout(600);
 
-const bidInfo = await page.evaluate(() => {
-  const t = document.body.innerText;
-  return { hasStrength: /Bid strength/i.test(t), hasReqs: /Requirements checked/i.test(t) };
-});
-if (!bidInfo.hasStrength || !bidInfo.hasReqs) throw new Error('bid screen is missing its core sections');
+  if (shotBase) {
+    const info = await page.evaluate(() => ({
+      hasStrength: /Bid strength/i.test(document.body.innerText),
+      hasReqs: /Requirements checked/i.test(document.body.innerText),
+    }));
+    if (!info.hasStrength || !info.hasReqs) throw new Error('bid screen is missing its core sections');
+    await step(shotBase, 'bid-screen');
+  }
 
-await page.locator('.sheet-body').evaluate((n) => n.scrollTo(0, n.scrollHeight));
-await page.waitForTimeout(300);
-await step(9, 'bid-strength');
+  // Push the offer to the top of the organiser's range using the real slider.
+  await page.locator('.sheet-body input[type="range"]').first().evaluate((el) => {
+    el.value = el.max;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForTimeout(350);
+  await page.locator('.sheet-body').evaluate((n) => n.scrollTo(0, n.scrollHeight));
+  await page.waitForTimeout(250);
+  if (shotBase) await step(shotBase + 1, 'bid-strength');
 
-await page.getByRole('button', { name: /Submit bid/i }).click();
-await page.waitForTimeout(900);
-await step(10, 'bid-result');
+  await page.getByRole('button', { name: /Submit bid/i }).click();
+  await page.waitForTimeout(700);
 
-const outcome = await page.evaluate(() => ({
-  won: window.__sct.game.state.stats.bidsWon,
-  lost: window.__sct.game.state.stats.bidsLost,
-  scheduled: window.__sct.game.state.events.scheduled.length,
-}));
-console.log('  bid outcome:', JSON.stringify(outcome));
-if (outcome.won + outcome.lost !== 1) throw new Error('the bid did not resolve');
+  // A regional-or-better organiser negotiates before deciding.
+  let rounds = 0;
+  while (await page.locator('.modal-panel', { hasText: /NEGOTIATION/ }).count()) {
+    rounds++;
+    if (shotBase && rounds === 1) await step(shotBase + 2, 'negotiation');
+    const best = await page.locator('.modal-panel .opt').evaluateAll((nodes) => {
+      let bestIdx = 0, bestVal = -Infinity;
+      nodes.forEach((n, i) => {
+        const v = parseInt(n.querySelector('.x')?.textContent || '0', 10);
+        if (v > bestVal) { bestVal = v; bestIdx = i; }
+      });
+      return bestIdx;
+    });
+    await page.locator('.modal-panel .opt').nth(best).click();
+    await page.waitForTimeout(400);
+    if (rounds > 5) throw new Error('negotiation did not terminate');
+  }
+  if (rounds) {
+    if (!await page.locator('.modal-panel', { hasText: /TERMS AGREED/ }).count()) {
+      throw new Error('no terms summary after the negotiation');
+    }
+    if (shotBase) await step(shotBase + 3, 'negotiation-terms');
+    await page.getByRole('button', { name: /Submit the bid/i }).click();
+    await page.waitForTimeout(800);
+  }
 
-await page.getByRole('button', { name: /Prepare the venue|Back to the board/ }).click();
-await page.waitForTimeout(300);
+  const state = await page.evaluate(() => ({
+    won: window.__sct.game.state.stats.bidsWon,
+    lost: window.__sct.game.state.stats.bidsLost,
+    scheduled: window.__sct.game.state.events.scheduled.length,
+  }));
+  await page.getByRole('button', { name: /Prepare the venue|Back to the board/ }).click();
+  await page.waitForTimeout(300);
+  return { ...state, rounds };
+}
+
+let outcome = { won: 0, lost: 0, scheduled: 0 };
+for (let attempt = 0; attempt < 5 && outcome.scheduled === 0; attempt++) {
+  outcome = await bidForEvent('regional_final', 12345 + attempt * 7919, attempt === 0 ? 8 : null);
+  console.log(`  attempt ${attempt + 1}: ${outcome.rounds} negotiation round(s), ` +
+    `${outcome.scheduled ? 'WON' : 'lost'} (${outcome.won}W / ${outcome.lost}L)`);
+  if (outcome.scheduled === 0) await page.evaluate(() => window.__sct.eventsUi.openBoard());
+}
+if (outcome.won + outcome.lost === 0) throw new Error('no bid resolved at all');
+await step(12, 'bid-result');
+
 
 // -------------------------------------------------------------- host a day
 if (outcome.scheduled > 0) {
@@ -196,14 +243,14 @@ if (outcome.scheduled > 0) {
     app.fastForwardTo(ev.eventDay);
   });
   await page.waitForTimeout(2200);
-  await step(11, 'event-day-crowd');
+  await step(13, 'event-day-crowd');
 
   const showing = await page.evaluate(() => !!window.__sct.show?.active);
   console.log('  crowd show active:', showing);
 
   await page.evaluate(() => window.__sct.show?.skip());
   await page.waitForTimeout(1400);
-  await step(12, 'event-report');
+  await step(14, 'event-report');
 
   const report = await page.evaluate(() => {
     const r = window.__sct.game.state.events.history[0];
@@ -218,7 +265,7 @@ if (outcome.scheduled > 0) {
 }
 
 // ------------------------------------------------------- remaining screens
-for (const [tab, name, n] of [['Finance', 'finance', 13], ['More', 'management', 14]]) {
+for (const [tab, name, n] of [['Finance', 'finance', 15], ['More', 'management', 16]]) {
   await page.getByRole('tab', { name: tab }).click();
   await page.waitForTimeout(700);
   await step(n, name);
@@ -229,12 +276,12 @@ await page.waitForTimeout(400);
 // Zone mode overlay
 await page.evaluate(() => { window.__sct.controller.setMode('zone'); window.__sct.worldRenderer.setZoneMode(true); window.__sct.dock.render(); });
 await page.waitForTimeout(900);
-await step(15, 'zone-mode');
+await step(17, 'zone-mode');
 
 // First person
 await page.evaluate(() => { window.__sct.controller.setMode('build'); window.__sct.worldRenderer.setZoneMode(false); window.__sct.setCamera('first'); });
 await page.waitForTimeout(1400);
-await step(16, 'first-person');
+await step(18, 'first-person');
 
 // ------------------------------------------------------- save / reload trip
 const beforeReload = await page.evaluate(async () => {
@@ -254,7 +301,7 @@ const afterReload = await page.evaluate(() => ({
 }));
 console.log('  save/reload:', JSON.stringify(beforeReload), '->', JSON.stringify(afterReload));
 if (afterReload.cap !== beforeReload.cap) throw new Error('the stadium did not survive a reload');
-await step(17, 'after-reload');
+await step(19, 'after-reload');
 
 const perf = await page.evaluate(() => ({
   calls: window.__sct.renderer.info.render.calls,

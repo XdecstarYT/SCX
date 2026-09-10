@@ -41,7 +41,9 @@ export function monthlyFinance(state, analysis) {
   const maintFactor = (1 - state.staffBonus.operations * 0.14) * state.wearFactor;
   expense.maintenance = Math.round((complex ? complex.maintenance : 0) * MAINTENANCE_RATE * maintFactor * financeCut);
   expense.staff = Math.round(state.staff.reduce((s, h) => s + h.salary, 0) * state.salaryMult);
-  expense.utilities = Math.round(((complex ? complex.powerDemand : 0) * 900 + 12_000) * financeCut);
+  expense.utilities = Math.round((
+    (complex ? complex.powerDemand : 0) * 900 + 12_000 + (state.utilityUpkeep || 0)
+  ) * financeCut);
   expense.insurance = Math.round((5_000 + (state.derived.bestCapacity || 0) * 1.1) * financeCut);
   expense.marketing = Math.round(8_000 + state.staff.filter((h) => h.roleId === 'marketing').length * 4_000);
   expense.loan = Math.round(state.loans.reduce((s, l) => s + l.balance * l.rate / 12, 0));

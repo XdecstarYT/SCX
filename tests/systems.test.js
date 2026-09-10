@@ -203,7 +203,7 @@ test('a power deficit is a real problem, not just a label', async () => {
   assert.ok(g.state.powerDeficit > 0, `deficit is ${g.state.powerDeficit}`);
 
   const v = g.primaryVenue;
-  assert.ok(v.ratings.issues.some((i) => i.key === 'power'), 'the venue report flags it');
+  assert.ok(v.ratings.issues.some((i) => i.key === 'utility_power'), 'the venue report flags it');
 
   // Over many rolls, an overloaded site should produce power incidents.
   const ev = instantiate(EVENT_TEMPLATES.find((t) => t.id === 'regional_final'), g.state, makeRng(6));
@@ -214,4 +214,68 @@ test('a power deficit is a real problem, not just a label', async () => {
     if (r.incidents.some((x) => x.key === 'power')) hits++;
   }
   assert.ok(hits > 5, `only ${hits}/20 events hit a power failure`);
+});
+
+// --------------------------------------------------------------- utilities
+
+test('utility demand is read out of what the player built', async () => {
+  const { buildNationalComplex } = await import('./helpers/buildStadium.js');
+  const g = new Game();
+  g.adopt(createState({ seed: 3 }), buildNationalComplex());
+  g.analyze(true);
+
+  const u = g.state.utilityStatus;
+  // A 60,000-seat complex with full facilities should need real infrastructure
+  // on every network, not just power.
+  for (const key of ['power', 'water', 'sewer', 'data', 'climate']) {
+    assert.ok(u[key].demand > 0, `${key} has no demand`);
+    assert.ok(u[key].deficit > 0, `${key} should outgrow the starting connection`);
+  }
+  assert.ok(u.water.demand < 12, `water demand ${u.water.demand} is out of scale`);
+  assert.ok(u.data.demand < 200, `data demand ${u.data.demand} is out of scale`);
+});
+
+test('buying capacity clears the shortfall and its penalties', async () => {
+  const { buildNationalComplex } = await import('./helpers/buildStadium.js');
+  const g = new Game();
+  g.adopt(createState({ seed: 3 }), buildNationalComplex());
+  g.state.cash = 60_000_000;
+  g.analyze(true);
+
+  const before = g.primaryVenue.ratings.measures.restroom;
+  assert.ok(g.state.utilityFactors.sewer < 1, 'wastewater starts overloaded');
+  assert.ok(g.primaryVenue.ratings.issues.some((i) => i.key === 'utility_sewer'));
+
+  // Restrooms depend on both water and wastewater, so both have to keep pace.
+  for (const key of ['sewer', 'water']) {
+    for (let i = 0; i < 4 && g.state.utilityStatus[key].deficit > 0; i++) {
+      const r = g.upgradeUtility(key);
+      assert.ok(r.ok, r.error);
+    }
+    assert.equal(g.state.utilityStatus[key].deficit, 0, `${key} still short`);
+  }
+  assert.equal(g.state.utilityFactors.sewer, 1);
+  assert.ok(g.primaryVenue.ratings.measures.restroom > before, 'restrooms recover');
+  assert.ok(!g.primaryVenue.ratings.issues.some((i) => i.key === 'utility_sewer'));
+  assert.ok(g.state.utilityUpkeep > 0, 'and the capacity carries an upkeep cost');
+});
+
+test('an overloaded network causes incidents on event day', async () => {
+  const { buildNationalComplex } = await import('./helpers/buildStadium.js');
+  const { simulateEvent } = await import('../src/events/eventSimulation.js');
+  const g = new Game();
+  g.adopt(createState({ seed: 3 }), buildNationalComplex());
+  g.state.reputation.venue = 70;
+  g.analyze(true);
+  g.registerVenue(g.primaryVenue.key, 'Riverside');
+  g.analyze(true);
+
+  const ev = instantiate(EVENT_TEMPLATES.find((t) => t.id === 'national_final'), g.state, makeRng(8));
+  const bid = { amount: 0, packages: [], terms: [], pricing: 'standard' };
+  let hits = 0;
+  for (let i = 0; i < 20; i++) {
+    const r = simulateEvent({ ...ev, seed: 500 + i }, g.primaryVenue, g.state, bid);
+    if (r.incidents.some((x) => ['sewer', 'water', 'data', 'climate'].includes(x.key))) hits++;
+  }
+  assert.ok(hits > 8, `only ${hits}/20 events hit a utility failure while overloaded`);
 });

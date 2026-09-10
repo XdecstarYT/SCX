@@ -31,12 +31,16 @@ export function rateVenue(v, complex) {
   const cap = Math.max(1, v.capacity.total);
   const f = v.facilities;
   const R = REQUIREMENTS;
+  // A network running past its capacity does not switch off - it degrades the
+  // thing it serves. No water means a tired pitch and dry restrooms.
+  const u = complex.utilityFactors || {};
+  const uf = (k) => (u[k] === undefined ? 1 : u[k]);
 
   // --- individual measures -------------------------------------------------
   const m = {
-    field: v.field ? v.field.regulation * (v.field.surfaceOk ? 1 : 0.55) : 0,
+    field: v.field ? v.field.regulation * (v.field.surfaceOk ? 1 : 0.55) * (0.55 + uf('water') * 0.45) : 0,
     seating: clamp01(Math.log10(Math.max(cap, 10)) / 5),
-    restroom: pct(f.restroom, R.restroomVoxels(cap)),
+    restroom: pct(f.restroom, R.restroomVoxels(cap)) * Math.min(uf('water'), uf('sewer')),
     concession: pct(f.concession, R.concessionVoxels(cap)),
     concourse: pct(f.concourse + f.stairs * 0.5, R.concourseVoxels(cap)),
     entrance: pct(f.entrance, R.entranceVoxels(cap)),
@@ -45,12 +49,14 @@ export function rateVenue(v, complex) {
     security: pct(f.security, R.securityVoxels(cap)),
     medical: pct(f.medical, R.medicalVoxels(cap)),
     locker: pct(f.locker, R.lockerVoxels(cap)),
-    media: pct(f.media, R.mediaVoxels(cap)),
-    broadcast: pct(f.broadcast, R.broadcastVoxels(cap)),
-    hospitality: pct(f.hospitality + v.capacity.vip * 0.3, R.hospitalityVoxels(cap)),
+    media: pct(f.media, R.mediaVoxels(cap)) * uf('data'),
+    broadcast: pct(f.broadcast, R.broadcastVoxels(cap)) * uf('data'),
+    hospitality: pct(
+      f.hospitality + v.capacity.vip * 0.3 + (complex.vipRoad || 0) * 0.4,
+      R.hospitalityVoxels(cap)),
     parking: pct(v.parkingCars, R.parkingCars(cap, complex.transitShare)),
-    lighting: pct(v.lighting, R.floodlights(cap)),
-    roof: clamp01(v.seatRoofCoverage * 1.1),
+    lighting: pct(v.lighting, R.floodlights(cap)) * uf('power'),
+    roof: clamp01(v.seatRoofCoverage * 1.1) * uf('climate'),
     retail: pct(f.retail, cap / 900),
     fanzone: pct(f.fanzone, cap / 500),
     training: pct(f.training, 20),
@@ -73,9 +79,12 @@ export function rateVenue(v, complex) {
     m.entrance * 0.24 + m.parking * 0.3 + m.concourse * 0.2 +
     clamp01(complex.transitShare / 0.4) * 0.16 + gateSpread * 0.1);
 
+  // A dedicated emergency route is worth real safety credit; without one the
+  // blue lights share the same approach as 40,000 fans.
+  const emergencyAccess = clamp01((complex.emergencyRoad || 0) / Math.max(30, cap / 900));
   const safety = 100 * (
-    m.exit * 0.3 + exitSpread * 0.16 + m.security * 0.22 +
-    m.medical * 0.2 + m.lighting * 0.12);
+    m.exit * 0.26 + exitSpread * 0.14 + m.security * 0.2 +
+    m.medical * 0.18 + m.lighting * 0.1 + emergencyAccess * 0.12);
 
   const comfort = 100 * (
     m.restroom * 0.3 + m.concession * 0.26 + m.roof * 0.18 +
@@ -127,7 +136,13 @@ export function rateVenue(v, complex) {
   note(0.75, 'Insufficient emergency exits for the seated capacity.', 'Emergency egress is well provided for.', 'exit', 'error');
   note(0.6, 'Concourse space is tight; crowd congestion is likely.', 'Excellent pedestrian flow through the concourses.', 'concourse');
   note(0.6, 'Not enough stairs/vomitories connecting concourse to seating.', null, 'stairs');
-  note(0.6, 'Parking bottleneck detected. Add parking, bus bays or a transit stop.', 'Transport provision is excellent.', 'parking');
+  note(0.6, 'Parking bottleneck detected. Add parking, bus bays, a transit stop or a multi-level garage.', 'Transport provision is excellent.', 'parking');
+  if ((complex.emergencyRoad || 0) === 0 && cap > 5000) {
+    issues.push({ key: 'emergency', severity: 'warn', text: 'No dedicated emergency route. Blue-light access shares the public approach.' });
+  }
+  if ((complex.roadServiceRatio ?? 1) < 0.6) {
+    issues.push({ key: 'roads', severity: 'warn', text: 'The road network cannot feed your parking. Add main roads on the approach.' });
+  }
   note(0.6, 'Floodlighting is inadequate for evening or broadcast events.', 'Floodlighting is broadcast grade.', 'lighting');
   note(0.6, 'Athlete facilities are below professional standard. Expand locker rooms.', 'Athlete facilities are excellent.', 'locker');
   note(0.5, 'No dedicated medical facilities of adequate size.', null, 'medical', 'error');
@@ -136,11 +151,20 @@ export function rateVenue(v, complex) {
   if (m.broadcast < 0.4) issues.push({ key: 'broadcast', severity: 'info', text: 'A Broadcast Centre is required for national and international events.' });
   if (m.hospitality < 0.4) issues.push({ key: 'hospitality', severity: 'info', text: 'VIP seating and hospitality suites would raise prestige and revenue.' });
   if (v.seatRoofCoverage > 0.75) strengths.push({ key: 'roof', text: 'Nearly all seating is under cover.' });
-  if (complex.powerDeficit > 0) {
-    issues.push({
-      key: 'power', severity: 'error',
-      text: `Power demand exceeds site capacity by ${complex.powerDeficit.toFixed(1)}MW. Research a Grid Upgrade or remove powered equipment.`,
-    });
+  // One clear line per overloaded network, naming the consequence.
+  for (const [key, label, effect] of [
+    ['power', 'Power', 'Floodlights and screens will fail during events.'],
+    ['water', 'Water supply', 'The playing surface and restrooms are suffering.'],
+    ['sewer', 'Wastewater', 'Restrooms cannot cope with a full house.'],
+    ['data', 'Data capacity', 'Media and broadcast facilities cannot operate at full standard.'],
+    ['climate', 'Heating and cooling', 'Enclosed areas are uncomfortable.'],
+  ]) {
+    if (uf(key) < 0.995) {
+      issues.push({
+        key: 'utility_' + key, severity: uf(key) < 0.7 ? 'error' : 'warn',
+        text: `${label} is over capacity (${Math.round((1 - uf(key)) * 100)}% short). ${effect} Upgrade it under Management \u2192 Infrastructure.`,
+      });
+    }
   }
   if (v.structuralWarnings > 0) {
     issues.push({ key: 'structure', severity: 'error', text: `${v.structuralWarnings} roof sections lack adequate support. Add columns or beams beneath them.` });

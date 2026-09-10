@@ -50,7 +50,14 @@ export const ZONES = [
   { key: 'parking',     name: 'Parking',          group: 'transport', color: 0x707880 },
   { key: 'parking_vip', name: 'VIP Parking',      group: 'transport', color: 0xa08fd0, vip: true },
   { key: 'parking_bus', name: 'Bus / Coach Bay',  group: 'transport', color: 0x5f9fb0 },
-  { key: 'road',        name: 'Road',             group: 'transport', color: 0x4a5158 },
+  { key: 'road',           name: 'Local Road',       group: 'transport', color: 0x4a5158, traffic: 1.0 },
+  { key: 'road_main',      name: 'Main Road',        group: 'transport', color: 0x39424a, traffic: 2.4 },
+  { key: 'road_service',   name: 'Service Road',     group: 'transport', color: 0x4f5a48, traffic: 0.6 },
+  { key: 'road_vip',       name: 'VIP Access Road',  group: 'transport', color: 0x7a63a0, traffic: 0.8, vip: true },
+  { key: 'road_emergency', name: 'Emergency Route',  group: 'transport', color: 0xa04a4a, traffic: 0.5 },
+  { key: 'road_bus',       name: 'Bus Lane',         group: 'transport', color: 0x3f7a85, traffic: 1.2 },
+  { key: 'parking_staff',  name: 'Staff Parking',    group: 'transport', color: 0x6a7280 },
+  { key: 'parking_taxi',   name: 'Taxi / Rideshare', group: 'transport', color: 0xb09a4a },
   { key: 'transit',     name: 'Transit Stop',     group: 'transport', color: 0x3fbfa9 },
 ];
 

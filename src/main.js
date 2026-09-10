@@ -560,6 +560,13 @@ class App {
         }, 'Start over'))));
   }
 
+  /** Jump straight to the infrastructure tab from a Home warning. */
+  openInfrastructure() {
+    this.hud.closeSheet();
+    this.setTab('more');
+    this.screens.openMore('Infra');
+  }
+
   // ================================================================== SAVE
   async saveNow(silent = false) {
     try {

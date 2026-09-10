@@ -3,7 +3,7 @@ import { History } from '../voxel/history.js';
 import { EventBus } from './eventBus.js';
 import { createState, attachDerived, applyReputation, landInfo, SAVE_VERSION } from './gameState.js';
 import { SECONDS_PER_DAY, DAYS_PER_MONTH, LAND_TIERS, GROUND_Y } from './constants.js';
-import { detectVenues } from '../venues/venueDetection.js';
+import { detectVenues, rescoreVenues } from '../venues/venueDetection.js';
 import { generateEvent, boardCapacity, resetEventIds } from '../events/eventGenerator.js';
 import { evaluateBid, resolveBid, PRICING_TIERS } from '../events/bidding.js';
 import { Negotiation, ROUNDS_BY_TIER } from '../events/negotiation.js';
@@ -13,6 +13,7 @@ import { applyDailyFinance, monthlyFinance, LEDGER_CATEGORIES } from './economy.
 import { STAFF_ROLES, makeHire } from '../data/staff.js';
 import { SPONSORS, availableSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
+import { UTILITIES, UTILITY_KEYS, nextTier } from '../data/utilities.js';
 import { RANDOM_EVENTS } from '../data/randomEvents.js';
 import { ACHIEVEMENTS } from '../data/achievements.js';
 import { makeRng, hashString } from './rng.js';
@@ -185,6 +186,7 @@ export class Game {
     const a = detectVenues(this.world, {
       complexName: this.state.complexName,
       powerCapacity: this.state.powerCapacity ?? 15,
+      utilities: this.state.utilityFactors || null,
     });
 
     // Carry player-chosen names and registration across re-analysis.
@@ -210,6 +212,10 @@ export class Game {
       (r) => a.venues.some((v) => v.key === r.key));
 
     this.analysis = a;
+    // Derive the utility networks from the scan, then rescore the venues now
+    // that the service factors are known.
+    attachDerived(this.state, a);
+    rescoreVenues(a, this.state.utilityFactors);
     attachDerived(this.state, a);
 
     const st = this.state.stats;
@@ -589,6 +595,33 @@ export class Game {
   isUnlocked(unlockId) {
     if (!unlockId) return true;
     return this.state.research.completed.includes(unlockId);
+  }
+
+  // ------------------------------------------------------------- utilities
+  utilityOptions() {
+    return UTILITIES.map((u) => ({
+      ...u,
+      tier: this.state.utilities[u.key] ?? -1,
+      status: this.state.utilityStatus?.[u.key] || { demand: 0, capacity: u.base, deficit: 0, factor: 1 },
+      next: nextTier(u.key, this.state.utilities[u.key] ?? -1),
+    }));
+  }
+
+  upgradeUtility(key) {
+    const s = this.state;
+    const tier = s.utilities[key] ?? -1;
+    const next = nextTier(key, tier);
+    if (!next) return { error: 'This network is already at maximum capacity.' };
+    if (s.cash < next.cost) return { error: `You need ${Math.round(next.cost / 1000)}K for this upgrade.` };
+    s.cash -= next.cost;
+    this.record('construction', -next.cost);
+    s.utilities[key] = next.index;
+    this.analysisDirty = true;
+    this.analyze(true);
+    const u = UTILITIES.find((x) => x.key === key);
+    this.notify('infrastructure', `${u.name} upgraded`, `Capacity is now ${next.capacity}${u.unit}.`);
+    this.bus.emit('state');
+    return { ok: true };
   }
 
   // ------------------------------------------------------------------ land

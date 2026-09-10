@@ -46,6 +46,7 @@ const emptyFacilities = () => {
  */
 export function detectVenues(world, opts = {}) {
   const powerCapacity = opts.powerCapacity ?? Infinity;
+  const utilities = opts.utilities || null;
   const { zoneInfo, stats, size } = scanWorld(world);
   const get = (key) => zoneInfo.get(zoneId(key)) || null;
   const countOf = (key) => (get(key)?.count ?? 0);
@@ -55,17 +56,37 @@ export function detectVenues(world, opts = {}) {
   const vipParkVox = countOf('parking_vip');
   const busVox = countOf('parking_bus');
   const transitVox = countOf('transit');
-  const roadVox = countOf('road');
+  const staffParkVox = countOf('parking_staff');
+  const taxiVox = countOf('parking_taxi');
+
+  // Roads are weighted by type: a main road moves far more traffic than a
+  // service road of the same length.
+  const ROAD_ZONES = ['road', 'road_main', 'road_service', 'road_vip', 'road_emergency', 'road_bus'];
+  let roadVox = 0, trafficCapacity = 0;
+  const roads = {};
+  for (const key of ROAD_ZONES) {
+    const n = countOf(key);
+    roads[key] = n;
+    roadVox += n;
+    trafficCapacity += n * (zone(key).traffic || 1);
+  }
 
   const complex = {
     parkingCars: Math.floor(parkingVox / VOXELS_PER_CAR),
     vipParkingCars: Math.floor(vipParkVox / VOXELS_PER_CAR),
     busBays: Math.floor(busVox / 8),
     roadVoxels: roadVox,
+    roads,
+    trafficCapacity,
+    emergencyRoad: roads.road_emergency,
+    vipRoad: roads.road_vip,
+    staffParkingCars: Math.floor(staffParkVox / VOXELS_PER_CAR),
+    taxiBays: Math.floor(taxiVox / 4),
     transitVoxels: transitVox,
     // A transit stop that moves half a 60,000 crowd is a station, not a bus
     // shelter, so it has to be built at a believable size.
-    transitShare: Math.min(0.45, transitVox * 0.004 + Math.floor(busVox / 8) * 0.01),
+    transitShare: Math.min(0.45, transitVox * 0.004 + Math.floor(busVox / 8) * 0.01
+      + roads.road_bus * 0.0015 + Math.floor(taxiVox / 4) * 0.004),
     powerDemand: stats.power,
     totalBlocks: stats.blocks,
     maintenance: stats.maintenance,
@@ -74,16 +95,21 @@ export function detectVenues(world, opts = {}) {
     adverts: stats.adverts,
     floodlights: stats.floodlights.length,
     maxHeight: stats.maxY,
+    roofedVoxels: stats.roofedVoxels,
     landSize: size,
+    // Complete zone and block tallies, for the utility networks.
+    zoneVoxels: zoneTotals(zoneInfo),
+    blockVoxels: Object.fromEntries(world.blockCounts),
   };
   complex.powerCapacity = powerCapacity;
   complex.powerDeficit = Math.max(0, complex.powerDemand - powerCapacity);
+  complex.utilityFactors = utilities || {};
 
   // Roads must actually reach the parking for it to be usable. Without any
   // road network some drivers still find their way in, so the floor is 0.3
   // rather than nothing.
   complex.roadServiceRatio = complex.parkingCars > 0
-    ? Math.max(0.3, Math.min(1, roadVox / Math.max(60, complex.parkingCars * 0.25)))
+    ? Math.max(0.3, Math.min(1, trafficCapacity / Math.max(60, complex.parkingCars * 0.25)))
     : 1;
 
   // --------------------------------------------------------- find the fields
@@ -375,6 +401,16 @@ function suggestName(v, complexName) {
   return `${stem} ${base}`;
 }
 
+/** Zone key -> total voxels across the whole site. */
+function zoneTotals(zoneInfo) {
+  const out = {};
+  for (const [zid, info] of zoneInfo) {
+    const z = ZONE_BY_ID[zid];
+    if (z) out[z.key] = info.count;
+  }
+  return out;
+}
+
 /** Zones the player painted that no venue claimed - useful feedback. */
 function orphanSummary(zoneInfo) {
   const out = [];
@@ -384,6 +420,24 @@ function orphanSummary(zoneInfo) {
     out.push({ key: z.key, name: z.name, group: z.group, count: info.count });
   }
   return out;
+}
+
+/**
+ * Utility demand can only be measured once the world has been scanned, but the
+ * resulting service factors feed back into the ratings. Rather than scan
+ * twice, the game scores venues once, derives the networks, then rescores with
+ * this - which is pure arithmetic over data already gathered.
+ */
+export function rescoreVenues(analysis, utilityFactors) {
+  if (!analysis?.venues) return analysis;
+  analysis.complex.utilityFactors = utilityFactors || {};
+  for (const v of analysis.venues) {
+    v.ratings = rateVenue(v, analysis.complex);
+    v.tier = eventTier(v);
+    v.type = classify(v);
+  }
+  analysis.venues.sort((a, b) => b.capacity.total - a.capacity.total || b.ratings.overall - a.ratings.overall);
+  return analysis;
 }
 
 export { VENUE_TYPES };

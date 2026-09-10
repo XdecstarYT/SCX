@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildNationalComplex, buildReferenceStadium } from './helpers/buildStadium.js';
+import { buildNationalComplex, buildReferenceStadium, fundInfrastructure } from './helpers/buildStadium.js';
 import { Game } from '../src/core/game.js';
 import { createState } from '../src/core/gameState.js';
 import { Negotiation } from '../src/events/negotiation.js';
@@ -19,6 +19,7 @@ function bigGame() {
   g.state.reputation.organiser = 65;
   g.state.cash = 40_000_000;
   g.analyze(true);
+  fundInfrastructure(g);
   g.registerVenue(g.primaryVenue.key, 'Riverside Stadium');
   g.analyze(true);
   return g;

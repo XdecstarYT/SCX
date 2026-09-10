@@ -1,6 +1,7 @@
 import { START_CASH, LAND_TIERS, SECONDS_PER_DAY, DAYS_PER_MONTH } from './constants.js';
 import { createRivals } from '../data/rivals.js';
 import { STAFF_CHANNELS, STAFF_ROLES } from '../data/staff.js';
+import { UTILITY_KEYS, capacityOf, upkeepOf, computeDemand, serviceFactor } from '../data/utilities.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
 
@@ -25,6 +26,9 @@ export function createState(opts = {}) {
     reputation: { venue: 8, fans: 50, athletes: 50, organiser: 30, community: 60 },
 
     research: { completed: [], active: null },
+    // Purchased capacity tier per utility network; -1 = the site connection
+    // you started with.
+    utilities: Object.fromEntries(UTILITY_KEYS.map((k) => [k, -1])),
     staff: [],
     sponsors: [],
     loans: [],
@@ -80,13 +84,38 @@ export function attachDerived(state, analysis) {
     * (1 + (state.research.completed.includes('transport') ? 0.6 : 0));
   state.bestCapacityHint = state.derived.bestCapacity || 8000;
 
-  // Site power. Capacity grows with research and with the scale of the build;
-  // a deficit is a real problem, not just a warning label.
-  state.powerCapacity = 15
-    + (state.research.completed.includes('power_grid') ? 40 : 0)
-    + Math.floor((state.derived.bestCapacity || 0) / 20000) * 5;
-  state.powerDemand = analysis?.complex.powerDemand || 0;
-  state.powerDeficit = Math.max(0, state.powerDemand - state.powerCapacity);
+  // ---------------------------------------------------------- utilities
+  // Demand is read out of the built world; capacity is bought in tiers.
+  state.utilities = state.utilities || Object.fromEntries(UTILITY_KEYS.map((k) => [k, -1]));
+  const complex = analysis?.complex || {};
+  const demand = computeDemand(
+    complex, complex.zoneVoxels || {}, complex.blockVoxels || {},
+    state.derived.totalCapacity || 0);
+
+  const research = state.research.completed;
+  state.utilityStatus = {};
+  for (const key of UTILITY_KEYS) {
+    let capacity = capacityOf(key, state.utilities[key]);
+    // Research still helps, on top of whatever has been bought.
+    if (key === 'power' && research.includes('power_grid')) capacity += 40;
+    if (key === 'data' && research.includes('broadcast')) capacity += 20;
+    const d = demand[key] || 0;
+    state.utilityStatus[key] = {
+      demand: d,
+      capacity,
+      deficit: Math.max(0, d - capacity),
+      factor: serviceFactor(d, capacity),
+      upkeep: upkeepOf(key, state.utilities[key]),
+    };
+  }
+  state.utilityUpkeep = UTILITY_KEYS.reduce((sum, k) => sum + state.utilityStatus[k].upkeep, 0);
+  state.utilityFactors = Object.fromEntries(
+    UTILITY_KEYS.map((k) => [k, state.utilityStatus[k].factor]));
+
+  // Kept for the existing power-specific messaging.
+  state.powerCapacity = state.utilityStatus.power.capacity;
+  state.powerDemand = state.utilityStatus.power.demand;
+  state.powerDeficit = state.utilityStatus.power.deficit;
 
   // Staff bonuses, per channel, scaled by skill and morale.
   const bonus = {};

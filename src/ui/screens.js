@@ -4,6 +4,7 @@ import { TIER_LABEL } from '../venues/ratings.js';
 import { STAFF_ROLES } from '../data/staff.js';
 import { ACHIEVEMENTS } from '../data/achievements.js';
 import { RESEARCH } from '../data/research.js';
+import { UTILITIES } from '../data/utilities.js';
 import { BLOCK_BY_KEY } from '../data/blocks.js';
 
 /**
@@ -317,9 +318,9 @@ export class Screens {
   }
 
   // ================================================================== MORE
-  openMore() {
-    const tabs = ['Staff', 'Sponsors', 'Research', 'Awards', 'Settings'];
-    let active = 'Staff';
+  openMore(initial = 'Staff') {
+    const tabs = ['Staff', 'Sponsors', 'Research', 'Infra', 'Awards', 'Settings'];
+    let active = tabs.includes(initial) ? initial : 'Staff';
     const tabBar = el('div.tabs');
     const render = () => {
       fill(tabBar, ...tabs.map((t) => el('button.tab' + (t === active ? '.on' : ''), {
@@ -328,6 +329,7 @@ export class Screens {
       const body = active === 'Staff' ? this.staffBody(render)
         : active === 'Sponsors' ? this.sponsorsBody(render)
         : active === 'Research' ? this.researchBody(render)
+        : active === 'Infra' ? this.infrastructureBody(render)
         : active === 'Awards' ? this.awardsBody()
         : this.settingsBody(render);
       if (this.hud.sheetOpen) this.hud.updateSheetBody(body);
@@ -462,6 +464,90 @@ export class Screens {
           el('span.small', { text: r.name }), pill('Done', 'ok'))))) : null);
   }
 
+  // ======================================================== INFRASTRUCTURE
+  infrastructureBody(rerender) {
+    const s = this.state;
+    const options = this.game.utilityOptions();
+    const short = options.filter((u) => u.status.deficit > 0);
+
+    return el('div', {},
+      short.length
+        ? el('div.card.bad', {},
+            el('h3', { text: `${short.length} network${short.length > 1 ? 's' : ''} over capacity` }),
+            el('div.sub', { text: 'Demand is read from what you have built. A shortfall degrades the thing it serves and causes failures on event day.' }))
+        : el('div.card.good', {},
+            el('h3', { text: 'All networks within capacity' }),
+            el('div.sub', { text: 'Nothing here is holding your venues back.' })),
+
+      section('Networks', el('div.stack', {}, ...options.map((u) => {
+        const st = u.status;
+        const over = st.deficit > 0;
+        const pctUsed = st.capacity > 0 ? (st.demand / st.capacity) * 100 : 0;
+        return el('div.card' + (over ? '.bad' : ''), {},
+          el('div.rowbetween', {},
+            el('div', {},
+              el('h3', { text: `${u.icon} ${u.name}` }),
+              el('div.sub', { text: u.desc })),
+            el('div.right', {},
+              el('div.small.mono' + (over ? '.neg' : ''), {
+                text: `${fmtUnit(st.demand)} / ${fmtUnit(st.capacity)} ${u.unit}`,
+              }),
+              el('div.tiny.faint', { text: u.tier < 0 ? 'Site connection' : `Tier ${u.tier + 1}` }))),
+          el('div', { style: { marginTop: '8px' } },
+            meter(Math.min(st.demand, st.capacity), Math.max(st.capacity, st.demand),
+              over ? 'r' : pctUsed > 80 ? 'gold' : 'g')),
+          over ? el('div.issue.error', { style: { marginTop: '8px' } },
+            el('span.ic', { text: '\u26A0' }),
+            el('span', { text: `${Math.round((1 - st.factor) * 100)}% short. ${u.shortfall}` })) : null,
+          u.next
+            ? el('button.btn.sm.full' + (over ? '.primary' : ''), {
+                style: { marginTop: '9px' },
+                disabled: s.cash < u.next.cost,
+                onclick: () => {
+                  const r = this.game.upgradeUtility(u.key);
+                  if (r?.error) this.app.toast('warn', 'Cannot upgrade', r.error);
+                  this.app.refresh(); rerender();
+                },
+              }, `Upgrade to ${fmtUnit(u.next.capacity)}${u.unit} \u00B7 ${fmtMoney(u.next.cost)} + ${fmtMoney(u.next.upkeep)}/mo`)
+            : el('div.tiny.faint', { style: { marginTop: '8px', textAlign: 'center' }, text: 'Maximum capacity reached.' }));
+      }))),
+
+      section('Transport network', this.transportCard()));
+  }
+
+  transportCard() {
+    const c = this.game.analysis.complex || {};
+    const roads = c.roads || {};
+    const rows = [
+      ['Local road', roads.road || 0],
+      ['Main road', roads.road_main || 0],
+      ['Service road', roads.road_service || 0],
+      ['VIP access road', roads.road_vip || 0],
+      ['Emergency route', roads.road_emergency || 0],
+      ['Bus lane', roads.road_bus || 0],
+    ];
+    return el('div.card', {},
+      el('div.rowbetween', {},
+        el('span.small', { text: 'Road service to your parking' }),
+        el('span.small.mono', { text: `${Math.round((c.roadServiceRatio ?? 1) * 100)}%` })),
+      meter((c.roadServiceRatio ?? 1) * 100, 100, (c.roadServiceRatio ?? 1) > 0.8 ? 'g' : 'gold'),
+      el('div.tiny.faint', { style: { marginTop: '6px' },
+        text: 'Main roads carry well over twice the traffic of a local road of the same length.' }),
+      el('div', { style: { marginTop: '10px' } }, ...rows.map(([k, v]) =>
+        el('div.rowbetween', { style: { padding: '3px 0' } },
+          el('span.tiny.faint', { text: k }),
+          el('span.tiny.mono', { text: v ? `${fmtNum(v)} blocks` : '\u2014' })))),
+      el('div', { style: { marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--line)' } },
+        ...[
+          ['Public transport share', `${Math.round((this.state.transitShare || 0) * 100)}%`],
+          ['Coach bays', fmtNum(c.busBays || 0)],
+          ['Taxi / rideshare bays', fmtNum(c.taxiBays || 0)],
+          ['Staff parking', `${fmtNum(c.staffParkingCars || 0)} cars`],
+          ['VIP parking', `${fmtNum(c.vipParkingCars || 0)} cars`],
+        ].map(([k, v]) => el('div.rowbetween', { style: { padding: '3px 0' } },
+          el('span.tiny.faint', { text: k }), el('span.tiny.mono', { text: v })))));
+  }
+
   awardsBody() {
     const s = this.state;
     const got = new Set(s.achievements);
@@ -535,6 +621,13 @@ export class Screens {
             text: '1 block = 2 metres. Desktop: WASD to move, mouse to look, left click place, right click remove, 1-9 materials, Q/E rotate, C camera, Ctrl+Z undo.' }))),
     );
   }
+}
+
+/** Utility figures span 1.5 to 400, so pick the sensible precision. */
+function fmtUnit(v) {
+  if (v >= 100) return String(Math.round(v));
+  if (v >= 10) return v.toFixed(0);
+  return v.toFixed(1);
 }
 
 function SPONSOR_NEXT(s) {

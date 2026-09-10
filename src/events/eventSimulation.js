@@ -48,6 +48,31 @@ export function simulateEvent(ev, venue, state, contract) {
   if (congestion > 0.42 && rng.chance(0.55 + congestion * 0.4)) {
     incidents.push({ key: 'congestion', text: 'Serious congestion at the gates delayed kick-off.', satisfaction: -18, reputation: -2 });
   }
+  const uf = state.utilityFactors || {};
+  if ((uf.sewer ?? 1) < 0.85 && rng.chance(0.5)) {
+    incidents.push({
+      key: 'sewer', text: 'Wastewater capacity was overwhelmed and several restroom blocks were closed.',
+      satisfaction: -12, community: -5, cost: 30_000,
+    });
+  }
+  if ((uf.water ?? 1) < 0.8 && rng.chance(0.4)) {
+    incidents.push({
+      key: 'water', text: 'Water pressure failed at the concession stands during the interval.',
+      satisfaction: -8, cost: 20_000,
+    });
+  }
+  if ((uf.data ?? 1) < 0.75 && rng.chance(0.5)) {
+    incidents.push({
+      key: 'data', text: 'The broadcast feed dropped out. The rights holder was not impressed.',
+      satisfaction: -4, reputation: -4, cost: 80_000,
+    });
+  }
+  if ((uf.climate ?? 1) < 0.75 && rng.chance(0.35)) {
+    incidents.push({
+      key: 'climate', text: 'Enclosed areas were stifling and hospitality guests complained.',
+      satisfaction: -7,
+    });
+  }
   const overloaded = (state.powerDeficit || 0) > 0;
   if (overloaded && rng.chance(0.45 + Math.min(0.4, state.powerDeficit / 20))) {
     incidents.push({

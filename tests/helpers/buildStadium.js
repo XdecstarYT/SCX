@@ -172,3 +172,22 @@ export function buildNationalComplex(size = 200) {
 
   return w;
 }
+
+
+/**
+ * Buy every utility network up to the point where it keeps pace with demand.
+ * A complex this size genuinely needs the infrastructure behind it.
+ */
+export function fundInfrastructure(game) {
+  const before = game.state.cash;
+  game.state.cash = Math.max(game.state.cash, 80_000_000);
+  for (const key of ['power', 'water', 'sewer', 'data', 'climate']) {
+    for (let i = 0; i < 5; i++) {
+      if ((game.state.utilityStatus?.[key]?.deficit ?? 0) <= 0) break;
+      if (!game.upgradeUtility(key).ok) break;
+    }
+  }
+  game.state.cash = before;
+  game.analyze(true);
+  return game;
+}

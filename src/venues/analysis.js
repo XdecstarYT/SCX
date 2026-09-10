@@ -21,7 +21,7 @@ export function scanWorld(world) {
   const stats = {
     blocks: 0, appearance: 0, power: 0, maintenance: 0, revenue: 0, safety: 0,
     floodlights: [], screens: 0, adverts: 0, roofVoxels: 0, glassVoxels: 0,
-    maxY: 0, decorScore: 0,
+    maxY: 0, decorScore: 0, roofedVoxels: 0,
   };
 
   const ensure = (zid) => {
@@ -58,6 +58,12 @@ export function scanWorld(world) {
           stats.safety += b.safety;
           if (y > stats.maxY) stats.maxY = y;
           if (b.category === 'roof') stats.roofVoxels++;
+          // A rough enclosed-volume proxy: anything with solid cover above it.
+          if (b.solid && world.getBlock(wx, y + 1, wz) === AIR) {
+            for (let up = y + 2; up < Math.min(CHUNK_Y, y + 26); up++) {
+              if (world.isSolid(wx, up, wz)) { stats.roofedVoxels++; break; }
+            }
+          }
           if (b.key === 'glass') stats.glassVoxels++;
           if (b.light) stats.floodlights.push([wx, y, wz]);
           if (b.key === 'screen') stats.screens++;
