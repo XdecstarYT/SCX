@@ -10,6 +10,7 @@ import { Negotiation, ROUNDS_BY_TIER } from '../events/negotiation.js';
 import { simulateEvent } from '../events/eventSimulation.js';
 import { bestVenueFor, checkRequirements } from '../events/eventRequirements.js';
 import { applyDailyFinance, monthlyFinance, LEDGER_CATEGORIES } from './economy.js';
+import { driftCommunity, communityReport } from './community.js';
 import { STAFF_ROLES, makeHire } from '../data/staff.js';
 import { SPONSORS, availableSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
@@ -112,6 +113,10 @@ export class Game {
       if (s.cash >= pay) { s.cash -= pay; l.balance = Math.max(0, l.balance - pay * 0.6); }
     }
     s.loans = s.loans.filter((l) => l.balance > 1);
+
+    // The neighbourhood forms its own view, gradually.
+    driftCommunity(s, this.analysis);
+    s.recentConstruction = (s.recentConstruction || 0) * 0.93;
 
     // Weather
     if (s.day >= s.weatherUntilDay) {
@@ -367,7 +372,11 @@ export class Game {
       applyReputation(s, { organiser: -0.5 });
       if (outcome.winner) {
         const rival = s.rivals.find((r) => r.id === outcome.winner.id);
-        if (rival) { rival.eventsWon++; rival.reputation = Math.min(100, rival.reputation + 1.5); }
+        if (rival) {
+          rival.eventsWon++;
+          rival.reputation = Math.min(100, rival.reputation + 1.5);
+          this.rivalNews(rival, `Won the bid for ${ev.name}, beating you to it.`);
+        }
       }
       this.notify('bid', 'Bid lost', outcome.winner
         ? `${outcome.winner.name} won the rights to ${ev.name}.`
@@ -413,6 +422,7 @@ export class Game {
     st.bestSatisfaction = Math.max(st.bestSatisfaction, report.satisfaction);
     if (!st.tiersHosted.includes(ev.tier)) st.tiersHosted.push(ev.tier);
     if (!st.sportsHosted.includes(ev.sport)) st.sportsHosted.push(ev.sport);
+    if (ev.sport === 'ceremony') st.ceremonyHosted = true;
 
     this.checkAchievements();
     this.bus.emit('eventreport', report);
@@ -431,11 +441,36 @@ export class Game {
     for (const r of s.rivals) {
       if (!rng.chance(0.35)) continue;
       const invest = rng.range(0.02, 0.07);
+      const before = r.capacity;
       r.quality = Math.min(98, r.quality + invest * 30);
       r.capacity = Math.round(r.capacity * (1 + invest * 0.4));
       r.reputation = Math.min(98, r.reputation + invest * 12);
       r.lastExpansion = s.day;
+      this.rivalNews(r, `Expanded to ${r.capacity.toLocaleString()} seats (from ${before.toLocaleString()}).`);
     }
+  }
+
+  rivalNews(rival, text) {
+    rival.news = rival.news || [];
+    rival.news.unshift({ day: this.state.day, text });
+    if (rival.news.length > 6) rival.news.pop();
+  }
+
+  /** Rivals ranked against the player, for the standings screen. */
+  standings() {
+    const s = this.state;
+    const you = {
+      id: 'you', name: `${s.complexName} Sports Complex`, you: true,
+      capacity: s.derived?.bestCapacity || 0,
+      reputation: s.reputation.venue,
+      quality: s.derived?.bestRating || 0,
+      eventsWon: s.stats.bidsWon,
+      news: [],
+    };
+    const all = [you, ...s.rivals.map((r) => ({ ...r, you: false }))];
+    all.sort((a, b) => (b.reputation * 2 + b.quality + Math.log10(Math.max(10, b.capacity)) * 8)
+      - (a.reputation * 2 + a.quality + Math.log10(Math.max(10, a.capacity)) * 8));
+    return all.map((r, i) => ({ ...r, rank: i + 1 }));
   }
 
   // -------------------------------------------------------- random events
@@ -597,6 +632,8 @@ export class Game {
     return this.state.research.completed.includes(unlockId);
   }
 
+  community() { return communityReport(this.state, this.analysis); }
+
   // ------------------------------------------------------------- utilities
   utilityOptions() {
     return UTILITIES.map((u) => ({
@@ -664,6 +701,8 @@ export class Game {
     if (!allowDebt && total > s.cash) return false;
     s.cash -= total;
     s.stats.moneySpentBuilding += total;
+    // Construction disruption fades over the following weeks.
+    s.recentConstruction = (s.recentConstruction || 0) + total / 1000;
     this.record('construction', -total);
     this.bus.emit('state');
     return true;

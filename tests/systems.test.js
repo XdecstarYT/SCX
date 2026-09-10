@@ -279,3 +279,77 @@ test('an overloaded network causes incidents on event day', async () => {
   }
   assert.ok(hits > 8, `only ${hits}/20 events hit a utility failure while overloaded`);
 });
+
+// ------------------------------------------------- community and endgame
+
+test('community standing is built from what the complex actually does', async () => {
+  const { communityReport } = await import('../src/core/community.js');
+  const { buildNationalComplex, fundInfrastructure } = await import('./helpers/buildStadium.js');
+  const { generateParkingGarage } = await import('../src/voxel/structures.js');
+  const { applyPlan } = await import('../src/voxel/buildTools.js');
+  const g = new Game();
+  g.adopt(createState({ seed: 5 }), buildNationalComplex());
+  fundInfrastructure(g);
+
+  const before = communityReport(g.state, g.analysis);
+  assert.ok(before.jobs > 0, 'a complex this size supports jobs');
+  assert.ok(before.positives.length > 0 && before.positives.every((p) => p.label && p.score > 0));
+  assert.ok(before.mood.label.length > 0);
+  // 60,000 seats against thin parking means cars on residential streets.
+  assert.ok(before.negatives.some((n) => n.key === 'traffic'), 'traffic is flagged');
+
+  // Solve the transport problem and the neighbours should soften.
+  for (let i = 0; i < 6; i++) {
+    const x0 = 6 + (i % 3) * 40;
+    const z0 = 122 + Math.floor(i / 3) * 34;
+    applyPlan(g.world, generateParkingGarage(
+      g.world, { x: x0, z: z0 }, { x: x0 + 34, z: z0 + 28 }, { levels: 6 }).cells, 'garage');
+  }
+  g.markWorldDirty();
+  g.analyze(true);
+  const after = communityReport(g.state, g.analysis);
+  assert.ok(after.target > before.target,
+    `fixing the parking should lift standing (${before.target} -> ${after.target})`);
+  const trafficBefore = before.negatives.find((n) => n.key === 'traffic').score;
+  const trafficAfter = (after.negatives.find((n) => n.key === 'traffic') || { score: 0 }).score;
+  assert.ok(trafficAfter > trafficBefore, 'and the traffic complaint eases');
+});
+
+test('community standing drifts rather than jumping', async () => {
+  const { driftCommunity } = await import('../src/core/community.js');
+  const g = new Game();
+  g.newGame({ seed: 9 });
+  g.state.reputation.community = 20;
+  const target = driftCommunity(g.state, g.analysis).target;
+  assert.ok(Math.abs(g.state.reputation.community - 20) < 2, 'one day moves it only slightly');
+  for (let i = 0; i < 200; i++) driftCommunity(g.state, g.analysis);
+  assert.ok(Math.abs(g.state.reputation.community - target) < 2, 'but it does get there');
+});
+
+test('endgame goals report real progress and never throw', async () => {
+  const { endgameProgress } = await import('../src/data/endgame.js');
+  const fresh = new Game();
+  fresh.newGame({ seed: 2 });
+  const early = endgameProgress(fresh.state);
+  assert.equal(early.total, 12);
+  assert.equal(early.complete, 0);
+  assert.ok(early.goals.every((g) => typeof g.detail === 'string' && g.value >= 0 && g.value <= 1));
+
+  fresh.state.stats.bestCapacity = 90_000;
+  fresh.state.stats.tiersHosted.push('world');
+  const later = endgameProgress(fresh.state);
+  assert.ok(later.complete >= 2);
+  assert.ok(later.overall > early.overall);
+});
+
+test('rival standings rank the player against the competition', () => {
+  const g = new Game();
+  g.newGame({ seed: 4 });
+  const table = g.standings();
+  assert.equal(table.length, g.state.rivals.length + 1);
+  assert.equal(table.filter((r) => r.you).length, 1);
+  assert.deepEqual(table.map((r) => r.rank), table.map((_, i) => i + 1));
+  // Nobody shares the player's default complex name.
+  const you = table.find((r) => r.you);
+  assert.equal(table.filter((r) => r.name === you.name).length, 1);
+});

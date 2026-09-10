@@ -4,7 +4,7 @@
  * expansions that reset the bar.
  */
 export const RIVAL_SEEDS = [
-  { id: 'riverside_park', name: 'Riverside Sports Park', capacity: 12_000, reputation: 38, quality: 52, funds: 6_000_000, sports: ['football', 'athletics'], aggression: 0.55 },
+  { id: 'kestrel_park',   name: 'Kestrel Sports Park', capacity: 12_000, reputation: 38, quality: 52, funds: 6_000_000, sports: ['football', 'athletics'], aggression: 0.55 },
   { id: 'metro_arena',    name: 'Metro Arena',           capacity: 16_500, reputation: 46, quality: 61, funds: 11_000_000, sports: ['basketball', 'combat', 'concert'], aggression: 0.7 },
   { id: 'national_centre',name: 'National Sports Centre',capacity: 34_000, reputation: 62, quality: 70, funds: 28_000_000, sports: ['football', 'athletics', 'ceremony'], aggression: 0.6 },
   { id: 'grand_stadium',  name: 'The Grand Stadium',     capacity: 58_000, reputation: 74, quality: 79, funds: 62_000_000, sports: ['football', 'concert', 'ceremony'], aggression: 0.5 },

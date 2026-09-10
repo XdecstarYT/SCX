@@ -5,6 +5,8 @@ import { STAFF_ROLES } from '../data/staff.js';
 import { ACHIEVEMENTS } from '../data/achievements.js';
 import { RESEARCH } from '../data/research.js';
 import { UTILITIES } from '../data/utilities.js';
+import { ENDGAME_GOALS, GOAL_GROUPS, endgameProgress } from '../data/endgame.js';
+import { MOODS } from '../core/community.js';
 import { BLOCK_BY_KEY } from '../data/blocks.js';
 
 /**
@@ -319,7 +321,7 @@ export class Screens {
 
   // ================================================================== MORE
   openMore(initial = 'Staff') {
-    const tabs = ['Staff', 'Sponsors', 'Research', 'Infra', 'Awards', 'Settings'];
+    const tabs = ['Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
     let active = tabs.includes(initial) ? initial : 'Staff';
     const tabBar = el('div.tabs');
     const render = () => {
@@ -330,6 +332,9 @@ export class Screens {
         : active === 'Sponsors' ? this.sponsorsBody(render)
         : active === 'Research' ? this.researchBody(render)
         : active === 'Infra' ? this.infrastructureBody(render)
+        : active === 'Rivals' ? this.rivalsBody()
+        : active === 'Community' ? this.communityBody()
+        : active === 'Goals' ? this.goalsBody()
         : active === 'Awards' ? this.awardsBody()
         : this.settingsBody(render);
       if (this.hud.sheetOpen) this.hud.updateSheetBody(body);
@@ -546,6 +551,104 @@ export class Screens {
           ['VIP parking', `${fmtNum(c.vipParkingCars || 0)} cars`],
         ].map(([k, v]) => el('div.rowbetween', { style: { padding: '3px 0' } },
           el('span.tiny.faint', { text: k }), el('span.tiny.mono', { text: v })))));
+  }
+
+  // ================================================================ RIVALS
+  rivalsBody() {
+    const standings = this.game.standings();
+    const you = standings.find((r) => r.you);
+    return el('div', {},
+      el('div.card.accent', {},
+        el('div.tiny.faint', { text: 'YOUR POSITION' }),
+        el('div.big.num', { text: `#${you.rank} of ${standings.length}` }),
+        el('div.small.faint', { text: 'Ranked on reputation, venue quality and capacity. Rivals reinvest over time, so standing still means sliding.' })),
+
+      section('Operators', el('div.stack', {}, ...standings.map((r) => el('div.card' + (r.you ? '.accent' : ''), {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('h3', { text: `${r.rank}. ${r.name}` }),
+            el('div.sub', { text: r.you ? 'You' : `${fmtNum(Math.round(r.capacity))} seats \u00B7 ${r.eventsWon} events won` })),
+          el('div.right', {},
+            el('div.small.mono', { text: `Rep ${Math.round(r.reputation)}` }),
+            el('div.tiny.faint', { text: `Quality ${Math.round(r.quality)}` }))),
+        el('div', { style: { marginTop: '8px' } }, meter(r.reputation, 100, r.you ? 'g' : '')),
+        !r.you && r.sports?.length
+          ? el('div.tiny.faint', { style: { marginTop: '6px' }, text: 'Competes for: ' + r.sports.join(', ') })
+          : null,
+        r.news?.length
+          ? el('div', { style: { marginTop: '8px', paddingTop: '7px', borderTop: '1px solid var(--line)' } },
+              ...r.news.slice(0, 3).map((n) => el('div.tiny.faint', { text: `Day ${n.day}: ${n.text}` })))
+          : null)))));
+  }
+
+  // ============================================================= COMMUNITY
+  communityBody() {
+    const r = this.game.community();
+    const s = this.state;
+    const row = (item, positive) => el('div.rowbetween', { style: { padding: '5px 0' } },
+      el('div', {},
+        el('div.small', { text: item.label }),
+        el('div.tiny.faint', { text: item.money ? fmtMoney(item.value) + ' per month' : String(item.value) })),
+      el('span', {
+        class: 'small mono ' + (positive ? 'pos' : 'neg'),
+        text: `${positive ? '+' : ''}${Math.round(item.score)}`,
+      }));
+
+    return el('div', {},
+      el('div.card.accent', {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('div.tiny.faint', { text: 'COMMUNITY STANDING' }),
+            el('div.big.num', { text: String(r.current) })),
+          el('div.right', {},
+            pill(r.mood.label, r.mood.tone === 'good' ? 'ok' : r.mood.tone === 'error' ? 'no' : ''),
+            el('div.tiny.faint', { style: { marginTop: '4px' },
+              text: r.target === r.current ? 'settled'
+                : r.target > r.current ? `rising toward ${r.target}` : `falling toward ${r.target}` }))),
+        meter(r.current, 100, r.current >= 65 ? 'g' : r.current >= 40 ? 'gold' : 'r'),
+        el('div.tiny.faint', { style: { marginTop: '8px' },
+          text: 'Standing drifts toward what the complex has earned rather than jumping, so one bad day will not undo years of goodwill.' })),
+
+      el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '14px' } },
+        this.kpi('Jobs', fmtNum(r.jobs), 'pos'),
+        this.kpi('Visitors / mo', fmtNum(r.tourism), 'pos'),
+        this.kpi('Local spend', fmtMoney(r.economicBoost), 'pos')),
+
+      section('What is helping',
+        r.positives.length
+          ? el('div.card.tight', {}, ...r.positives.map((p) => row(p, true)))
+          : el('div.card', {}, emptyState('\u2014', 'Nothing yet. Jobs, visitors and public facilities all build goodwill.'))),
+
+      section('What is hurting',
+        r.negatives.length
+          ? el('div.card.tight', {}, ...r.negatives.map((n) => row(n, false)))
+          : el('div.card', {}, emptyState('\u2713', 'No complaints. Traffic, noise and congestion are all under control.'))),
+
+      section('How to improve it', el('div.card', {},
+        el('div.small.faint', { text: 'Parking and transport reduce traffic on residential streets. Training areas and fan zones are facilities the public can use. Local and regional events keep the complex part of the community rather than a place things happen to it.' }))));
+  }
+
+  // ================================================================= GOALS
+  goalsBody() {
+    const p = endgameProgress(this.state);
+    return el('div', {},
+      el('div.card.accent', {},
+        el('div.tiny.faint', { text: 'LONG-TERM OBJECTIVES' }),
+        el('div.big.num', { text: `${p.complete} / ${p.total}` }),
+        meter(p.overall * 100, 100, 'gold'),
+        el('div.small.faint', { style: { marginTop: '8px' },
+          text: 'None of these arrive by waiting. Each one needs something built, operated or won.' })),
+      ...GOAL_GROUPS.map((g) => section(g.name,
+        el('div.stack', {}, ...p.goals.filter((x) => x.tier === g.key).map((goal) =>
+          el('div.card.tight' + (goal.complete ? '.good' : ''), {},
+            el('div.rowbetween', {},
+              el('div', {},
+                el('div.small', { text: goal.name }),
+                el('div.tiny.faint', { text: goal.desc })),
+              goal.complete ? pill('Done', 'ok') : el('span.small.mono', { text: `${Math.round(goal.value * 100)}%` })),
+            el('div', { style: { marginTop: '7px' } },
+              meter(goal.value * 100, 100, goal.complete ? 'g' : goal.value > 0.5 ? 'gold' : '')),
+            el('div.tiny.faint', { style: { marginTop: '5px' }, text: goal.detail })))))));
   }
 
   awardsBody() {
