@@ -2,6 +2,8 @@
 export const ACHIEVEMENTS = [
   { id: 'first_block',   name: 'Ground Broken',        desc: 'Place your first block.',                     check: (s) => s.stats.blocksPlaced >= 1 },
   { id: 'first_pitch',   name: 'A Place To Play',      desc: 'Create a regulation sport surface.',          check: (s) => s.stats.regulationFields >= 1 },
+  { id: 'first_fitting', name: 'Posts In The Ground',  desc: 'Fit your first piece of sports equipment.',   check: (s) => (s.stats.equipmentFitted || 0) >= 1 },
+  { id: 'match_ready',   name: 'Match Ready',          desc: 'Fit a venue out to full competition standard.', check: (s) => (s.stats.fullyFittedVenues || 0) >= 1 },
   { id: 'first_venue',   name: 'Venue Detected',       desc: 'Have the game recognise a venue.',            check: (s) => s.stats.venuesDetected >= 1 },
   { id: 'first_reg',     name: 'Open For Business',    desc: 'Register a venue.',                           check: (s) => s.venues.registered.length >= 1 },
   { id: 'first_bid',     name: 'In The Running',       desc: 'Submit your first event bid.',                check: (s) => s.stats.bidsPlaced >= 1 },

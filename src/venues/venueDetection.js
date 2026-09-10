@@ -1,6 +1,7 @@
 import { CHUNK_Y, SEATS_PER_VOXEL, VIP_SEATS_PER_VOXEL, VOXELS_PER_CAR } from '../core/constants.js';
 import { zone, zoneId, ZONE_BY_ID, SPORT_ZONES } from '../data/zones.js';
 import { block, blockId } from '../data/blocks.js';
+import { PROP_BY_ID, SPORT_EQUIPMENT, UNIVERSAL_EQUIPMENT } from '../data/props.js';
 import { scanWorld, components, largestRectangle, roofCoverage, lightsNear } from './analysis.js';
 import { rateVenue, eventTier } from './ratings.js';
 
@@ -9,6 +10,7 @@ const VENUE_TYPES = {
   soccer:     'Soccer Stadium',
   rugby:      'Rugby Stadium',
   cricket:    'Cricket Ground',
+  afl:        'Australian Rules Oval',
   basketball: 'Basketball Arena',
   tennis:     'Tennis Centre',
   athletics:  'Athletics Stadium',
@@ -108,6 +110,14 @@ export function detectVenues(world, opts = {}) {
     blockKeyCounts: Object.fromEntries(
       [...world.blockCounts].map(([id, n]) => [block(id).key, n])),
   };
+  // Equipment is part of the complex: it draws power, needs maintaining and
+  // earns advertising revenue exactly as fitted blocks do.
+  const propTotals = world.props ? world.props.totals() : { maintenance: 0, power: 0, appearance: 0, revenue: 0, count: 0, provides: {} };
+  complex.maintenance += propTotals.maintenance;
+  complex.powerDemand += propTotals.power;
+  complex.passiveRevenue += propTotals.revenue;
+  complex.equipmentCount = propTotals.count;
+  complex.equipment = propTotals.provides;
   complex.powerCapacity = powerCapacity;
   complex.powerDeficit = Math.max(0, complex.powerDemand - powerCapacity);
   complex.utilityFactors = utilities || {};
@@ -126,7 +136,17 @@ export function detectVenues(world, opts = {}) {
     const info = zoneInfo.get(sz.id);
     if (!info || info.count < 12) continue;
     for (const comp of components(info.foot, size, 12)) {
-      const rect = largestRectangle(comp, size);
+      // Cricket and Australian Rules are played on ovals, so the meaningful
+      // measurement is the ground's length and width, not the biggest
+      // rectangle you could inscribe in it. A filled rectangle measures the
+      // same either way, so no existing ground is affected.
+      let rect = largestRectangle(comp, size);
+      if (sz.oval) {
+        const bw = comp.maxX - comp.minX + 1, bd = comp.maxZ - comp.minZ + 1;
+        // A true ellipse fills pi/4 (~0.785) of its bounding box; anything
+        // much emptier is an odd shape, not a ground, so measure it strictly.
+        if (comp.area / (bw * bd) >= 0.66) rect = { w: bw, h: bd };
+      }
       const reg = sz.regulation;
       const w = Math.max(rect.w, rect.h);
       const d = Math.min(rect.w, rect.h);
@@ -243,6 +263,8 @@ export function detectVenues(world, opts = {}) {
     v.capacity.boxes = Math.round(v.boxVoxels);
     v.capacity.total = v.capacity.seated + v.capacity.vip + v.capacity.standing + v.capacity.boxes;
 
+    Object.assign(v, equipmentFor(world, v));
+    v.appearance += v.equipmentAppearance;
     v.lighting = lightsNear(stats.floodlights, v.centre.x, v.centre.z, v.reach);
     v.screens = countNear(world, stats, v, 'screen');
     v.appearance = appearanceNear(world, v, size);
@@ -270,6 +292,46 @@ export function detectVenues(world, opts = {}) {
 }
 
 // ---------------------------------------------------------------- helpers
+
+/**
+ * Which pieces of equipment belong to this venue, and how complete the set is.
+ *
+ * Equipment is a bonus rather than a gate: a complex built before the fittings
+ * existed keeps every rating it had, and fitting it out is what raises the
+ * score. The missing list is what the player is told to build next.
+ */
+function equipmentFor(world, v) {
+  const layer = world.props;
+  const have = {};
+  let appearance = 0, count = 0;
+  if (layer && layer.size) {
+    for (const rec of layer.values()) {
+      const t = PROP_BY_ID[rec.typeId];
+      if (!t) continue;
+      if (Math.hypot(rec.x - v.centre.x, rec.z - v.centre.z) > v.reach) continue;
+      have[t.provides] = (have[t.provides] || 0) + 1;
+      appearance += t.appearance;
+      count++;
+    }
+  }
+  const wanted = [...(SPORT_EQUIPMENT[v.sport] || []), ...UNIVERSAL_EQUIPMENT];
+  let got = 0, need = 0;
+  const missing = [];
+  for (const req of wanted) {
+    const n = have[req.provides] || 0;
+    got += Math.min(n, req.need);
+    need += req.need;
+    if (n < req.need) missing.push({ provides: req.provides, have: n, need: req.need });
+  }
+  return {
+    equipment: have,
+    equipmentCount: count,
+    equipmentAppearance: appearance,
+    equipmentScore: need > 0 ? got / need : 1,
+    equipmentMissing: missing,
+    equipmentWanted: wanted,
+  };
+}
 
 function topZonedY(world, x, z, zid) {
   for (let y = CHUNK_Y - 1; y >= 0; y--) if (world.getZone(x, y, z) === zid) return y;

@@ -1,4 +1,5 @@
 import { VoxelWorld, Chunk } from '../voxel/world.js';
+import { PropLayer } from '../voxel/props.js';
 import { SAVE_VERSION } from '../core/gameState.js';
 import { createHotbarState } from '../ui/hotbar.js';
 
@@ -82,7 +83,7 @@ export function serializeWorld(world) {
       z: rleEncode(c.zones),
     });
   });
-  return { size: world.size, chunks };
+  return { size: world.size, chunks, props: world.props.serialize() };
 }
 
 export function deserializeWorld(data) {
@@ -110,6 +111,7 @@ export function deserializeWorld(data) {
     chunk.zoneDirty = true;
     world.dirtyChunks.add(chunk);
   }
+  world.props = PropLayer.deserialize(data.props);
   world.version++;
   return world;
 }
@@ -168,6 +170,9 @@ export function migrate(save) {
   s.tutorial = { step: 0, dismissed: false, seen: {}, ...(s.tutorial || {}) };
   s.organiserHistory = s.organiserHistory || {};
   s.construction = s.construction || [];
+  // Projects predate multi-site building; anything without a site belongs to
+  // the site the save was written on.
+  for (const p of s.construction) p.siteId = p.siteId || s.activeSite || 'site1';
   if (!s.hotbar || !Array.isArray(s.hotbar.blocks)) s.hotbar = createHotbarState();
   s.hotbar.zones = Array.isArray(s.hotbar.zones) ? s.hotbar.zones : createHotbarState().zones;
   s.hotbar.active = s.hotbar.active ?? 0;

@@ -8,6 +8,10 @@ import {
   TOOLS, CLIP_STRIDE, PLAN_TOOLS, pricePlan, applyPlan, planPositions,
 } from './buildTools.js';
 import { generateGrandstand, generateParkingGarage, generateRetainingWall, generateTerrainEdit } from './structures.js';
+import { generatePrefab, PREFAB_BY_KEY } from './prefabs.js';
+import { EditBatch } from './history.js';
+import { prop, PROP_BY_ID } from '../data/props.js';
+import { PropGhost } from '../world/propRenderer.js';
 
 export const BUILD_MODES = [
   { key: 'build',     name: 'Build',     hint: 'Place blocks' },
@@ -54,6 +58,13 @@ export class BuildController {
     this.clipboard = null;
     this.blueprints = [];
     this.replaceTarget = null;
+    // What the player is holding, and which way up it goes. Rotation belongs
+    // to props and prefabs: a voxel is one flat colour, so turning one would
+    // be invisible.
+    this.propKey = null;
+    this.prefabKey = null;
+    this.rotation = 0;
+    this.aimProp = null;
 
     this.planning = null;   // { marker, cost, count }
     this.lastPrice = null;
@@ -62,6 +73,7 @@ export class BuildController {
     this.onChange = null;   // UI refresh hook
 
     this.buildGhost();
+    this.propGhost = new PropGhost(scene);
   }
 
   // ------------------------------------------------------------------ ghost
@@ -104,12 +116,20 @@ export class BuildController {
 
   updateAim(ndc) {
     const r = ndc ? this.rig.ray(ndc.x, ndc.y) : this.rig.centreRay();
-    const hit = raycastVoxel(this.game.world, r.origin, r.dir, this.reach);
+    const world = this.game.world;
+    const hit = raycastVoxel(world, r.origin, r.dir, this.reach);
+    // Equipment stands in front of the blocks it sits on, so whichever the ray
+    // reaches first is what the player means.
+    const ph = world.props?.size ? world.props.raycast(r.origin, r.dir, this.reach) : null;
+    this.aimProp = ph && (!hit || ph.dist <= hit.dist) ? ph.rec : null;
     if (hit) {
       this.aimFace = hit;
       // Building places into the empty voxel in front of the face; every other
       // mode acts on the block that was actually hit.
-      const placing = this.mode === 'build' || (this.mode === 'blueprint' && this.tool === 'paste');
+      // Prefabs and pasted structures land ON the surface you point at, the
+      // same as a block does; every other mode acts on the block itself.
+      const placing = this.mode === 'build'
+        || (this.mode === 'blueprint' && (this.tool === 'paste' || this.tool === 'prefab'));
       this.aim = placing
         ? { x: hit.px, y: hit.py, z: hit.pz }
         : { x: hit.x, y: hit.y, z: hit.z };
@@ -120,6 +140,28 @@ export class BuildController {
     }
     this.refreshPreview();
     return this.aim;
+  }
+
+  /** True when the hotbar slot in hand is a piece of equipment, not a block. */
+  get holdingProp() { return this.mode === 'build' && !!this.propKey; }
+
+  get holdingPrefab() { return this.mode === 'blueprint' && this.tool === 'prefab' && !!this.prefabKey; }
+
+  /** Rotate whatever is in hand by 90 degrees. */
+  rotate(dir = 1) {
+    if (this.mode === 'blueprint' && this.tool === 'paste' && this.clipboard) {
+      this.clipboard = rotateClipboard(this.clipboard);
+      this.rotation = (this.rotation + 1) & 3;
+      this.refreshPreview();
+      this.onChange?.();
+      return 'Rotated the clipboard 90\u00B0';
+    }
+    this.rotation = (this.rotation + (dir >= 0 ? 1 : 3)) & 3;
+    this.refreshPreview();
+    this.onChange?.();
+    if (this.holdingProp) return `${prop(this.propKey).name} facing ${FACING[this.rotation]}`;
+    if (this.holdingPrefab) return `${PREFAB_BY_KEY.get(this.prefabKey)?.name || 'Prefab'} facing ${FACING[this.rotation]}`;
+    return `Facing ${FACING[this.rotation]}`;
   }
 
   get activeTool() {
@@ -159,6 +201,8 @@ export class BuildController {
         return generateRetainingWall(w, a, b, { block: this.material });
       case 'raise': case 'lower': case 'flatten': case 'ramp':
         return generateTerrainEdit(w, a, b, this.activeTool, { amount: this.terrainAmount });
+      case 'prefab':
+        return generatePrefab(w, this.prefabKey, a, this.rotation);
       default:
         return { cells: [], meta: {} };
     }
@@ -170,10 +214,17 @@ export class BuildController {
     const a = this.anchor || this.aim;
     const b = this.aim;
 
+    if (this.holdingProp) {
+      // Equipment has no cell list: its preview is the model itself.
+      this.lastPlan = null;
+      return [];
+    }
+
     if (this.isPlanTool) {
-      // A structure only makes sense once both corners are known.
-      if (!this.anchor) { this.lastPlan = null; return []; }
-      const plan = this.buildPlan(a, b);
+      // A prefab lands where you point; every other structure needs two corners.
+      const single = tool === 'prefab';
+      if (!single && !this.anchor) { this.lastPlan = null; return []; }
+      const plan = this.buildPlan(single ? b : a, b);
       this.lastPlan = plan;
       return planPositions(plan.cells);
     }
@@ -187,6 +238,17 @@ export class BuildController {
   refreshPreview() {
     const cells = this.previewCells();
     this.lastCells = cells;
+
+    // Equipment previews as the model itself, turned the way it will land.
+    if (this.holdingProp) {
+      this.ghost.count = 0;
+      this.bbox.visible = false;
+      this.outline.visible = false;
+      this.updatePropGhost();
+      return;
+    }
+    this.propGhost.hide();
+
     if (!cells || cells.length === 0) {
       this.ghost.count = 0;
       this.bbox.visible = false;
@@ -197,7 +259,7 @@ export class BuildController {
 
     // Price it.
     if (this.isPlanTool && this.lastPlan) {
-      this.lastPrice = pricePlan(this.game.world, this.lastPlan.cells);
+      this.lastPrice = pricePlan(this.game.world, this.lastPlan.cells, this.lastPlan.props);
       this.lastPrice.count = cells.length / 3;
     }
     const mode = this.mode === 'demolish' ? 'demolish' : this.mode === 'zone' ? 'zone' : (this.tool === 'paste' ? 'paste' : 'build');
@@ -258,8 +320,84 @@ export class BuildController {
     }
   }
 
+  /** Ghost the held piece of equipment where it would land. */
+  updatePropGhost() {
+    const type = prop(this.propKey);
+    if (!type || !this.aim) { this.propGhost.hide(); this.lastPrice = null; return; }
+    const check = this.game.world.props.canPlace(
+      this.game.world, type.id, this.aim.x, this.aim.y, this.aim.z, this.rotation);
+    this.propBlockedReason = check.ok ? null : check.reason;
+    const cost = type.cost * (this.game.state.buildCostMult || 1);
+    this.lastPrice = {
+      cost: type.cost, refund: 0, placed: check.ok ? 1 : 0, removed: 0,
+      net: type.cost, prop: type, ok: check.ok,
+    };
+    this.propGhost.show(this.propKey, this.aim.x, this.aim.y, this.aim.z, this.rotation,
+      check.ok && cost <= this.game.state.cash);
+  }
+
+  /** Place the held piece of equipment. */
+  placeProp() {
+    const g = this.game;
+    const type = prop(this.propKey);
+    if (!type || !this.aim) return null;
+    if (type.unlock && !g.isUnlocked(type.unlock)) {
+      return { error: `${type.name} needs the matching research project first.` };
+    }
+    const check = g.world.props.canPlace(g.world, type.id, this.aim.x, this.aim.y, this.aim.z, this.rotation);
+    if (!check.ok) return { error: check.reason };
+    const net = type.cost * (g.state.buildCostMult || 1);
+    if (!this.planning && net > g.state.cash) {
+      return { error: `${type.name} costs ${fmt(net)}. You have ${fmt(g.state.cash)}.` };
+    }
+    const batch = new EditBatch('Place: ' + type.name);
+    g.world.props.add(type.id, this.aim.x, this.aim.y, this.aim.z, this.rotation);
+    batch.recordProp('add', type.id, this.aim.x, this.aim.y, this.aim.z, this.rotation);
+    batch.cost = type.cost;
+    g.history.push(batch);
+    if (this.planning) { this.planning.cost += net; this.planning.count += 1; }
+    else g.spendConstruction(net, true);
+    g.state.stats.blocksPlaced += 1;
+    g.markWorldDirty();
+    g.checkAchievements();
+    this.refreshPreview();
+    this.onChange?.();
+    return `${type.name} placed (${fmt(net)})`;
+  }
+
+  /** Remove the piece of equipment under the crosshair. */
+  removeProp(rec) {
+    const g = this.game;
+    const type = PROP_BY_ID[rec.typeId];
+    g.world.props.remove(rec.x, rec.y, rec.z);
+    const batch = new EditBatch('Remove: ' + (type?.name || 'equipment'));
+    batch.recordProp('del', rec.typeId, rec.x, rec.y, rec.z, rec.rot);
+    const refund = (type?.cost || 0) * 0.3;
+    batch.refund = refund;
+    g.history.push(batch);
+    if (this.planning) this.planning.cost -= refund;
+    else g.refund(refund);
+    g.state.stats.blocksRemoved += 1;
+    g.markWorldDirty();
+    g.checkAchievements();
+    this.refreshPreview();
+    this.onChange?.();
+    return `${type?.name || 'Equipment'} removed (+${fmt(refund)})`;
+  }
+
   /** Human-readable summary of the pending action, for the dock. */
   previewSummary() {
+    if (this.holdingProp) {
+      if (!this.lastPrice?.prop) return null;
+      const cost = this.lastPrice.net * (this.game.state.buildCostMult || 1);
+      return {
+        count: 1, placed: this.lastPrice.placed, removed: 0, cost,
+        affordable: !!this.planning || cost <= this.game.state.cash,
+        awaitingSecondPoint: false,
+        prop: this.lastPrice.prop,
+        blocked: this.propBlockedReason,
+      };
+    }
     if (!this.lastPrice || !this.lastCells) return null;
     const count = this.lastCells.length / 3;
     return {
@@ -276,7 +414,7 @@ export class BuildController {
   /**
    * The single entry point for a tap. Returns a short status string for the UI.
    */
-  act(button = 0) {
+  act(button = 0, confirmed = false) {
     if (!this.aim) return null;
 
     if (this.mode === 'inspect') return this.doInspect();
@@ -284,8 +422,15 @@ export class BuildController {
     if (button === 2) {
       // Right click / remove button always cancels a pending anchor first.
       if (this.anchor) { this.anchor = null; this.refreshPreview(); return 'Cancelled'; }
-      return this.removeSingle();
+      return this.removeSingle(confirmed);
     }
+
+    // Demolishing a single tap on a piece of equipment takes the equipment.
+    if (this.mode === 'demolish' && this.tool === 'single' && this.aimProp) {
+      return this.confirmOrRemoveProp(this.aimProp, confirmed);
+    }
+
+    if (this.holdingProp) return this.placeProp();
 
     if (this.toolNeedsTwoPoints() && !this.anchor) {
       this.anchor = { ...this.aim };
@@ -296,10 +441,10 @@ export class BuildController {
       return 'Now tap the second point';
     }
 
-    return this.commit();
+    return this.commit(confirmed);
   }
 
-  commit() {
+  commit(confirmed = false) {
     const cells = this.previewCells();
     if (!cells || cells.length === 0) { this.anchor = null; return null; }
     const g = this.game;
@@ -307,7 +452,7 @@ export class BuildController {
     // Procedural structures take the plan path: multi-material, one batch.
     if (this.isPlanTool && this.lastPlan) {
       const plan = this.lastPlan;
-      const price = pricePlan(g.world, plan.cells);
+      const price = pricePlan(g.world, plan.cells, plan.props);
       const net = price.net * (g.state.buildCostMult || 1);
       if (!this.planning && net > 0 && net > g.state.cash) {
         this.anchor = null;
@@ -319,8 +464,9 @@ export class BuildController {
         && this.activeTool !== 'flatten' && this.activeTool !== 'ramp'
         && !this.planning
         && g.stageOrApply({
-          label: STRUCTURE_LABEL[this.activeTool] || 'Structure',
+          label: plan.meta?.name || STRUCTURE_LABEL[this.activeTool] || 'Structure',
           cells: plan.cells,
+          props: plan.props || null,
           cost: net,
           count: price.placed,
         });
@@ -335,7 +481,10 @@ export class BuildController {
         return `${describePlan(this.activeTool, plan.meta, net)} \u2014 under construction`;
       }
 
-      const batch = applyPlan(g.world, plan.cells, TOOL_LABEL[this.activeTool] || 'Structure');
+      const batch = applyPlan(g.world,
+        plan.cells,
+        plan.meta?.name ? `Build: ${plan.meta.name}` : (TOOL_LABEL[this.activeTool] || 'Structure'),
+        plan.props || null);
       g.history.push(batch);
       if (this.planning) { this.planning.cost += net; this.planning.count += batch.size; }
       else if (net > 0) g.spendConstruction(net, true);
@@ -363,7 +512,7 @@ export class BuildController {
       const batch = applyEdit(g.world, cells, 'zone', 0, { zoneId: zoneId(this.zoneKey), label: `Zone: ${zone(this.zoneKey).name}` });
       g.history.push(batch);
       this.finish(batch, 0);
-      return `Zoned ${batch.size} blocks as ${zone(this.zoneKey).name}`;
+      return `Zoned ${batch.voxelCount} blocks as ${zone(this.zoneKey).name}`;
     }
 
     const price = priceEdit(g.world, cells, mode, this.material, {
@@ -371,6 +520,11 @@ export class BuildController {
       replaceTarget: this.tool === 'replace' ? this.replaceTarget : null,
     });
     const net = price.net * (g.state.buildCostMult || 1);
+
+    if (mode === 'demolish' && !confirmed) {
+      const concern = this.demolitionConcern(cells, price);
+      if (concern) return { confirm: concern };
+    }
 
     if (!this.planning && net > 0 && net > g.state.cash) {
       this.anchor = null;
@@ -395,14 +549,17 @@ export class BuildController {
     }
 
     this.finish(batch, batch.size);
-    if (mode === 'demolish') return `Removed ${price.removed} blocks (+${fmt(price.refund)})`;
+    if (mode === 'demolish') {
+      const extra = price.propsRemoved ? ` and ${price.propsRemoved} piece${price.propsRemoved === 1 ? '' : 's'} of equipment` : '';
+      return `Removed ${price.removed} blocks${extra} (+${fmt(price.refund)})`;
+    }
     return `${price.placed} blocks placed (${fmt(net)})`;
   }
 
   finish(batch, count) {
     const st = this.game.state.stats;
-    if (this.mode === 'demolish') st.blocksRemoved += batch.size;
-    else if (this.mode === 'build') st.blocksPlaced += batch.size;
+    if (this.mode === 'demolish') st.blocksRemoved += batch.voxelCount;
+    else if (this.mode === 'build') st.blocksPlaced += batch.voxelCount;
     this.anchor = null;
     this.game.markWorldDirty();
     this.game.checkAchievements();
@@ -410,7 +567,8 @@ export class BuildController {
     this.onChange?.();
   }
 
-  removeSingle() {
+  removeSingle(confirmed = false) {
+    if (this.aimProp) return this.confirmOrRemoveProp(this.aimProp, confirmed);
     if (!this.aimFace) return null;
     const g = this.game;
     const cells = [this.aimFace.x, this.aimFace.y, this.aimFace.z];
@@ -420,7 +578,7 @@ export class BuildController {
     g.history.push(batch);
     if (!this.planning) g.refund(batch.refund);
     else this.planning.cost -= batch.refund;
-    g.state.stats.blocksRemoved += batch.size;
+    g.state.stats.blocksRemoved += batch.voxelCount;
     g.markWorldDirty();
     this.refreshPreview();
     this.onChange?.();
@@ -428,10 +586,74 @@ export class BuildController {
   }
 
   /**
+   * Equipment is expensive and easy to knock over by accident, so removing a
+   * piece asks first unless the player has already said yes.
+   */
+  confirmOrRemoveProp(rec, confirmed) {
+    const type = PROP_BY_ID[rec.typeId];
+    if (!confirmed && (type?.cost || 0) >= CONFIRM_VALUE) {
+      return {
+        confirm: {
+          title: `Remove ${type.name}?`,
+          body: `You get back ${fmt((type.cost || 0) * 0.3)} of the ${fmt(type.cost || 0)} it cost. This can be undone.`,
+          action: 'removeProp',
+          button: 2,
+        },
+      };
+    }
+    return this.removeProp(rec);
+  }
+
+  /**
+   * Is this demolition big enough, or important enough, to be worth asking
+   * about? A stray tap should never take out a stand or a roof section.
+   */
+  demolitionConcern(cells, price) {
+    if (!cells || price.removed === 0) return null;
+    const w = this.game.world;
+    let structural = 0, seats = 0, roofing = 0, fixtures = 0;
+    const propHits = new Set();
+    for (let i = 0; i < cells.length; i += 3) {
+      const id = w.getBlock(cells[i], cells[i + 1], cells[i + 2]);
+      if (!id) continue;
+      const b = block(id);
+      if (b.support >= 16) structural++;
+      if (b.category === 'seating') seats++;
+      if (b.category === 'roof') roofing++;
+      if (b.light || b.power > 0.01) fixtures++;
+      if (w.props?.size) {
+        for (const dy of [0, 1]) {
+          const rec = w.props.at(cells[i], cells[i + 1] + dy, cells[i + 2]);
+          if (rec) propHits.add(rec);
+        }
+      }
+    }
+    const reasons = [];
+    if (seats >= 40) reasons.push(`${seats.toLocaleString()} blocks of seating`);
+    if (roofing >= 30) reasons.push(`${roofing.toLocaleString()} roof panels`);
+    if (structural >= 20) reasons.push(`${structural.toLocaleString()} load-bearing blocks`);
+    if (fixtures > 0) reasons.push(`${fixtures} floodlight${fixtures === 1 ? '' : 's'} or powered fixture${fixtures === 1 ? '' : 's'}`);
+    if (propHits.size > 0) reasons.push(`${propHits.size} piece${propHits.size === 1 ? '' : 's'} of equipment`);
+    if (!reasons.length && price.removed < CONFIRM_BLOCKS) return null;
+    if (!reasons.length) reasons.push(`${price.removed.toLocaleString()} blocks`);
+    return {
+      title: 'Demolish this?',
+      body: `This removes ${reasons.join(', ')}. You get back ${fmt(price.refund)}. This can be undone.`,
+      action: 'demolish',
+      button: 0,
+    };
+  }
+
+  /**
    * Eyedropper. Returns the key of whatever you are looking at, so the hotbar
    * can hold it - the fastest way to match an existing material.
    */
   pickTarget() {
+    // Equipment first: if you are looking at a goal, that is what you meant.
+    if (this.aimProp && this.mode !== 'zone') {
+      const t = PROP_BY_ID[this.aimProp.typeId];
+      if (t) return { kind: 'prop', key: t.key, name: t.name, rot: this.aimProp.rot };
+    }
     if (!this.aimFace) return null;
     const w = this.game.world;
     if (this.mode === 'zone') {
@@ -448,11 +670,14 @@ export class BuildController {
     const bid = w.getBlock(x, y, z);
     const zid = w.getZone(x, y, z);
     const venue = nearestVenue(this.game.venues, x, z);
+    const propRec = this.aimProp || w.props?.at(x, y, z) || w.props?.at(x, y + 1, z) || null;
     this.inspectResult = {
       pos: { x, y, z },
       metres: { x: x * BLOCK_SIZE, y: (y - GROUND_Y) * BLOCK_SIZE, z: z * BLOCK_SIZE },
       block: bid ? block(bid) : null,
       zone: zid ? zone(zid) : null,
+      prop: propRec ? PROP_BY_ID[propRec.typeId] : null,
+      propRot: propRec ? propRec.rot : 0,
       venue,
     };
     this.onChange?.();
@@ -571,7 +796,8 @@ export class BuildController {
     const prev = this.mode;
     this.mode = mode;
     this.anchor = null;
-    if (mode === 'blueprint' && !this.clipboard) this.tool = 'copy';
+    if (mode === 'blueprint' && this.tool === 'prefab' && !this.prefabKey) this.tool = 'copy';
+    if (mode === 'blueprint' && !this.clipboard && this.tool === 'paste') this.tool = this.prefabKey ? 'prefab' : 'copy';
     if (mode === 'build' && !BUILD_TOOL_KEYS.includes(this.tool)) this.tool = 'single';
     if (mode === 'terrain' && !TERRAIN_TOOL_KEYS.includes(this.tool)) this.tool = 'raise';
     if (mode !== 'terrain' && TERRAIN_TOOL_KEYS.includes(this.tool)) this.tool = 'single';
@@ -590,6 +816,29 @@ export class BuildController {
 
   setMaterial(id) {
     this.material = id;
+    this.propKey = null;
+    this.refreshPreview();
+    this.onChange?.();
+  }
+
+  /** Hold a piece of sports equipment instead of a block. */
+  setProp(key) {
+    if (!prop(key)) return;
+    this.propKey = key;
+    if (this.mode !== 'build') this.mode = 'build';
+    this.tool = 'single';
+    this.anchor = null;
+    this.refreshPreview();
+    this.onChange?.();
+  }
+
+  /** Arm a prefab for stamping. */
+  setPrefab(key) {
+    if (!PREFAB_BY_KEY.has(key)) return;
+    this.prefabKey = key;
+    this.mode = 'blueprint';
+    this.tool = 'prefab';
+    this.anchor = null;
     this.refreshPreview();
     this.onChange?.();
   }
@@ -601,6 +850,7 @@ export class BuildController {
   }
 
   setVisible(v) {
+    this.propGhost.mesh.visible = v && this.propGhost.mesh.visible;
     this.ghost.visible = v;
     this.outline.visible = v && this.outline.visible;
     this.bbox.visible = v && this.bbox.visible;
@@ -609,6 +859,11 @@ export class BuildController {
 
 const BUILD_TOOL_KEYS = ['single', 'line', 'wall', 'floor', 'box', 'hollow', 'fill',
   'replace', 'grandstand', 'garage', 'retaining'];
+
+/** Confirm before demolishing this many blocks, or equipment worth this much. */
+const CONFIRM_BLOCKS = 120;
+const CONFIRM_VALUE = 20_000;
+const FACING = ['north', 'east', 'south', 'west'];
 const TERRAIN_TOOL_KEYS = ['raise', 'lower', 'flatten', 'ramp'];
 
 const STRUCTURE_LABEL = {
@@ -631,6 +886,8 @@ function describePlan(tool, meta, net) {
       return `Parking garage: ${meta.levels} levels, ${meta.spaces.toLocaleString()} spaces (${money})`;
     case 'retaining':
       return `Retaining wall built (${money})`;
+    case 'prefab':
+      return `${meta.name} placed${meta.propCount ? `, ${meta.propCount} fittings` : ''} (${money})`;
     case 'raise': case 'lower': case 'flatten': case 'ramp':
       return `Terrain reshaped across ${meta.columns.toLocaleString()} columns (${money})`;
     default:

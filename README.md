@@ -20,7 +20,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test           # 74 headless simulation tests
+npm test           # 91 headless simulation tests
 npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
@@ -48,24 +48,54 @@ loaded.
    the ground behind it. A separate **TERRAIN** mode raises, lowers, flattens
    and ramps the ground while preserving each column's surface material.
 
+   The **prefab library** goes further: fourteen finished facilities — soccer
+   pitch, Australian Rules oval, cricket ground, basketball court, tennis
+   court, small and main grandstands, gym, performance centre, locker rooms,
+   stadium entrance, food court, car park and fan plaza — each laid out
+   correctly, fitted with its own equipment, and rotatable in 90° steps before
+   you commit. They stamp through the same pricing, staging and undo path as
+   anything you build by hand, so a prefab is a starting point you can then
+   take apart, not a black box.
+
    Anything substantial becomes a **construction project** that rises out of
    the ground over several days, lowest blocks first. You cannot throw up a
    12,000-seat tier the day before an event you have already won — though you
    can pay overtime to rush it.
-2. **Zone.** The hotbar holds zones too, so painting what an area is *for* is
+2. **Fit it out.** A pitch is not a pitch without goals. **Sports equipment**
+   lives beside the blocks in the same hotbar and the same palette: soccer,
+   rugby and Australian Rules goal posts (with behind posts), basketball hoops
+   and backboards, tennis and volleyball nets, cricket stumps and sight
+   screens, pool starting blocks and lane ropes, track lane markings and
+   hurdles, dugouts, coaches boxes, corner flags, scoreboards and a broadcast
+   big screen.
+
+   Equipment is the one thing in the game that has a **facing**. A voxel is one
+   flat colour, so rotating a block would be invisible; a goal has a front and a
+   back, so rotation lives on equipment and prefabs, in 90° steps, with the
+   preview turning under the crosshair before you place. Each piece snaps to
+   the grid, claims its whole footprint, refuses to float, and comes down with
+   the ground it stands on — undo puts both back.
+
+   The analyser counts what each venue has and tells you what it is missing
+   ("2 more goal posts, 4 more corner flags"). A fully fitted venue is worth up
+   to six points of functionality; an unfitted one is never penalised, so a
+   complex built before the fittings existed keeps every rating it had.
+3. **Zone.** The hotbar holds zones too, so painting what an area is *for* is
    the same motion as building it — walk along a stand holding "seating" and
    paint it in. Areas can be: pitch, seating, concourse, entrance,
    emergency exit, locker room, medical, media, broadcast, restrooms,
    concessions, retail, hospitality, security, parking, roads. Placing an
    unambiguous surface (turf, hardwood, ice, asphalt…) auto-zones it; you can
    always repaint by hand, and a hand-painted zone is never clobbered.
-3. **Recognition.** The analyser scans the world, finds connected components
+4. **Recognition.** The analyser scans the world, finds connected components
    per zone, fits the largest rectangle inside each sport surface to check it
-   against regulation dimensions, counts seating volumetrically, measures roof
-   coverage, checks roof spans against their supports, and assigns nearby
+   against regulation dimensions (oval sports are measured by their length and
+   width instead, since a circle contains no regulation square), counts seating
+   volumetrically, measures roof coverage, checks roof spans against their
+   supports, counts the equipment inside each venue's reach, and assigns nearby
    facilities to the nearest venue. It then produces a type, a capacity, seven
    ratings and a list of *specific* things to fix.
-4. **Bid.** Event requirements are checked line by line against that real
+5. **Bid.** Event requirements are checked line by line against that real
    venue. Bidding is a set of decisions — offer amount, venue packages,
    contract terms, ticket pricing — scored against rival venues. You will lose
    bids.
@@ -76,10 +106,10 @@ loaded.
    answer moves their goodwill and changes the deal itself. Promising
    something your venue cannot back up is discounted, and risks an
    embarrassment on the day.
-5. **Host.** Fans walk from the gates to their seats in the 3D world, cars fill
+6. **Host.** Fans walk from the gates to their seats in the 3D world, cars fill
    the parking, then you get a full revenue/cost breakdown, a satisfaction
    score and reputation movement.
-6. **Expand.** Bigger events need more seats *and* more provision. Doubling
+7. **Expand.** Bigger events need more seats *and* more provision. Doubling
    capacity without adding restrooms, exits and parking will break requirements
    that used to pass. Five **utility networks** — power, water, wastewater,
    data and climate — read their demand from what you built and degrade what
@@ -101,17 +131,18 @@ still giving enough resolution for stands, concourses and rooms.
 src/
   core/        game hub, state, seeded RNG, economy, community, construction,
                audio, constants
-  data/        blocks, zones, events, negotiations, sponsors, staff, research,
-               utilities, cities, achievements, endgame goals, random events,
-               rivals   (all pure data)
+  data/        blocks, zones, sports equipment, events, negotiations, sponsors,
+               staff, research, utilities, cities, achievements, endgame goals,
+               random events, rivals   (all pure data)
   voxel/       chunked world, greedy mesher, renderer, DDA raycast,
                reversible edit batches, build tools, procedural structures,
-               build controller
+               prop layer, prefab library, build controller
   venues/      world scan, connected components, largest-rectangle fitting,
                rating model, venue classification
   events/      generator, requirement checking, bidding, negotiation,
                event simulation
-  world/       day/night sky, event-day crowd
+  world/       day/night sky, event-day crowd, equipment rendering,
+               held-item viewmodel, construction particles
   input/       camera rig (4 modes), unified touch + mouse + keyboard
   ui/          HUD shell, build dock, screens, events UI, tutorial
   save/        RLE serialisation, IndexedDB + localStorage manager
@@ -132,6 +163,12 @@ is a new row in `src/data/`.
   stack of cubes, and there is not a single texture to download.
 - **Instanced crowds.** Up to 1,600 spectators and 420 cars in two draw calls,
   positions lerped along an arrival path.
+- **Instanced equipment.** Every piece of a given type — all the corner flags,
+  all the goal posts — draws in one call, sharing the chunk shader so it is lit,
+  fogged and seamed like the stadium around it. Geometry for each type is baked
+  once from its box kit and cached.
+- **Construction particles are two draw calls total**, from a fixed pool, and
+  switch off entirely under the reduced-motion setting.
 - **Chunk remeshing is budgeted** per frame so a 20,000-block fill never stalls.
 - **Saves are RLE-compressed.** A complete stadium is about 28KB.
 
@@ -146,6 +183,7 @@ is a new row in `src/data/`.
 | Remove             | Break mode, or hold ✕                    | right click, hold to sweep         |
 | Pick block         | ⌘ button                                 | middle click, or Z                 |
 | Hotbar slot        | tap a slot; long-press to change it      | 1–9, or the scroll wheel           |
+| Rotate 90°         | ↻ button (appears when it applies)       | R, or Q/E                          |
 | Move (1st/3rd)     | on-screen stick, ↑ to jump               | WASD, Shift to run, Space to jump  |
 | Undo / redo        | rail buttons                             | Ctrl+Z / Ctrl+Shift+Z              |
 | Camera             | FREE / 1ST / 3RD / MAP rail              | C to cycle, B for first person, F to fly |
@@ -170,6 +208,7 @@ to license.
 | System | What it reads | What happens when it is wrong |
 | --- | --- | --- |
 | Venue analysis | zones, block geometry, roof coverage, supports | events you cannot bid for, with a named reason |
+| Equipment | which fittings sit inside each venue's reach | a named shortfall, and up to six points of functionality left on the table |
 | Utility networks | pitch area, fixtures, broadcast feeds, enclosed volume | degraded ratings and specific failures on event day |
 | Transport | road types, parking, garages, transit, bus and taxi bays | queues, turned-away fans, angry neighbours |
 | Community | jobs, visitors, facilities, traffic, noise, branding | standing drifts toward what you have earned |
@@ -190,9 +229,29 @@ to license.
 - **Zones can be painted on open ground.** A "locker room" does not have to be
   an enclosed box. Enclosure would be more realistic but adds friction without
   adding a decision; provision is measured by area against capacity instead.
+- **Every site builds on its own.** A project ordered in one city keeps rising
+  while you are standing in another, into that city's world rather than the one
+  in front of you.
 - **No structural collapse.** Roofs that outrun their supports are flagged and
   can cause an inspector incident on event day, but nothing ever falls down.
   The goal is creativity, not punishment.
+- **Rotation belongs to equipment, not blocks.** Turning a flat-coloured cube
+  would change nothing on screen, so the rotate control only appears when
+  something in your hand actually has a front: a goal, a dugout, a scoreboard,
+  a prefab, a copied structure.
+- **Equipment is a bonus, never a tax.** Fitting a venue out raises its
+  functionality; leaving it bare produces a note in the venue report and
+  nothing worse. Adding the system could not retroactively downgrade a complex
+  that was already finished.
+- **Australian Rules is a real sport here, not a prop.** Adding AFL goal posts
+  and an oval prefab meant adding the zone, the venue type and three event
+  templates to bid for, because a fitting with nothing to host would be a dead
+  end.
+- **Ovals are measured as ovals.** Cricket and Australian Rules grounds are
+  sized by their length and width rather than by the largest rectangle you
+  could inscribe in them — a circle can never contain a regulation square. A
+  rectangular ground measures identically either way, so no existing venue
+  changed.
 
 ## What is deliberately not here yet
 
@@ -200,9 +259,12 @@ to license.
   loop is tested end to end, but nobody has played 300 in-game days. The
   progression from a community ground to a world championship host is designed
   rather than demonstrated.
-- **Ice, aquatic, cricket, combat, baseball and esports venues** have zones,
-  blocks, venue types and event templates, but far less balancing than football
-  and basketball.
+- **Ice, aquatic, cricket, Australian Rules, combat, baseball and esports
+  venues** have zones, blocks, equipment, venue types and event templates, but
+  far less balancing than football and basketball.
+- **Prefab prices are derived, not tuned.** A prefab costs exactly what its
+  blocks and fittings cost, with no discount for convenience and no premium for
+  it. Whether that is the right economic call is unproven.
 - **Real-device performance is unmeasured.** Everything here was profiled under
   software rendering, which tells you nothing about a phone.
 

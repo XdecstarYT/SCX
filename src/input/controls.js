@@ -193,6 +193,7 @@ export class InputController {
     if (k === 'c') this.h.onCycleCamera?.();
     if (k === 'q') this.h.onRotate?.(-1);
     if (k === 'e') this.h.onRotate?.(1);
+    if (k === 'r') this.h.onRotate?.(1);
     if (k === 'escape') { this.h.onEscape?.(); this.exitLock(); }
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? this.h.onRedo?.() : this.h.onUndo?.(); }
     if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); this.h.onRedo?.(); }

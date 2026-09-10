@@ -4,6 +4,9 @@ import { zone } from '../data/zones.js';
 import { TOOLS } from '../voxel/buildTools.js';
 import { BUILD_MODES } from '../voxel/buildController.js';
 import { fmtMoney } from '../core/economy.js';
+import { PREFAB_BY_KEY } from '../voxel/prefabs.js';
+
+const FACING = ['N', 'E', 'S', 'W'];
 
 const TOOL_SETS = {
   build: ['single', 'line', 'wall', 'floor', 'box', 'hollow', 'fill', 'replace',
@@ -12,7 +15,7 @@ const TOOL_SETS = {
   demolish: ['single', 'box', 'floor', 'wall', 'line'],
   inspect: ['single'],
   terrain: ['raise', 'lower', 'flatten', 'ramp'],
-  blueprint: ['copy', 'paste'],
+  blueprint: ['copy', 'paste', 'prefab'],
 };
 
 /**
@@ -110,6 +113,14 @@ export class BuildDock {
       }, el('span.i', { text: '↕' }), el('span.n', { text: `H ${h}` })));
     }
 
+    if (this.bc.holdingProp || this.bc.holdingPrefab
+        || (this.bc.mode === 'blueprint' && this.bc.tool === 'paste' && this.bc.clipboard)) {
+      this.toolrow.append(el('button.tool.rotate-btn', {
+        title: 'Rotate 90 degrees (R)', 'aria-label': 'Rotate 90 degrees',
+        onclick: () => { this.onRotate?.(); this.render(); },
+      }, el('span.i', { text: '\u21BB' }), el('span.n', { text: FACING[this.bc.rotation & 3] })));
+    }
+
     if (['build', 'zone'].includes(this.bc.mode)) {
       this.toolrow.append(el('button.tool.palette-btn', {
         title: 'Choose what goes in the selected hotbar slot',
@@ -118,17 +129,22 @@ export class BuildDock {
       }, el('span.i', { text: '\u229E' }), el('span.n', { text: 'Palette' })));
     }
 
-    if (this.bc.mode === 'blueprint') {
+    if (this.bc.mode === 'build') {
       this.toolrow.append(el('button.tool', {
-        title: 'Rotate the copied structure 90 degrees', disabled: !this.bc.clipboard,
-        onclick: () => { this.bc.rotateClipboard(); this.render(); },
-      }, el('span.i', { text: '↻' }), el('span.n', { text: 'Rotate' })));
+        title: 'Place a whole prefabricated facility',
+        'aria-label': 'Open the structure library',
+        onclick: () => this.onOpenBlueprints?.(),
+      }, el('span.i', { text: '\u25A3' }), el('span.n', { text: 'Prefabs' })));
+    }
+
+    if (this.bc.mode === 'blueprint') {
       this.toolrow.append(el('button.tool', {
         title: 'Save the copied structure as a blueprint', disabled: !this.bc.clipboard,
         onclick: () => this.onSaveBlueprint?.(),
       }, el('span.i', { text: '⤓' }), el('span.n', { text: 'Save' })));
       this.toolrow.append(el('button.tool', {
-        title: 'Open saved blueprints',
+        title: 'Open the prefab and blueprint library',
+        'aria-label': 'Open the structure library',
         onclick: () => this.onOpenBlueprints?.(),
       }, el('span.i', { text: '☷' }), el('span.n', { text: 'Library' })));
     }
@@ -145,7 +161,22 @@ export class BuildDock {
       terrain: 'Raise and Lower move by the set amount; Flatten levels everything to the first point you tap; Ramp slopes between the two. The surface material is preserved.',
     }[this.bc.mode];
 
+    if (this.bc.holdingProp) {
+      const p = this.bc.previewSummary();
+      fill(this.hint, el('span', { text: p?.blocked
+        ? p.blocked
+        : `${p?.prop?.name || 'Equipment'} \u2014 tap to place, \u21BB to turn it.` }));
+      return;
+    }
+
     if (this.bc.mode === 'blueprint') {
+      if (this.bc.tool === 'prefab') {
+        const def = PREFAB_BY_KEY.get(this.bc.prefabKey);
+        fill(this.hint, el('span', { text: def
+          ? `${def.name}: ${def.hint} Tap the ground to place it.`
+          : 'Open the Library and choose a prefab.' }));
+        return;
+      }
       const c = this.bc.clipboard;
       fill(this.hint, el('span', { text: c
         ? `Clipboard: ${c.count} blocks, ${c.size.x}x${c.size.y}x${c.size.z}. Tap to stamp it.`
@@ -168,6 +199,15 @@ export class BuildDock {
         el('span.cost', { text: fmtMoney(plan.cost) }),
         el('button.btn.sm.go', { onclick: () => this.onPlanAction?.('commit') }, 'Build it'),
         el('button.btn.sm', { onclick: () => this.onPlanAction?.('cancel') }, 'Discard'));
+      return;
+    }
+
+    if (s && s.prop) {
+      this.info.append(
+        el('span', { text: `${s.prop.name} \u00B7 facing ${['north', 'east', 'south', 'west'][this.bc.rotation & 3]}` }),
+        el('span', { class: 'cost' + (s.affordable ? '' : ' bad'), text: fmtMoney(s.cost) }));
+      if (s.blocked) this.info.append(el('span.bad', { text: '\u2014 ' + s.blocked }));
+      else if (!s.affordable) this.info.append(el('span.bad', { text: '\u2014 not enough cash' }));
       return;
     }
 
@@ -196,12 +236,19 @@ export class BuildDock {
       if (m.raised) bits.push(`+${m.raised} blocks of fill`);
       if (m.lowered) bits.push(`-${m.lowered} blocks cut`);
       if (m.columns && !m.raised && !m.lowered) bits.push(`${m.columns.toLocaleString()} columns`);
+      if (m.prefab) {
+        bits.length = 0;
+        bits.push(`${m.name} \u00B7 ${m.footprint.x}\u00D7${m.footprint.z} blocks`);
+        if (m.propCount) bits.push(`${m.propCount} fittings`);
+      }
       this.info.append(el('span', { text: bits.join(' \u00B7 ') || 'Ready' }));
       this.info.append(el('span', {
         class: 'cost' + (s.affordable ? '' : ' bad'),
         text: s.cost >= 0 ? fmtMoney(s.cost) : `refund ${fmtMoney(-s.cost)}`,
       }));
       if (!s.affordable) this.info.append(el('span.bad', { text: '\u2014 not enough cash' }));
+      if (m.outside) this.info.append(el('span.bad', { text: `\u2014 ${m.outside} blocks fall off your land` }));
+      else if (m.unevenBy >= 2) this.info.append(el('span.gold', { text: `\u2014 ground varies by ${m.unevenBy} blocks; flatten it first` }));
       return;
     }
 

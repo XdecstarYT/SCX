@@ -109,6 +109,27 @@ export class Hud {
     this.hud = el('div.hud', {},
       this.topbar, this.midrow, this.statusLine, this.tutorialHost, this.dockHost, nav);
     this.root.append(this.hud, this.touchLayer, this.toasts, this.sheet, this.modal);
+    this.watchChrome();
+  }
+
+  /**
+   * Publish the height of the bottom chrome (build dock + tab bar) as
+   * --chrome-h, so the floating stick and action pad sit above it instead of
+   * on top of the hotbar. The dock changes height with the mode, so this has
+   * to be measured rather than hard-coded.
+   */
+  watchChrome() {
+    const measure = () => {
+      const h = (this.dockHost?.offsetHeight || 0) + (this.nav?.offsetHeight || 0);
+      this.root.style.setProperty('--chrome-h', h + 'px');
+    };
+    measure();
+    if (typeof ResizeObserver === 'function') {
+      this.chromeObserver = new ResizeObserver(measure);
+      this.chromeObserver.observe(this.dockHost);
+      this.chromeObserver.observe(this.nav);
+    }
+    window.addEventListener('resize', measure);
   }
 
   // ------------------------------------------------------------------ rails

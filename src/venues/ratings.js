@@ -6,6 +6,8 @@
  * be able to answer "what do I build next?" from this output.
  */
 
+import { PROVIDES_LABEL as EQUIP_LABEL } from '../data/props.js';
+
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const pct = (have, need) => (need <= 0 ? 1 : clamp01(have / need));
 
@@ -68,6 +70,8 @@ export function rateVenue(v, complex) {
     retail: pct(f.retail, cap / 900),
     fanzone: pct(f.fanzone, cap / 500),
     training: pct(f.training, 20),
+    // Equipment is scored, but never subtracts: see the bonus below.
+    equipment: clamp01(v.equipmentScore ?? 0),
   };
 
   // Multiple separate gates matter as much as total width.
@@ -75,9 +79,12 @@ export function rateVenue(v, complex) {
   const exitSpread = clamp01(f.exitGates / Math.max(2, Math.ceil(cap / 9000) + 1));
 
   // --- composite ratings ---------------------------------------------------
-  const functionality = 100 * (
+  // Fitting a venue out with the right equipment is worth up to six points of
+  // functionality on top of what the geometry already earned. It is added
+  // rather than weighted in, so no existing complex loses a rating it had.
+  const functionality = Math.min(100, 100 * (
     m.field * 0.34 + m.seating * 0.16 + m.locker * 0.16 +
-    m.concourse * 0.14 + m.lighting * 0.12 + m.medical * 0.08);
+    m.concourse * 0.14 + m.lighting * 0.12 + m.medical * 0.08) + m.equipment * 6);
 
   const crowdFlow = 100 * (
     m.entrance * 0.28 + gateSpread * 0.16 + m.concourse * 0.24 +
@@ -166,6 +173,20 @@ export function rateVenue(v, complex) {
   }
   if ((complex.roadServiceRatio ?? 1) < 0.6) {
     issues.push({ key: 'roads', severity: 'warn', text: 'The road network cannot feed your parking. Add main roads on the approach.' });
+  }
+  if ((v.equipmentMissing || []).length) {
+    const worst = v.equipmentMissing
+      .slice()
+      .sort((a, b) => (b.need - b.have) - (a.need - a.have))
+      .slice(0, 3)
+      .map((e) => `${e.need - e.have} more ${EQUIP_LABEL[e.provides] || e.provides}`);
+    issues.push({
+      key: 'equipment',
+      severity: m.equipment < 0.34 ? 'warn' : 'info',
+      text: `The ${v.sportName.toLowerCase()} is not fully fitted out: ${worst.join(', ')}. Fit them from the build palette, in the gold equipment categories.`,
+    });
+  } else if (m.equipment >= 0.999) {
+    strengths.push({ key: 'equipment', text: 'Fully fitted out to competition standard.' });
   }
   note(0.6, 'Floodlighting is inadequate for evening or broadcast events.', 'Floodlighting is broadcast grade.', 'lighting');
   note(0.6, 'Athlete facilities are below professional standard. Expand locker rooms.', 'Athlete facilities are excellent.', 'locker');

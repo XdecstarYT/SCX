@@ -1,6 +1,7 @@
 import { CHUNK_X, CHUNK_Z, CHUNK_Y, GROUND_Y, BLOCK_SIZE } from '../core/constants.js';
 import { block, blockId, AIR } from '../data/blocks.js';
 import { zone, ZONE_NONE } from '../data/zones.js';
+import { PropLayer } from './props.js';
 
 const CX = CHUNK_X, CZ = CHUNK_Z, CY = CHUNK_Y;
 const CHUNK_VOLUME = CX * CY * CZ;
@@ -40,6 +41,9 @@ export class VoxelWorld {
     this.version = 0;                 // bumped on every mutation batch
     this.blockCounts = new Map();     // blockId -> count (for maintenance/appearance)
     this.zoneCounts = new Map();      // zoneId -> count
+    // Sports equipment lives beside the voxels, not inside them: a goal post
+    // is 24cm thick and a voxel is 2m.
+    this.props = new PropLayer();
   }
 
   key(cx, cz) { return cx + ',' + cz; }

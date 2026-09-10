@@ -388,10 +388,11 @@ test('weather wears an open pitch and slows a building site', async () => {
 // ------------------------------------------------------------------ hotbar
 
 test('the hotbar starts with a usable set of blocks and zones', async () => {
-  const { createHotbarState, SLOTS, DEFAULT_BLOCK_SLOTS, DEFAULT_ZONE_SLOTS } =
+  const { createHotbarState, SLOTS, DEFAULT_BLOCK_SLOTS, DEFAULT_ZONE_SLOTS, isPropSlot } =
     await import('../src/ui/hotbar.js');
   const { BLOCK_BY_KEY } = await import('../src/data/blocks.js');
   const { ZONE_BY_KEY } = await import('../src/data/zones.js');
+  const { PROP_BY_KEY } = await import('../src/data/props.js');
 
   const h = createHotbarState();
   assert.equal(h.blocks.length, SLOTS);
@@ -399,9 +400,10 @@ test('the hotbar starts with a usable set of blocks and zones', async () => {
   assert.equal(h.active, 0);
 
   for (const key of DEFAULT_BLOCK_SLOTS) {
-    const b = BLOCK_BY_KEY.get(key);
-    assert.ok(b, `default hotbar block "${key}" does not exist`);
-    assert.ok(!b.unlock, `default hotbar block "${key}" is locked behind research`);
+    // A slot holds either a material or a piece of equipment.
+    const b = isPropSlot(key) ? PROP_BY_KEY.get(key.slice(1)) : BLOCK_BY_KEY.get(key);
+    assert.ok(b, `default hotbar entry "${key}" does not exist`);
+    assert.ok(!b.unlock, `default hotbar entry "${key}" is locked behind research`);
   }
   for (const key of DEFAULT_ZONE_SLOTS) {
     assert.ok(ZONE_BY_KEY.has(key), `default hotbar zone "${key}" does not exist`);

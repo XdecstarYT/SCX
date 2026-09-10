@@ -1,6 +1,7 @@
 import { el, fill, section, ratingCell, meter, pill, toggleRow, sliderRow, issueRow, emptyState, animateNumber } from './dom.js';
 import { fmtMoney, fmtNum, monthlyFinance, LEDGER_CATEGORIES, takeLoan, loanCapacity, repayLoan, MAINTENANCE_RATE } from '../core/economy.js';
 import { TIER_LABEL } from '../venues/ratings.js';
+import { PROVIDES_LABEL } from '../data/props.js';
 import { STAFF_ROLES } from '../data/staff.js';
 import { ACHIEVEMENTS } from '../data/achievements.js';
 import { RESEARCH } from '../data/research.js';
@@ -201,7 +202,10 @@ export class Screens {
         el('div.small', { text: v.field
           ? `${v.sportName}: ${v.field.w * 2}m × ${v.field.d * 2}m ${v.field.regulation >= 1 ? '(regulation)' : '(below regulation)'}`
           : 'No sport surface' }),
-        el('div.tiny.faint', { text: `Seated ${fmtNum(v.capacity.seated)} · VIP ${fmtNum(v.capacity.vip)} · Standing ${fmtNum(v.capacity.standing)} · Parking ${fmtNum(v.parkingCars)} cars · ${v.indoor ? 'Indoor' : 'Open air'}` })),
+        el('div.tiny.faint', { text: `Seated ${fmtNum(v.capacity.seated)} · VIP ${fmtNum(v.capacity.vip)} · Standing ${fmtNum(v.capacity.standing)} · Parking ${fmtNum(v.parkingCars)} cars · ${v.indoor ? 'Indoor' : 'Open air'}` }),
+        el('div.tiny' + ((v.equipmentScore ?? 0) >= 0.999 ? '.faint' : '.gold'), {
+          style: { marginTop: '3px' }, text: equipmentLine(v),
+        })),
 
       issues.length ? el('div', { style: { marginTop: '10px' } }, ...issues.map(issueRow)) : null,
 
@@ -878,4 +882,19 @@ function zoneName(key) { return zoneDef(key).name; }
 function SPONSOR_NEXT(s) {
   const next = [12, 20, 34, 45, 60, 72, 84].find((r) => r > s.reputation.venue);
   return next ? `${next}+` : 'more';
+}
+
+/** One line summarising a venue's fittings, and what it is still short of. */
+function equipmentLine(v) {
+  const missing = v.equipmentMissing || [];
+  const fitted = v.equipmentCount || 0;
+  if (!missing.length) {
+    return `Equipment: ${fitted} piece${fitted === 1 ? '' : 's'} fitted \u2014 competition standard`;
+  }
+  const short = missing
+    .slice()
+    .sort((a, b) => (b.need - b.have) - (a.need - a.have))
+    .slice(0, 3)
+    .map((e) => `${e.need - e.have} ${PROVIDES_LABEL[e.provides] || e.provides}`);
+  return `Equipment: ${fitted} fitted \u00B7 still needs ${short.join(', ')}`;
 }

@@ -24,9 +24,17 @@ const VERT = /* glsl */`
     vColor = color;
     vUv = quadUv;
     vEmis = emis;
-    vNormal = normalize(normalMatrix * normal);
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+    // Chunk meshes draw one instance; props draw many, so the same material
+    // has to handle both rather than forking into a second shader.
+    vec4 local = vec4(position, 1.0);
+    vec3 ln = normal;
+    #ifdef USE_INSTANCING
+      local = instanceMatrix * local;
+      ln = mat3(instanceMatrix) * ln;
+    #endif
+    vNormal = normalize(normalMatrix * ln);
+    vec4 mv = modelViewMatrix * local;
+    vWorld = (modelMatrix * local).xyz;
     vDist = -mv.z;
     gl_Position = projectionMatrix * mv;
   }

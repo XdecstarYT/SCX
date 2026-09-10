@@ -18,14 +18,22 @@ export class EditBatch {
     this.prevZ = [];
     this.newB = [];
     this.newZ = [];
+    // Props are objects, not voxels, so they ride along as an ordered op log
+    // rather than a before/after pair per cell.
+    this.props = [];
     this.cost = 0;
     this.refund = 0;
   }
-  get size() { return this.pos.length; }
+  get size() { return this.pos.length + this.props.length; }
+  get voxelCount() { return this.pos.length; }
   record(x, y, z, pb, pz, nb, nz) {
     this.pos.push(packPos(x, y, z));
     this.prevB.push(pb); this.prevZ.push(pz);
     this.newB.push(nb); this.newZ.push(nz);
+  }
+  /** @param op 'add' | 'del' */
+  recordProp(op, typeId, x, y, z, rot) {
+    this.props.push({ op, typeId, x, y, z, rot: rot || 0 });
   }
 }
 
@@ -51,6 +59,16 @@ export class History {
   undo() {
     const b = this.undoStack.pop();
     if (!b) return null;
+    // Props first: putting a block back should not fight equipment that was
+    // knocked down with it.
+    const layer = this.world.props;
+    if (layer) {
+      for (let i = b.props.length - 1; i >= 0; i--) {
+        const op = b.props[i];
+        if (op.op === 'add') layer.remove(op.x, op.y, op.z);
+        else layer.add(op.typeId, op.x, op.y, op.z, op.rot);
+      }
+    }
     for (let i = b.pos.length - 1; i >= 0; i--) {
       const p = b.pos[i];
       this.world.setBlock(unpackX(p), unpackY(p), unpackZ(p), b.prevB[i], b.prevZ[i]);
@@ -66,6 +84,13 @@ export class History {
     for (let i = 0; i < b.pos.length; i++) {
       const p = b.pos[i];
       this.world.setBlock(unpackX(p), unpackY(p), unpackZ(p), b.newB[i], b.newZ[i]);
+    }
+    const layer = this.world.props;
+    if (layer) {
+      for (const op of b.props) {
+        if (op.op === 'add') layer.add(op.typeId, op.x, op.y, op.z, op.rot);
+        else layer.remove(op.x, op.y, op.z);
+      }
     }
     this.undoStack.push(b);
     this.onChange?.();

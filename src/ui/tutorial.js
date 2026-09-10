@@ -25,6 +25,12 @@ const STEPS = [
     done: (g) => (g.primaryVenue?.capacity.total ?? 0) >= 600,
   },
   {
+    id: 'equipment',
+    title: 'Fit the pitch out',
+    body: 'A pitch is not a pitch without goals. Slot 9 already holds one. Open the palette and switch to Equipment for hoops, nets, stumps, dugouts and scoreboards. Turn a piece with \u21BB (or R) before you place it, and the Prefabs button lays a whole court, pitch or stand in one tap.',
+    done: (g) => (g.primaryVenue?.equipmentCount ?? 0) > 0,
+  },
+  {
     id: 'gates',
     title: 'Add entrances and exits',
     body: 'Switch to ZONE mode and paint Entrance and Emergency Exit areas on the ground outside the stands. Without them the crowd cannot get in.',

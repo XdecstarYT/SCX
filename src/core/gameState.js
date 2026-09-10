@@ -65,6 +65,7 @@ export function createState(opts = {}) {
     stats: {
       blocksPlaced: 0, blocksRemoved: 0, moneySpentBuilding: 0,
       venuesDetected: 0, regulationFields: 0,
+      equipmentFitted: 0, fullyFittedVenues: 0,
       bidsPlaced: 0, bidsWon: 0, bidsLost: 0,
       eventsHosted: 0, sellouts: 0, totalAttendance: 0,
       lifetimeRevenue: 0, lifetimeCosts: 0, lifetimeProfit: 0,

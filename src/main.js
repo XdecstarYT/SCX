@@ -13,6 +13,8 @@ import { Hud } from './ui/hud.js';
 import { BuildDock } from './ui/buildDock.js';
 import { Hotbar } from './ui/hotbar.js';
 import { HeldBlock } from './world/viewmodel.js';
+import { PropRenderer } from './world/propRenderer.js';
+import { Effects } from './world/effects.js';
 import { Screens } from './ui/screens.js';
 import { EventsUi } from './ui/eventsUi.js';
 import { Tutorial } from './ui/tutorial.js';
@@ -21,6 +23,10 @@ import { saveManager } from './save/saveManager.js';
 import { fmtMoney, fmtNum } from './core/economy.js';
 import { audio } from './core/audio.js';
 import { blockId, block, BLOCK_BY_KEY, BLOCK_CATEGORIES } from './data/blocks.js';
+import { PROPS, PROP_BY_KEY, PROP_GROUPS, PROP_BY_ID, propId } from './data/props.js';
+import { propSlotKey } from './ui/hotbar.js';
+import { PREFABS, PREFAB_GROUPS, generatePrefab } from './voxel/prefabs.js';
+import { applyPlan } from './voxel/buildTools.js';
 import { zoneId, zone, ZONE_BY_KEY, ZONE_GROUPS } from './data/zones.js';
 import { instantiate } from './events/eventGenerator.js';
 import { EVENT_TEMPLATES } from './data/events.js';
@@ -150,10 +156,13 @@ class App {
       this.controller.onChange = () => {
         this.dock?.render();
         this.hotbar?.syncFromController();
+        this.syncRotateButton();
         this.refreshHeld();
         this.refreshStatus();
         this.syncZoneOverlay();
       };
+      this.propRenderer = new PropRenderer(this.scene, world);
+      this.effects = new Effects(this.scene);
       this.show = new LiveEventShow(this.scene, world);
       this.held = new HeldBlock(this.camera);
       this.scene.add(this.camera);   // so camera children render
@@ -164,6 +173,7 @@ class App {
 
       this.dock = new BuildDock(this.game, this.controller);
       this.dock.onOpenPalette = () => this.openPalette(this.game.state.hotbar.active);
+      this.dock.onRotate = () => this.rotateHeld(1);
       this.dock.onPlanAction = (a) => this.planAction(a);
       this.dock.onSaveBlueprint = () => this.promptSaveBlueprint();
       this.dock.onOpenBlueprints = () => this.openBlueprints();
@@ -174,6 +184,7 @@ class App {
 
     this.worldRenderer.world = world;
     this.show.world = world;
+    this.propRenderer.setWorld(world);
     this.controller.rig = this.rig;
     this.worldRenderer.flush();
 
@@ -217,7 +228,7 @@ class App {
       onHotbar: (i) => this.selectHotbar(i),
       onUndo: () => this.undo(),
       onRedo: () => this.redo(),
-      onRotate: (d) => this.controller.rotateClipboard(),
+      onRotate: (d) => this.rotateHeld(d),
       onCycleCamera: () => this.cycleCamera(),
       onCycleHotbar: (d) => this.hotbar?.cycle(d),
       onPick: () => this.pickBlock(),
@@ -253,14 +264,68 @@ class App {
       onclick: () => this.pickBlock(),
     }, '\u2318');
     this.jumpBtn = el('button.abtn.sm', { 'aria-label': 'Jump', onclick: () => this.rig.jump() }, '\u2191');
+    this.rotBtn = el('button.abtn.sm.rot', {
+      'aria-label': 'Rotate the piece you are holding 90 degrees', title: 'Rotate 90\u00B0',
+      onclick: () => this.rotateHeld(1),
+    }, '\u21BB');
     this.actionPad = el('div.actionpad', { style: { display: 'none' } },
-      this.jumpBtn, this.pickBtn, this.removeBtn, this.placeBtn);
+      this.jumpBtn, this.rotBtn, this.pickBtn, this.removeBtn, this.placeBtn);
     this.hud.touchLayer.append(this.joy, this.actionPad);
   }
 
   aimNdc() {
     if (this.rig.isWalking || this.input?.pointerLocked) return null; // centre ray
     return this.lastNdc || { x: 0, y: 0 };
+  }
+
+  /** Ask before a demolition that would be painful to undo by hand. */
+  askConfirm(c) {
+    this.hud.openModal(el('div', {},
+      el('h2', { text: c.title }),
+      el('p.small.faint', { style: { margin: '8px 0 14px' }, text: c.body }),
+      el('div.btnrow', {},
+        el('button.btn', { onclick: () => this.hud.closeModal() }, 'Keep it'),
+        el('button.btn.danger', {
+          onclick: () => {
+            this.hud.closeModal();
+            this.controller.updateAim(this.aimNdc());
+            this.handleActResult(this.controller.act(c.button ?? 0, true));
+          },
+        }, 'Remove it'))));
+  }
+
+  /**
+   * Dust, sparks and a flash for whatever the last edit actually changed.
+   * Driven off the history batch so it always matches the world, however the
+   * edit was made.
+   */
+  emitEffects() {
+    if (!this.effects?.enabled) return;
+    const b = this.game.history.undoStack[this.game.history.undoStack.length - 1];
+    if (!b || b === this._lastFxBatch) return;
+    this._lastFxBatch = b;
+
+    for (const op of b.props) {
+      const t = PROP_BY_ID[op.typeId];
+      if (!t) continue;
+      const w = Math.max(t.foot.w, t.foot.d);
+      if (op.op === 'add') this.effects.propPlaced(op.x, op.y, op.z, t.color, w);
+      else this.effects.removed(op.x, op.y, op.z, t.color);
+    }
+
+    // Sample rather than spray: a 2,000-block fill needs a hint of dust, not
+    // two thousand particle bursts.
+    const n = b.pos.length;
+    if (n === 0) return;
+    const want = Math.min(14, n);
+    const step = Math.max(1, Math.floor(n / want));
+    for (let i = 0; i < n; i += step) {
+      const p = b.pos[i];
+      const x = p & 511, z = (p >> 9) & 511, y = (p >> 18) & 127;
+      const after = b.newB[i], before = b.prevB[i];
+      if (after) this.effects.placed(x, y, z, block(after).color);
+      else if (before) this.effects.removed(x, y, z, block(before).color);
+    }
   }
 
   onTap(ndc, button, fromButton) {
@@ -284,10 +349,12 @@ class App {
 
   handleActResult(res) {
     if (!res) return;
+    if (res.confirm) { this.askConfirm(res.confirm); return; }
     if (res.error) { this.toast('warn', 'Cannot build', res.error); audio.play('deny'); return; }
     if (res === 'inspect') { this.showInspector(); return; }
     if (typeof res === 'string') {
       this.held?.punch();
+      this.emitEffects();
       audio.play(this.controller.mode === 'demolish' ? 'remove' : 'place');
       this.hud.setStatus(res);
       clearTimeout(this._statusTimer);
@@ -308,6 +375,22 @@ class App {
     if (this.hud.sheetOpen) { this.hud.closeSheet(); return; }
     if (this.controller.anchor) { this.controller.anchor = null; this.controller.refreshPreview(); this.refreshStatus(); return; }
     this.hud.setStatus(null);
+  }
+
+  /** Turn whatever is in hand 90 degrees, and say which way it now faces. */
+  rotateHeld(dir = 1) {
+    if (this.tab !== 'build') return;
+    // Re-aim first so the preview turns under the crosshair straight away,
+    // rather than waiting for the next time the player moves the camera.
+    this.controller.updateAim(this.aimNdc());
+    const msg = this.controller.rotate(dir);
+    if (msg) {
+      this.hud.setStatus(msg);
+      clearTimeout(this._statusTimer);
+      this._statusTimer = setTimeout(() => this.refreshStatus(), 1500);
+    }
+    audio.play('ui');
+    this.dock?.render();
   }
 
   selectHotbar(i) {
@@ -349,14 +432,27 @@ class App {
       chip('zone', 'Zone', 'zone'),
       chip('demolish', 'Break', 'demolish'),
       chip('inspect', 'Inspect'),
+      bc.holdingProp || bc.holdingPrefab
+        ? el('button.imchip.rot', { onclick: () => this.rotateHeld(1) }, '\u21BB Rotate')
+        : null,
       el('button.imchip', { onclick: () => this.setCamera('free') }, '\u2191 Overview'),
       el('button.imchip', { onclick: () => this.openPalette(this.game.state.hotbar.active) }, 'Palette'));
+  }
+
+  /** The rotate button only appears when something in hand can actually turn. */
+  syncRotateButton() {
+    if (!this.rotBtn) return;
+    const bc = this.controller;
+    const rotatable = this.tab === 'build' && (bc.holdingProp || bc.holdingPrefab
+      || (bc.mode === 'blueprint' && bc.tool === 'paste' && bc.clipboard));
+    this.rotBtn.style.display = rotatable ? '' : 'none';
   }
 
   /** Rebuild whichever build UI is appropriate for the current camera. */
   refreshBuildUi() {
     if (this.tab !== 'build') { this.hud.setDock(null); return; }
     this.hotbar.render();
+    this.syncRotateButton();
     if (this.immersive) {
       this.hud.setDock(el('div', {}, this.buildImmersiveBar(), this.hotbar.wrap));
     } else {
@@ -370,12 +466,16 @@ class App {
   /** Show what the player is holding, in-hand and in the hotbar. */
   refreshHeld() {
     if (!this.held) return;
-    const zoneMode = this.controller.mode === 'zone';
+    const bc = this.controller;
+    const zoneMode = bc.mode === 'zone';
     const show = this.rig.isWalking && this.tab === 'build'
-      && ['build', 'zone'].includes(this.controller.mode);
+      && ['build', 'zone'].includes(bc.mode);
+    if (show) {
+      if (zoneMode) this.held.set('zone', bc.zoneKey);
+      else if (bc.propKey) this.held.set('prop', bc.propKey);
+      else this.held.set('block', block(bc.material).key);
+    }
     this.held.setVisible(show);
-    if (show) this.held.set(zoneMode ? 'zone' : 'block',
-      zoneMode ? this.controller.zoneKey : block(this.controller.material).key);
   }
 
   /** Eyedropper: hold whatever is under the crosshair. */
@@ -385,8 +485,14 @@ class App {
     const picked = this.controller.pickTarget();
     if (!picked) { this.toast('info', 'Nothing to pick', 'Point at a block first.'); return; }
     if (picked.kind === 'zone' && this.controller.mode !== 'zone') this.controller.setMode('zone');
-    if (picked.kind === 'block' && this.controller.mode === 'zone') this.controller.setMode('build');
-    this.hotbar.pick(picked.key);
+    if (picked.kind !== 'zone' && this.controller.mode === 'zone') this.controller.setMode('build');
+    if (picked.kind === 'prop') {
+      // Picking a goal also matches how it is turned, so the next one lines up.
+      this.controller.rotation = picked.rot || 0;
+      this.hotbar.pick(propSlotKey(picked.key));
+    } else {
+      this.hotbar.pick(picked.key);
+    }
     this.refreshBuildUi();
     audio.play('ui');
   }
@@ -404,27 +510,56 @@ class App {
     const kind = zoneMode ? 'zone' : 'block';
     let group = this.paletteGroup[kind];
 
+    // Equipment sits in the same palette as materials - it is the same motion -
+    // but behind a top-level switch, because fourteen category chips in one
+    // scrolling row is a phone-width scavenger hunt.
+    const propGroupKeys = new Set(PROP_GROUPS.map((g) => g.key));
+    let isProps = !zoneMode && propGroupKeys.has(group);
+    if (!zoneMode && !isProps && !BLOCK_CATEGORIES.some((c) => c.key === group)) group = 'structure';
+
     const body = el('div');
     const render = () => {
-      const groups = zoneMode ? ZONE_GROUPS : BLOCK_CATEGORIES;
+      const groups = zoneMode ? ZONE_GROUPS : isProps ? PROP_GROUPS : BLOCK_CATEGORIES;
+      if (!groups.some((g) => g.key === group)) {
+        group = groups[0].key;
+        this.paletteGroup[kind] = group;
+      }
       const items = zoneMode
         ? [...ZONE_BY_KEY.values()].filter((z) => z.group === group)
-        : [...BLOCK_BY_KEY.values()].filter((b) => b.category === group);
+        : isProps
+          ? [...PROP_BY_KEY.values()].filter((p) => p.group === group)
+          : [...BLOCK_BY_KEY.values()].filter((b) => b.category === group);
+
+      const kindTab = (label, props, title) => el('button.tab' + (isProps === props ? '.on' : ''), {
+        title,
+        onclick: () => {
+          isProps = props;
+          group = props ? PROP_GROUPS[0].key : 'structure';
+          this.paletteGroup[kind] = group;
+          render();
+        },
+      }, label);
 
       fill(body,
+        zoneMode ? null : el('div.tabs', { style: { padding: '0 0 8px' } },
+          kindTab('Materials', false, 'Blocks you build with'),
+          kindTab('Equipment', true, 'Goals, hoops, nets, benches and scoreboards')),
         el('div.small.faint', { style: { marginBottom: '10px' },
-          text: `Choose what goes in slot ${slot + 1}. Long-press any slot to change it again later.` }),
+          text: isProps
+            ? `Equipment goes in slot ${slot + 1} like any block. Rotate it with the \u21BB button before you place it.`
+            : `Choose what goes in slot ${slot + 1}. Long-press any slot to change it again later.` }),
         el('div.catrow', { style: { marginBottom: '10px' } }, ...groups.map((g) =>
-          el('button.cat' + (group === g.key ? '.on' : ''), {
+          el('button.cat' + (group === g.key ? '.on' : '') + (isProps ? '.equip' : ''), {
             onclick: () => { group = g.key; this.paletteGroup[kind] = g.key; render(); },
           }, g.name))),
         el('div.palette', {}, ...items.map((item) => {
           const locked = !zoneMode && item.unlock && !this.game.isUnlocked(item.unlock);
           return el('button.palette-item' + (locked ? '.locked' : ''), {
             'aria-label': `${item.name}${locked ? ' (locked)' : ''}`,
+            title: item.hint || item.name,
             onclick: () => {
               if (locked) { this.toast('warn', `${item.name} is locked`, 'Complete the matching research project to unlock it.'); return; }
-              this.hotbar.assign(item.key, slot);
+              this.hotbar.assign(item.isProp ? propSlotKey(item.key) : item.key, slot);
               this.refreshBuildUi();
               // Close on the next frame: tearing the sheet down inside the
               // click handler lets the release land on whatever was behind it.
@@ -435,11 +570,11 @@ class App {
             el('span.n', { text: item.name }),
             el('span.c', { text: locked ? '\u{1F512}' : zoneMode
               ? (item.regulation ? `${item.regulation.w}\u00D7${item.regulation.d}` : item.capacity ? `${item.capacity}/blk` : '\u2014')
-              : '$' + item.cost }));
+              : '$' + item.cost.toLocaleString() }));
         })));
     };
     render();
-    this.hud.openSheet(zoneMode ? 'Choose a zone' : 'Choose a material', body);
+    this.hud.openSheet(zoneMode ? 'Choose a zone' : 'Choose a material or fitting', body);
   }
 
   // =================================================================== TABS
@@ -468,7 +603,9 @@ class App {
     const want = this.tab === 'build' && (this.zoneOverlay || this.controller.mode === 'zone');
     // Fading the world back makes zones readable from above; down at ground
     // level it just makes the place hard to walk around, so ease off.
+    const dim = want ? (this.rig.isWalking ? 0.62 : 0.35) : 1;
     this.worldRenderer.setZoneMode(want, this.rig.isWalking ? 0.62 : 0.35);
+    this.propRenderer?.setDim(dim);
   }
 
   // ================================================================= BUS
@@ -677,18 +814,76 @@ class App {
         }, 'Save'))));
   }
 
-  openBlueprints() {
+  /**
+   * The prefab library: the built-in facilities on one tab, whatever the
+   * player has copied on the other. Both stamp through the same code path.
+   */
+  openBlueprints(tab = 'prefabs') {
+    const body = el('div');
+    const render = () => {
+      fill(body,
+        el('div.tabs', {},
+          el('button.tab' + (tab === 'prefabs' ? '.on' : ''), { onclick: () => { tab = 'prefabs'; render(); } }, 'Prefabs'),
+          el('button.tab' + (tab === 'saved' ? '.on' : ''), { onclick: () => { tab = 'saved'; render(); } }, 'Your blueprints')),
+        tab === 'prefabs' ? this.prefabList() : this.savedBlueprintList());
+    };
+    render();
+    this.hud.openSheet('Structure Library', body);
+  }
+
+  prefabList() {
+    const cash = this.game.state.cash;
+    return el('div.stack', {},
+      el('div.tiny.faint', { text: 'Tap a prefab to hold it, then tap the ground to place it. Rotate with \u21BB (or R) before you build. Flatten the ground first for the best fit.' }),
+      ...PREFAB_GROUPS.map((g) => {
+        const items = PREFABS.filter((p) => p.group === g.key);
+        if (!items.length) return null;
+        return el('div', {},
+          el('div.section', { text: g.name }),
+          el('div.stack', {}, ...items.map((def) => {
+            const est = this.estimatePrefab(def);
+            return el('button.card.tight.tap', {
+              'aria-label': `${def.name}, ${def.size.x} by ${def.size.z} blocks`,
+              onclick: () => {
+                this.controller.setPrefab(def.key);
+                this.hud.closeSheet();
+                this.setTab('build');
+                this.refreshBuildUi();
+                this.toast('info', `Holding ${def.name}`, 'Tap the ground to place it. \u21BB rotates it 90\u00B0.');
+              },
+            },
+              el('div.rowbetween', {},
+                el('div', {},
+                  el('div.small', { text: `${def.icon} ${def.name}` }),
+                  el('div.tiny.faint', { text: def.hint })),
+                el('div.right', { style: { flex: '0 0 auto' } },
+                  el('div.small.mono' + (est.cost > cash ? '.bad' : ''), { text: fmtMoney(est.cost) }),
+                  el('div.tiny.faint', { text: `${def.size.x}\u00D7${def.size.z} blocks` }))));
+          })));
+      }).filter(Boolean));
+  }
+
+  /** What a prefab would cost on open ground, for the library listing. */
+  estimatePrefab(def) {
+    const plan = generatePrefab(this.game.world, def.key,
+      { x: 1, y: GROUND_Y, z: 1 }, 0);
+    let cost = 0;
+    for (let i = 0; i < plan.cells.length; i += 5) cost += block(plan.cells[i + 3]).cost;
+    for (const pr of plan.props) cost += PROP_BY_ID[pr.typeId]?.cost || 0;
+    return { cost: cost * (this.game.state.buildCostMult || 1), blocks: plan.cells.length / 5 };
+  }
+
+  savedBlueprintList() {
     const list = this.controller.blueprints;
-    const body = list.length
+    return list.length
       ? el('div.stack', {}, ...list.map((bp) => el('div.card.tight', {},
           el('div.rowbetween', {},
             el('div', {}, el('div.small', { text: bp.name }),
               el('div.tiny.faint', { text: `${fmtNum(bp.count)} blocks · ${bp.size.x}×${bp.size.y}×${bp.size.z}` })),
             el('div.btnrow', { style: { flex: '0 0 auto', gap: '6px' } },
               el('button.btn.sm.primary', { onclick: () => { this.controller.loadBlueprint(bp.id); this.hud.closeSheet(); this.dock.render(); } }, 'Use'),
-              el('button.btn.sm.danger', { onclick: () => { this.controller.deleteBlueprint(bp.id); this.openBlueprints(); } }, '✕'))))))
-      : el('div.card', {}, emptyState('☷', 'No blueprints yet. Use Blueprint → Copy to capture a structure, then Save.'));
-    this.hud.openSheet('Blueprint Library', body);
+              el('button.btn.sm.danger', { onclick: () => { this.controller.deleteBlueprint(bp.id); this.openBlueprints('saved'); } }, '✕'))))))
+      : el('div.card', {}, emptyState('☷', 'No saved blueprints yet. Use Blueprint → Copy to capture something you built, then Save.'));
   }
 
   confirmReset() {
@@ -714,6 +909,7 @@ class App {
     const world = this.game.world;
     this.worldRenderer.world = world;
     this.show.world = world;
+    this.propRenderer.setWorld(world);
     this.rig.setWorld(world);
     this.controller.anchor = null;
     this.worldRenderer.rebuildAll();
@@ -804,13 +1000,12 @@ class App {
     this.rig.sensitivity = s.sensitivity;
     this.rig.invertY = s.invertY;
     audio.enabled = s.sound;
+    this.effects?.setEnabled(!s.reducedMotion);
     this.fpsNode.style.display = s.showFps ? '' : 'none';
-    const left = s.handedness === 'left';
-    this.joy.style.left = left ? '' : 'calc(var(--sal) + 22px)';
-    this.joy.style.right = left ? 'calc(var(--sar) + 22px)' : '';
-    this.actionPad.style.right = left ? '' : 'calc(var(--sar) + 16px)';
-    this.actionPad.style.left = left ? 'calc(var(--sal) + 16px)' : '';
-    this.actionPad.style.alignItems = left ? 'flex-start' : 'flex-end';
+    // Handedness is a root attribute rather than inline styles: inline styles
+    // beat the landscape media query, which is how the action pad used to end
+    // up sitting on top of the side dock.
+    document.documentElement.dataset.hand = s.handedness === 'left' ? 'left' : 'right';
   }
 
   // ================================================================= VIEW
@@ -833,8 +1028,10 @@ class App {
     fill(this.hud.statusLine,
       el('div.rowbetween', {},
         el('div', {},
-          el('div.small', { text: r.block ? r.block.name : 'Empty' }),
-          el('div.tiny.faint', { text: r.zone ? `Zoned: ${r.zone.name}` : 'No functional zone' })),
+          el('div.small', { text: r.prop ? r.prop.name : r.block ? r.block.name : 'Empty' }),
+          el('div.tiny.faint', { text: r.prop
+            ? `Equipment \u00B7 facing ${['north', 'east', 'south', 'west'][r.propRot]} \u00B7 on ${r.block ? r.block.name : 'open ground'}`
+            : r.zone ? `Zoned: ${r.zone.name}` : 'No functional zone' })),
         el('div.right', {},
           el('div.tiny.faint', { text: `${r.pos.x}, ${r.pos.y}, ${r.pos.z}` }),
           el('div.tiny.faint', { text: `${r.metres.x}m · ${r.metres.y}m up` }))),
@@ -941,6 +1138,8 @@ class App {
     if (this.rig.isWalking || this.input.pointerLocked) this.controller.updateAim(null);
 
     this.worldRenderer.update();
+    this.propRenderer.update();
+    this.effects.update(dt);
     this.worldRenderer.cullDistant(this.camera.position, 1600);
 
     const state = g.state;
@@ -950,6 +1149,7 @@ class App {
     const dayT = state ? (0.34 + state.dayFraction * 0.5) : 0.5;
     const env = this.sky.update(dayT, state?.weather || 'sunny', this.camera.position, 1500);
     this.worldRenderer.setEnvironment(env);
+    this.propRenderer.setEnvironment(env);
     this.renderer.setClearColor(env.fogColor);
 
     this.renderer.render(this.scene, this.camera);
@@ -980,6 +1180,41 @@ window.__sct = app;
 window.__sct.dev = {
   blockId,
   zoneId,
+  propId,
+  /** Place a prefab straight into the world, bypassing the aim. */
+  prefab(key, x, y, z, rot = 0) {
+    const w = app.game.world;
+    const plan = generatePrefab(w, key, { x, y, z }, rot);
+    applyPlan(w, plan.cells, key, plan.props);
+    app.game.markWorldDirty();
+    return { blocks: plan.cells.length / 5, props: plan.props.length, meta: plan.meta };
+  },
+  /** Place one piece of equipment, ignoring cost. */
+  prop(key, x, y, z, rot = 0) {
+    const id = propId(key);
+    if (!id) throw new Error('unknown prop: ' + key);
+    return app.game.world.props.add(id, x, y, z, rot);
+  },
+  propKeys: () => PROPS.map((p) => p.key),
+  /**
+   * Client pixels for the centre of a placed prop. Aiming at a goal post from
+   * a voxel coordinate means aiming at the gap between its uprights, so tests
+   * and debugging need the object's own centre.
+   */
+  projectProp(x, y, z) {
+    const rec = app.game.world.props.anchorAt(x, y, z);
+    if (!rec) return null;
+    const b = rec.bounds;
+    const v = new THREE.Vector3((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2);
+    v.project(app.camera);
+    const r = app.canvas.getBoundingClientRect();
+    return {
+      x: r.left + (v.x * 0.5 + 0.5) * r.width,
+      y: r.top + (-v.y * 0.5 + 0.5) * r.height,
+      onScreen: Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 && v.z < 1,
+    };
+  },
+  prefabKeys: () => PREFABS.map((p) => p.key),
   /**
    * Project a voxel's top face to client pixels. Used by the end-to-end tests
    * to aim real taps at known blocks, and handy for debugging aim problems.

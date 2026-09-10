@@ -142,6 +142,32 @@ export const EVENT_TEMPLATES = [
   },
 
   {
+    id: 'afl_local', name: 'Suburban Rules Carnival', sport: 'afl', tier: 'local',
+    organiser: 'Southern Rules Association', popularity: 0.34, base: 16, fee: 14_000,
+    bid: [1_500, 18_000], days: 2, risk: 0.12, prestige: 3, audience: 'family',
+    req: [req.field('afl'), req.cap(900), req.rating(26)],
+    blurb: 'Eight suburban clubs, one weekend, and an oval that finally gets used.',
+    community: 5,
+  },
+  {
+    id: 'afl_derby', name: 'Rules Football Derby', sport: 'afl', tier: 'regional',
+    organiser: 'Southern Rules Association', popularity: 0.62, base: 36, fee: 240_000,
+    bid: [55_000, 380_000], days: 1, risk: 0.2, prestige: 7, audience: 'regional',
+    req: [req.field('afl'), req.cap(9000), req.rating(50),
+          req.m('lighting', 0.55, 'Floodlighting'), req.m('locker', 0.5, 'Professional locker rooms')],
+    blurb: 'Two rival clubs, one oval, and a crowd that arrives four hours early.',
+    recurring: true,
+  },
+  {
+    id: 'afl_grand', name: 'Rules Football Grand Final', sport: 'afl', tier: 'national',
+    organiser: 'National Rules Council', popularity: 0.9, base: 74, fee: 1_900_000,
+    bid: [480_000, 2_900_000], days: 1, risk: 0.26, prestige: 20, audience: 'national',
+    req: [req.field('afl'), req.cap(24000), req.rating(68), req.rep(50),
+          req.m('broadcast', 0.6, 'Broadcast centre'), req.m('media', 0.65, 'Media centre'),
+          req.m('hospitality', 0.55, 'VIP hospitality'), req.m('crowd', 0.65, 'Crowd flow')],
+    blurb: 'One afternoon in spring that an entire code plans its year around.',
+  },
+  {
     id: 'baseball_series', name: 'Regional Baseball Series', sport: 'baseball', tier: 'regional',
     organiser: 'Continental Diamond League', popularity: 0.5, base: 31, fee: 190_000,
     bid: [35_000, 300_000], days: 3, risk: 0.16, prestige: 6, audience: 'family',

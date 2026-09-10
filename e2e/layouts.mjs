@@ -49,6 +49,53 @@ for (const [name, w, h] of SIZES) {
   const shot = async (label) => page.screenshot({ path: `${SHOTS}/L-${name}-${label}.png` });
   await shot('build');
 
+  // The floating stick and action pad sit over the 3D view. They must never
+  // land on top of a dock control, a hotbar slot or the tab bar - which is
+  // exactly what they used to do at the bottom right of a phone screen.
+  for (const hand of ['right', 'left']) {
+    await page.evaluate((h) => {
+      const a = window.__sct;
+      a.game.state.settings.handedness = h;
+      a.applySettings();
+      a.setCamera('first');            // stick and full action pad on screen
+      a.controller.setProp('goal_soccer');
+      a.refreshBuildUi();
+      a.refresh();
+    }, hand);
+    await page.waitForTimeout(450);
+    const cover = await page.evaluate(() => {
+      const floats = [...document.querySelectorAll('.actionpad, .joy')]
+        .filter((e) => e.offsetParent !== null)
+        .map((e) => e.getBoundingClientRect());
+      const covered = [];
+      for (const el of document.querySelectorAll('.builddock button, .hotbar-bar button, .botnav button')) {
+        const b = el.getBoundingClientRect();
+        for (const f of floats) {
+          const ox = Math.max(0, Math.min(b.right, f.right) - Math.max(b.left, f.left));
+          const oy = Math.max(0, Math.min(b.bottom, f.bottom) - Math.max(b.top, f.top));
+          if (ox * oy > b.width * b.height * 0.25) {
+            covered.push((el.getAttribute('aria-label') || el.textContent || '?').trim().slice(0, 24));
+            break;
+          }
+        }
+      }
+      const off = floats.filter((f) => f.top < 0 || f.left < 0
+        || f.right > window.innerWidth + 1 || f.bottom > window.innerHeight + 1).length;
+      return { covered, off };
+    });
+    if (cover.covered.length) problems.push(`${name}/${hand}-handed: floating controls cover ${cover.covered.join(', ')}`);
+    if (cover.off) problems.push(`${name}/${hand}-handed: ${cover.off} floating control group is off screen`);
+    if (hand === 'left') await shot('left-handed');
+  }
+  await page.evaluate(() => {
+    const a = window.__sct;
+    a.game.state.settings.handedness = 'right';
+    a.applySettings();
+    a.setCamera('free');
+    a.refresh();
+  });
+  await page.waitForTimeout(300);
+
   for (const tab of ['Home', 'Events', 'Finance', 'More']) {
     await page.getByRole('tab', { name: tab }).click();
     await page.waitForTimeout(500);

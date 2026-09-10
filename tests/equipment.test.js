@@ -1,0 +1,297 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { VoxelWorld } from '../src/voxel/world.js';
+import { PropLayer, footprintOffsets, rotateOffset, worldBounds } from '../src/voxel/props.js';
+import { propId, prop, PROP_BY_KEY, SPORT_EQUIPMENT } from '../src/data/props.js';
+import { blockId } from '../src/data/blocks.js';
+import { zoneId } from '../src/data/zones.js';
+import { GROUND_Y, BLOCK_SIZE } from '../src/core/constants.js';
+import { applyEdit, priceEdit, applyPlan, pricePlan } from '../src/voxel/buildTools.js';
+import { History } from '../src/voxel/history.js';
+import { PREFABS, PREFAB_BY_KEY, generatePrefab, transform } from '../src/voxel/prefabs.js';
+import { detectVenues } from '../src/venues/venueDetection.js';
+import { serializeWorld, deserializeWorld } from '../src/save/serialization.js';
+
+globalThis.performance ??= { now: () => Date.now() };
+// The serializer round-trips through base64.
+globalThis.btoa ??= (s) => Buffer.from(s, 'binary').toString('base64');
+globalThis.atob ??= (s) => Buffer.from(s, 'base64').toString('binary');
+
+function pitchWorld(size = 128) {
+  const w = new VoxelWorld(size);
+  w.generateTerrain();
+  for (let x = 20; x < 74; x++) {
+    for (let z = 20; z < 55; z++) w.setBlock(x, GROUND_Y - 1, z, blockId('turf'), zoneId('pitch_football'));
+  }
+  return w;
+}
+
+test('rotating a prop four times returns it to where it started', () => {
+  for (const key of ['goal_soccer', 'dugout', 'scoreboard_lg', 'lane_rope']) {
+    const type = prop(key);
+    const a = footprintOffsets(type, 0).map((o) => o.join(',')).sort();
+    const b = footprintOffsets(type, 4).map((o) => o.join(',')).sort();
+    assert.deepEqual(b, a, `${key} does not come back after four turns`);
+  }
+});
+
+test('a rotated footprint swaps its width and depth, and stays on the grid', () => {
+  const type = prop('goal_soccer');       // 5 x 2
+  const flat = footprintOffsets(type, 0);
+  const turned = footprintOffsets(type, 1);
+  const span = (cells, i) => Math.max(...cells.map((c) => c[i])) - Math.min(...cells.map((c) => c[i])) + 1;
+  assert.equal(span(flat, 0), type.foot.w);
+  assert.equal(span(flat, 1), type.foot.d);
+  assert.equal(span(turned, 0), type.foot.d);
+  assert.equal(span(turned, 1), type.foot.w);
+  for (const [dx, dz] of turned) {
+    assert.ok(Number.isInteger(dx) && Number.isInteger(dz), 'rotation drifted off the grid');
+  }
+});
+
+test('the geometry turns the same way the footprint does', () => {
+  // A soccer goal is wide in x. Turned 90 degrees it must be wide in z.
+  const id = propId('goal_soccer');
+  const flat = worldBounds({ typeId: id, x: 30, y: GROUND_Y, z: 30, rot: 0 });
+  const turned = worldBounds({ typeId: id, x: 30, y: GROUND_Y, z: 30, rot: 1 });
+  assert.ok(flat.x1 - flat.x0 > flat.z1 - flat.z0, 'unrotated goal is not wide in x');
+  assert.ok(turned.z1 - turned.z0 > turned.x1 - turned.x0, 'rotated goal is not wide in z');
+});
+
+test('equipment needs solid, empty, unclaimed ground', () => {
+  const w = pitchWorld();
+  const layer = w.props;
+  const id = propId('goal_soccer');
+
+  assert.equal(layer.canPlace(w, id, 40, GROUND_Y, 30, 0).ok, true);
+  // Floating: nothing underneath.
+  assert.equal(layer.canPlace(w, id, 40, GROUND_Y + 4, 30, 0).ok, false);
+  // Occupied: a block in the way.
+  w.setBlock(41, GROUND_Y, 30, blockId('concrete'));
+  assert.equal(layer.canPlace(w, id, 40, GROUND_Y, 30, 0).ok, false);
+  w.setBlock(41, GROUND_Y, 30, 0);
+  // Occupied: another prop already there.
+  layer.add(id, 40, GROUND_Y, 30, 0);
+  assert.equal(layer.canPlace(w, id, 41, GROUND_Y, 30, 0).ok, false);
+  // Off the edge of the plot.
+  assert.equal(layer.canPlace(w, id, 0, GROUND_Y, 30, 0).ok, false);
+});
+
+test('a prop occupies every cell of its footprint, and frees them again', () => {
+  const w = pitchWorld();
+  const id = propId('dugout');            // 4 x 2
+  w.props.add(id, 40, GROUND_Y, 30, 0);
+  const cells = w.props.cellsFor(id, 40, GROUND_Y, 30, 0);
+  assert.equal(cells.length, 8);
+  for (const [x, y, z] of cells) assert.ok(w.props.at(x, y, z), `cell ${x},${z} not claimed`);
+  w.props.remove(40, GROUND_Y, 30);
+  for (const [x, y, z] of cells) assert.equal(w.props.at(x, y, z), null);
+  assert.equal(w.props.size, 0);
+});
+
+test('demolishing the ground takes the equipment standing on it, and undo restores both', () => {
+  const w = pitchWorld();
+  const history = new History(w);
+  const id = propId('goal_soccer');
+  w.props.add(id, 40, GROUND_Y, 30, 1);
+  assert.equal(w.props.size, 1);
+
+  // Remove the turf under the goal's anchor cell.
+  const cells = [40, GROUND_Y - 1, 30];
+  const price = priceEdit(w, cells, 'demolish', 0);
+  assert.equal(price.propsRemoved, 1, 'the goal was not priced into the demolition');
+  const batch = applyEdit(w, cells, 'demolish', 0, { label: 'Demolish' });
+  history.push(batch);
+  assert.equal(w.props.size, 0, 'the goal survived its own pitch being dug up');
+
+  history.undo();
+  assert.equal(w.props.size, 1, 'undo did not put the goal back');
+  const back = w.props.anchorAt(40, GROUND_Y, 30);
+  assert.equal(back.rot, 1, 'undo lost the rotation');
+  assert.equal(w.getBlock(40, GROUND_Y - 1, 30), blockId('turf'));
+
+  history.redo();
+  assert.equal(w.props.size, 0, 'redo did not take the goal away again');
+});
+
+test('every prefab lays down at every rotation without leaving the grid', () => {
+  const w = new VoxelWorld(256);
+  w.generateTerrain();
+  for (const def of PREFABS) {
+    for (let rot = 0; rot < 4; rot++) {
+      const plan = generatePrefab(w, def.key, { x: 4, y: GROUND_Y, z: 4 }, rot);
+      assert.ok(plan.cells.length > 0, `${def.key} rot ${rot} produced nothing`);
+      assert.equal(plan.meta.outside, 0, `${def.key} rot ${rot} fell off the plot`);
+      const foot = plan.meta.footprint;
+      const expect = rot & 1 ? { x: def.size.z, z: def.size.x } : { x: def.size.x, z: def.size.z };
+      assert.deepEqual(foot, expect, `${def.key} rot ${rot} reported the wrong footprint`);
+      // Nothing may stray outside the reported footprint.
+      for (let i = 0; i < plan.cells.length; i += 5) {
+        const dx = plan.cells[i] - 4, dz = plan.cells[i + 2] - 4;
+        assert.ok(dx >= 0 && dx < foot.x && dz >= 0 && dz < foot.z,
+          `${def.key} rot ${rot} placed a block outside its footprint`);
+      }
+    }
+  }
+});
+
+test('a prefab pitch is regulation and arrives fully fitted out', () => {
+  const w = new VoxelWorld(128);
+  w.generateTerrain();
+  const plan = generatePrefab(w, 'pitch_soccer', { x: 20, y: GROUND_Y, z: 20 }, 0);
+  const price = pricePlan(w, plan.cells, plan.props);
+  assert.ok(price.net > 0, 'a full pitch should cost something');
+  applyPlan(w, plan.cells, 'Soccer pitch', plan.props);
+
+  const { venues } = detectVenues(w, {});
+  assert.equal(venues.length, 1, 'the prefab pitch was not detected as a venue');
+  const v = venues[0];
+  assert.equal(v.sport, 'football');
+  assert.equal(v.field.regulation, 1, 'the prefab pitch is not regulation size');
+  assert.ok(v.field.surfaceOk, 'the prefab pitch is not on an approved surface');
+  assert.equal(v.equipment.goal, 2, 'the prefab did not fit two goals');
+  assert.equal(v.equipment.flag, 4, 'the prefab did not fit four corner flags');
+  assert.equal(v.equipment.bench, 2, 'the prefab did not fit two benches');
+});
+
+test('a prefab rotated 90 degrees is still regulation', () => {
+  const w = new VoxelWorld(128);
+  w.generateTerrain();
+  const plan = generatePrefab(w, 'pitch_soccer', { x: 20, y: GROUND_Y, z: 20 }, 1);
+  applyPlan(w, plan.cells, 'Soccer pitch', plan.props);
+  const { venues } = detectVenues(w, {});
+  assert.equal(venues.length, 1);
+  assert.equal(venues[0].field.regulation, 1, 'a turned pitch lost its regulation size');
+  assert.equal(venues[0].equipment.goal, 2, 'a turned pitch lost its goals');
+});
+
+test('fitting equipment raises functionality without ever lowering it', () => {
+  const bare = new VoxelWorld(128);
+  bare.generateTerrain();
+  const plan = generatePrefab(bare, 'pitch_soccer', { x: 20, y: GROUND_Y, z: 20 }, 0);
+  applyPlan(bare, plan.cells, 'pitch');            // blocks only, no fittings
+
+  const fitted = new VoxelWorld(128);
+  fitted.generateTerrain();
+  applyPlan(fitted, plan.cells, 'pitch', plan.props);
+
+  const a = detectVenues(bare, {}).venues[0];
+  const b = detectVenues(fitted, {}).venues[0];
+  assert.ok(b.ratings.functionality > a.ratings.functionality,
+    'fitting a pitch out did not improve it');
+  assert.ok(a.equipmentMissing.length > 0, 'a bare pitch should list what it is missing');
+  assert.ok(a.ratings.issues.some((i) => i.key === 'equipment'),
+    'a bare pitch does not say what equipment it needs');
+});
+
+test('equipment survives a save and reload, rotation included', () => {
+  const w = pitchWorld();
+  w.props.add(propId('goal_soccer'), 40, GROUND_Y, 30, 2);
+  w.props.add(propId('scoreboard_sm'), 60, GROUND_Y, 44, 3);
+  const back = deserializeWorld(serializeWorld(w));
+  assert.equal(back.props.size, 2);
+  assert.equal(back.props.anchorAt(40, GROUND_Y, 30).rot, 2);
+  assert.equal(back.props.anchorAt(60, GROUND_Y, 44).typeId, propId('scoreboard_sm'));
+});
+
+test('a world saved before equipment existed still loads', () => {
+  const w = pitchWorld();
+  const data = serializeWorld(w);
+  delete data.props;                       // exactly what an old save looks like
+  const back = deserializeWorld(data);
+  assert.equal(back.props.size, 0);
+  assert.equal(back.getBlock(40, GROUND_Y - 1, 30), blockId('turf'));
+});
+
+test('equipment adds its upkeep and power to the complex, not the void', () => {
+  const w = pitchWorld();
+  const before = detectVenues(w, {}).complex;
+  w.props.add(propId('scoreboard_lg'), 40, GROUND_Y, 30, 0);
+  const after = detectVenues(w, {}).complex;
+  const big = prop('scoreboard_lg');
+  assert.ok(Math.abs((after.maintenance - before.maintenance) - big.maintenance) < 1e-6);
+  assert.ok(Math.abs((after.powerDemand - before.powerDemand) - big.power) < 1e-9);
+  assert.ok(Math.abs((after.passiveRevenue - before.passiveRevenue) - big.revenue) < 1e-6);
+});
+
+test('every sport with equipment requirements can actually meet them', () => {
+  const provided = new Set([...PROP_BY_KEY.values()].map((p) => p.provides));
+  for (const [sport, needs] of Object.entries(SPORT_EQUIPMENT)) {
+    for (const n of needs) {
+      assert.ok(provided.has(n.provides),
+        `${sport} needs "${n.provides}" but nothing in the catalogue provides it`);
+    }
+  }
+});
+
+test('every prop a prefab places, and every zone it paints, exists', () => {
+  const w = new VoxelWorld(256);
+  w.generateTerrain();
+  for (const def of PREFABS) {
+    const plan = generatePrefab(w, def.key, { x: 4, y: GROUND_Y, z: 4 }, 0);
+    for (const p of plan.props) {
+      assert.ok(prop(p.typeId), `${def.key} places an unknown prop`);
+    }
+    assert.ok(def.hint && def.hint.length > 20, `${def.key} has no useful description`);
+    assert.ok(def.size.x > 0 && def.size.z > 0);
+  }
+});
+
+test('a project builds on the site it was ordered for, not the one you are standing on', async () => {
+  const { Game } = await import('../src/core/game.js');
+  const { blockId: bid } = await import('../src/data/blocks.js');
+
+  const g = new Game();
+  g.newGame({ complexName: 'Test' });
+  g.state.cash = 400_000_000;
+  g.state.reputation.venue = 90;
+
+  // Order a large project here, then move to a second site before it finishes.
+  const plan = [];
+  for (let x = 20; x < 60; x++) {
+    for (let z = 20; z < 40; z++) plan.push(x, GROUND_Y, z, bid('concrete'), 0);
+  }
+  const staged = g.stageOrApply({ label: 'Test slab', cells: plan, cost: 1000, count: 800 });
+  assert.ok(staged, 'the project should have been staged');
+  assert.equal(staged.siteId, 'site1');
+
+  const { CITIES } = await import('../src/data/cities.js');
+  const other = CITIES.find((c) => c.id !== g.state.sites[0].cityId);
+  const bought = g.buySite(other.id);
+  assert.ok(!bought?.error, `could not buy a second site: ${bought?.error}`);
+  const second = g.state.sites[1];
+  assert.ok(second, 'no second site was created');
+  g.switchSite(second.id);
+  assert.equal(g.siteId, second.id);
+
+  // Run the clock until the project finishes while standing on the other site.
+  for (let i = 0; i < 40 && g.state.construction.length; i++) g.tickConstruction(1);
+  assert.equal(g.state.construction.length, 0, 'the project never finished');
+
+  const home = g.worlds.get('site1');
+  const away = g.worlds.get(second.id);
+  assert.equal(home.getBlock(30, GROUND_Y, 30), bid('concrete'),
+    'the slab was not built on the site that ordered it');
+  assert.notEqual(away.getBlock(30, GROUND_Y, 30), bid('concrete'),
+    'the slab was built into the site the player happened to be visiting');
+});
+
+test('a staged prefab installs its equipment when the project completes', async () => {
+  const { Game } = await import('../src/core/game.js');
+  const g = new Game();
+  g.newGame({ complexName: 'Test' });
+  g.state.cash = 400_000_000;
+
+  const plan = generatePrefab(g.world, 'pitch_soccer', { x: 20, y: GROUND_Y, z: 20 }, 0);
+  const staged = g.stageOrApply({
+    label: 'Soccer Pitch', cells: plan.cells, props: plan.props,
+    cost: 300_000, count: plan.cells.length / 5,
+  });
+  assert.ok(staged, 'a 2,000-block pitch should be staged, not instant');
+  assert.equal(g.world.props.size, 0, 'fittings should wait for the blocks');
+
+  for (let i = 0; i < 40 && g.state.construction.length; i++) g.tickConstruction(1);
+  assert.equal(g.state.construction.length, 0, 'the pitch never finished');
+  assert.equal(g.world.props.size, plan.props.length,
+    'the finished pitch did not get its goals, flags and benches');
+});

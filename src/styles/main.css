@@ -162,7 +162,6 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   .midrow { margin-right: var(--side-dock); }
   .inspector, .tutorial { width: min(420px, calc(100% - var(--side-dock) - 20px)); margin-right: calc(var(--side-dock) + 10px); }
   .tutorial .b { display: none; }
-  .actionpad { right: calc(var(--side-dock) + 12px); }
   .rail-btn { width: 42px; height: 42px; }
   .toasts { top: calc(var(--sat) + 50px); width: min(340px, calc(100% - var(--side-dock) - 120px)); }
   .sheet { bottom: calc(var(--dock-h) + var(--sab)); }
@@ -535,11 +534,19 @@ input[type='range']::-moz-range-thumb { width: 22px; height: 22px; border-radius
 
 /* -------------------------------------------------------------- joystick etc */
 .touchlayer { position: absolute; inset: 0; pointer-events: none; }
-.joy { position: absolute; left: calc(var(--sal) + 22px); bottom: calc(var(--sab) + 20px); width: 118px; height: 118px; border-radius: 50%;
+/* The stick and the action pad float over the 3D view, so they have to clear
+   the bottom chrome. --chrome-h is measured from the live dock + tab bar,
+   because the dock's height changes with the mode you are in. */
+.joy { position: absolute; left: calc(var(--sal) + 22px); bottom: calc(var(--chrome-h, 86px) + 14px); width: 118px; height: 118px; border-radius: 50%;
   background: rgba(11,20,36,.5); border: 1px solid var(--line); pointer-events: auto; touch-action: none; }
 .joy .knob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%;
   background: rgba(47,125,255,.65); border: 2px solid rgba(255,255,255,.35); }
-.actionpad { position: absolute; right: calc(var(--sar) + 16px); bottom: calc(var(--sab) + 20px); display: flex; flex-direction: column; gap: 9px; align-items: flex-end; pointer-events: auto; }
+.actionpad { position: absolute; right: calc(var(--sar) + 16px); bottom: calc(var(--chrome-h, 86px) + 14px); display: flex; flex-direction: column; gap: 9px; align-items: flex-end; pointer-events: auto; }
+
+/* Left-handed layout is a class on the root, not inline styles, so the
+   landscape rules below can still move the pad clear of the side dock. */
+[data-hand='left'] .joy { left: auto; right: calc(var(--sar) + 22px); }
+[data-hand='left'] .actionpad { right: auto; left: calc(var(--sal) + 16px); align-items: flex-start; }
 .abtn { width: 62px; height: 62px; border-radius: 50%; background: rgba(11,20,36,.78); border: 1px solid var(--line-strong);
   display: flex; align-items: center; justify-content: center; font-size: 21px; backdrop-filter: blur(8px); }
 .abtn.place { background: rgba(47,125,255,.72); }
@@ -612,3 +619,54 @@ input[type='range']::-moz-range-thumb { width: 22px; height: 22px; border-radius
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ------------------------------------------------- equipment & prefabs */
+
+/* Equipment slots read differently from material slots at a glance: a block
+   is a flat swatch, a fitting carries a corner mark and a warmer border. */
+.slot.prop .sw { border-color: rgba(255,255,255,.55); }
+.slot.prop .sw .pk {
+  font-size: 9px; color: rgba(0,0,0,.55); align-self: flex-end;
+  margin: 0 1px 1px 0; line-height: 1;
+}
+.cat.equip { border-color: rgba(216,177,58,.45); }
+.cat.equip.on { background: rgba(216,177,58,.22); border-color: var(--gold); }
+
+.tool.rotate-btn { border-color: rgba(216,177,58,.5); }
+.imchip.rot { border-color: rgba(216,177,58,.5); color: var(--gold); }
+.abtn.rot { background: rgba(216,177,58,.42); }
+
+.dockinfo .gold { color: var(--gold); }
+
+/* Section headings inside the structure library. */
+.section {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-faint); margin: 12px 0 6px;
+}
+.stack > div:first-child > .section { margin-top: 2px; }
+
+/* A whole card that is one big tap target (the prefab rows). */
+.card.tap {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  transition: transform .1s, border-color .12s, background .12s;
+}
+.card.tap:hover { border-color: var(--line-strong); }
+.card.tap:active { transform: scale(.985); background: rgba(255,255,255,.05); }
+.card.tap .small.mono.bad { color: var(--red); }
+
+/* ---------------------------------------------------------------------------
+   Landscape phones again, for the floating controls only. These rules have to
+   come after the base .joy/.actionpad definitions or the cascade drops them,
+   which is what used to leave the action pad sitting on top of the side dock.
+   --------------------------------------------------------------------------- */
+@media (max-height: 560px) {
+  /* Clear the side dock, and shrink: a 304px column does not fit in a 420px
+     viewport once the hotbar and tab bar have taken their share. */
+  .actionpad { right: calc(var(--side-dock) + 12px); gap: 6px; }
+  [data-hand='left'] .actionpad { left: 12px; right: auto; }
+  [data-hand='left'] .joy { right: calc(var(--side-dock) + 12px); left: auto; }
+  .abtn { width: 50px; height: 50px; font-size: 18px; }
+  .abtn.sm { width: 40px; height: 40px; font-size: 15px; }
+  .joy { width: 96px; height: 96px; }
+  .joy .knob { width: 42px; height: 42px; margin: -21px 0 0 -21px; }
+}

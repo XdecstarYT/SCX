@@ -3,13 +3,14 @@ import { zone, ZONE_NONE } from '../data/zones.js';
 import { EditBatch } from './history.js';
 import { CHUNK_Y } from '../core/constants.js';
 import { PLAN_STRIDE } from './structures.js';
+import { PROP_BY_ID } from '../data/props.js';
 
 /**
  * Tools that emit a multi-material PLAN rather than a single-material cell
  * list. They are priced and applied through pricePlan/applyPlan.
  */
 export const PLAN_TOOLS = new Set([
-  'grandstand', 'garage', 'retaining', 'raise', 'lower', 'flatten', 'ramp',
+  'grandstand', 'garage', 'retaining', 'raise', 'lower', 'flatten', 'ramp', 'prefab',
 ]);
 
 export const TOOLS = [
@@ -23,6 +24,7 @@ export const TOOLS = [
   { key: 'replace',  name: 'Replace',   icon: '⇄', drag: true,  hint: 'Tap two corners; swaps the material you first tapped' },
   { key: 'copy',     name: 'Copy',      icon: '⧉', drag: true,  hint: 'Tap two corners to copy a structure' },
   { key: 'paste',    name: 'Paste',     icon: '⎘', drag: false, hint: 'Tap to stamp the copied structure' },
+  { key: 'prefab',   name: 'Prefab',    icon: '\u25A3', drag: false, hint: 'Tap to place the chosen prefab; rotate it first if you need to' },
 
   // Procedural structures: the player sets the footprint, the engine lays the
   // repetitive rows, supports, columns and vomitories.
@@ -184,6 +186,10 @@ export function priceEdit(world, cells, mode, materialId, opts = {}) {
   const mat = materialId ? block(materialId) : null;
   const filterId = opts.replaceTarget ?? null;
   const clip = opts.clipboard;
+  // Equipment knocked down by the edit refunds like a block does, and is
+  // counted once however many of its cells the edit touches.
+  const doomed = new Set();
+  const layer = world.props;
 
   for (let i = 0, ci = 0; i < cells.length; i += 3, ci++) {
     const x = cells[i], y = cells[i + 1], z = cells[i + 2];
@@ -194,6 +200,12 @@ export function priceEdit(world, cells, mode, materialId, opts = {}) {
       if (prev === AIR) continue;
       removed++;
       refund += block(prev).cost * 0.3;
+      if (layer && layer.size) {
+        for (const dy of [0, 1]) {
+          const rec = layer.at(x, y + dy, z);
+          if (rec) doomed.add(rec);
+        }
+      }
       continue;
     }
     let id = materialId;
@@ -201,9 +213,17 @@ export function priceEdit(world, cells, mode, materialId, opts = {}) {
     if (filterId !== null && prev !== filterId) continue;
     if (prev === id) continue;
     if (prev !== AIR) refund += block(prev).cost * 0.3;
-    if (id !== AIR) { cost += block(id).cost; placed++; }
+    if (id !== AIR) {
+      cost += block(id).cost; placed++;
+      if (layer && layer.size) { const rec = layer.at(x, y, z); if (rec) doomed.add(rec); }
+    }
   }
-  return { cost, refund, placed, removed, blocked, net: cost - refund };
+  let propsRemoved = 0;
+  for (const rec of doomed) {
+    refund += (PROP_BY_ID[rec.typeId]?.cost || 0) * 0.3;
+    propsRemoved++;
+  }
+  return { cost, refund, placed, removed, blocked, propsRemoved, net: cost - refund };
 }
 
 /**
@@ -233,6 +253,7 @@ export function applyEdit(world, cells, mode, materialId, opts = {}) {
     if (mode === 'demolish') {
       if (prevB === AIR) continue;
       batch.refund += block(prevB).cost * 0.3;
+      dropProps(world, batch, x, y, z);
       world.setBlock(x, y, z, AIR, ZONE_NONE);
       batch.record(x, y, z, prevB, prevZ, AIR, ZONE_NONE);
       continue;
@@ -246,10 +267,33 @@ export function applyEdit(world, cells, mode, materialId, opts = {}) {
 
     if (prevB !== AIR) batch.refund += block(prevB).cost * 0.3;
     if (id !== AIR) batch.cost += block(id).cost;
+    if (id !== AIR) dropProps(world, batch, x, y, z, true);
     world.setBlock(x, y, z, id, zid);
     batch.record(x, y, z, prevB, prevZ, id, world.getZone(x, y, z));
   }
   return batch;
+}
+
+/**
+ * Equipment standing on (or inside) a voxel comes down when that voxel does,
+ * and the removal is recorded so undo puts it back.
+ * @param inPlaceOnly true when a block is being *replaced* rather than removed,
+ *        in which case only equipment occupying the voxel itself is affected.
+ */
+export function dropProps(world, batch, x, y, z, inPlaceOnly = false) {
+  const layer = world.props;
+  if (!layer || layer.size === 0) return;
+  const hits = [];
+  const here = layer.at(x, y, z);
+  if (here) hits.push(here);
+  if (!inPlaceOnly) {
+    const above = layer.at(x, y + 1, z);
+    if (above && above !== here) hits.push(above);
+  }
+  for (const rec of hits) {
+    layer.remove(rec.x, rec.y, rec.z);
+    batch.recordProp('del', rec.typeId, rec.x, rec.y, rec.z, rec.rot);
+  }
 }
 
 // ---------------------------------------------------------------- plans
@@ -262,8 +306,9 @@ export function planPositions(plan) {
 }
 
 /** Price a multi-material plan without touching the world. */
-export function pricePlan(world, plan) {
+export function pricePlan(world, plan, props = null) {
   let cost = 0, refund = 0, placed = 0, removed = 0;
+  if (props) for (const p of props) cost += PROP_BY_ID[p.typeId]?.cost || 0;
   for (let i = 0; i < plan.length; i += PLAN_STRIDE) {
     const x = plan[i], y = plan[i + 1], z = plan[i + 2], id = plan[i + 3];
     if (!world.inBounds(x, y, z)) continue;
@@ -276,7 +321,7 @@ export function pricePlan(world, plan) {
 }
 
 /** Apply a multi-material plan and return a reversible batch. */
-export function applyPlan(world, plan, label = 'Structure') {
+export function applyPlan(world, plan, label = 'Structure', props = null) {
   const batch = new EditBatch(label);
   for (let i = 0; i < plan.length; i += PLAN_STRIDE) {
     const x = plan[i], y = plan[i + 1], z = plan[i + 2];
@@ -287,8 +332,20 @@ export function applyPlan(world, plan, label = 'Structure') {
     if (prevB === id && prevZ === zid) continue;
     if (prevB !== AIR) batch.refund += block(prevB).cost * 0.3;
     if (id !== AIR) batch.cost += block(id).cost;
+    dropProps(world, batch, x, y, z, id !== AIR);
     world.setBlock(x, y, z, id, zid);
     batch.record(x, y, z, prevB, prevZ, id, world.getZone(x, y, z));
+  }
+  // A plan can carry equipment as well as blocks; place it once the voxels
+  // beneath it exist.
+  if (props) {
+    for (const p of props) {
+      const r = world.props.canPlace(world, p.typeId, p.x, p.y, p.z, p.rot);
+      if (!r.ok) continue;
+      world.props.add(p.typeId, p.x, p.y, p.z, p.rot);
+      batch.recordProp('add', p.typeId, p.x, p.y, p.z, p.rot);
+      batch.cost += PROP_BY_ID[p.typeId]?.cost || 0;
+    }
   }
   return batch;
 }

@@ -239,18 +239,31 @@ export class Game {
 
   tickConstruction(dayFraction) {
     if (!this.state.construction?.length) return;
-    const r = tickConstruction(this.state, this.world, dayFraction * this.weatherBuildFactor());
-    if (r.changed) this.markWorldDirty();
-    for (const p of r.completed) {
+    const frac = dayFraction * this.weatherBuildFactor();
+    // Every site builds at once, each into its own world, so a stand ordered
+    // in one city is not quietly erected in another.
+    const sites = new Set(this.state.construction.map((p) => p.siteId || this.state.activeSite));
+    let completed = [];
+    let changedHere = false;
+    for (const siteId of sites) {
+      const world = this.worlds.get(siteId);
+      if (!world) continue;
+      const r = tickConstruction(this.state, world, frac, siteId);
+      if (r.changed && siteId === this.siteId) changedHere = true;
+      completed = completed.concat(r.completed);
+    }
+    if (changedHere) this.markWorldDirty();
+    for (const p of completed) {
       this.notify('construction', 'Construction complete', `${p.label} is finished and operational.`);
     }
-    if (r.completed.length) this.bus.emit('state');
+    if (completed.length) this.bus.emit('state');
   }
 
   /** Queue or apply an edit, depending on how big it is. */
-  stageOrApply({ label, cells, cost, uniformBlock, uniformZone, count }) {
+  stageOrApply({ label, cells, cost, uniformBlock, uniformZone, count, props }) {
     if (!shouldStage(count)) return false;
-    const project = createProject(this.state, { label, cells, cost, uniformBlock, uniformZone });
+    const project = createProject(this.state,
+      { label, cells, cost, uniformBlock, uniformZone, props, siteId: this.siteId });
     this.state.construction.push(project);
     this.notify('construction', 'Construction started',
       `${label}: ${project.total.toLocaleString()} blocks over ${project.days} day${project.days > 1 ? 's' : ''}.`);
@@ -261,7 +274,9 @@ export class Game {
   construction() { return constructionSummary(this.state); }
 
   rushConstruction(id) {
-    const r = rushProject(this.state, this.world, id);
+    const project = (this.state.construction || []).find((p) => p.id === id);
+    const world = this.worlds.get(project?.siteId || this.siteId) || this.world;
+    const r = rushProject(this.state, world, id);
     if (!r || r.error) return r;
     this.state.cash -= r.surcharge;
     this.record('construction', -r.surcharge);
@@ -463,6 +478,10 @@ export class Game {
     st.regulationFields = a.venues.filter((v) => v.field && v.field.regulation >= 1).length;
     st.bestCapacity = Math.max(st.bestCapacity, this.state.derived.bestCapacity);
     st.bestRating = Math.max(st.bestRating, this.state.derived.bestRating);
+    st.equipmentFitted = Math.max(st.equipmentFitted || 0,
+      a.complex?.equipmentCount || 0);
+    st.fullyFittedVenues = Math.max(st.fullyFittedVenues || 0,
+      a.venues.filter((v) => (v.equipmentScore ?? 0) >= 0.999).length);
 
     this.bus.emit('analysis', a);
     return a;

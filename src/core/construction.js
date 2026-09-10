@@ -28,7 +28,7 @@ export function shouldStage(cellCount) {
  * Turn a plan (or a uniform-material cell list) into a project. Cells are
  * sorted bottom-up so the structure genuinely rises.
  */
-export function createProject(state, { label, cells, cost, uniformBlock, uniformZone }) {
+export function createProject(state, { label, cells, cost, uniformBlock, uniformZone, props, siteId }) {
   const records = [];
   if (uniformBlock !== undefined) {
     for (let i = 0; i < cells.length; i += 3) {
@@ -56,7 +56,13 @@ export function createProject(state, { label, cells, cost, uniformBlock, uniform
   return {
     id: `C${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
     label,
+    // Which site this is being built on. Without it, a stand ordered in one
+    // city would go up in whichever city you happened to be standing in when
+    // the days ticked by.
+    siteId: siteId || state.activeSite || 'site1',
     cells: flat,
+    // Fittings go in last, the way they do on a real site.
+    props: (props || []).map((p) => [p.typeId, p.x, p.y, p.z, p.rot]),
     total,
     placed: 0,
     progress: 0,
@@ -84,12 +90,14 @@ function bboxOf(records) {
 }
 
 /**
- * Advance every project by `dayFraction` of a day, placing blocks as the
+ * Advance a site's projects by `dayFraction` of a day, placing blocks as the
  * progress bar crosses them.
+ * @param siteId only advance projects on this site; omit for all of them.
  * @returns {{changed:boolean, completed:Array}}
  */
-export function tickConstruction(state, world, dayFraction) {
-  const projects = state.construction || [];
+export function tickConstruction(state, world, dayFraction, siteId = null) {
+  const all = state.construction || [];
+  const projects = siteId ? all.filter((p) => (p.siteId || state.activeSite) === siteId) : all;
   if (projects.length === 0) return { changed: false, completed: [] };
 
   let changed = false;
@@ -104,11 +112,14 @@ export function tickConstruction(state, world, dayFraction) {
       p.placed++;
       changed = true;
     }
-    if (p.progress >= 1) completed.push(p);
+    if (p.progress >= 1) {
+      if (fitOut(world, p)) changed = true;
+      completed.push(p);
+    }
   }
 
   if (completed.length) {
-    state.construction = projects.filter((p) => !completed.includes(p));
+    state.construction = all.filter((p) => !completed.includes(p));
   }
   return { changed, completed };
 }
@@ -127,8 +138,23 @@ export function rushProject(state, world, id) {
   }
   p.placed = p.total;
   p.progress = 1;
+  fitOut(world, p);
   state.construction = state.construction.filter((x) => x.id !== id);
   return { ok: true, surcharge, project: p };
+}
+
+/** Install a finished project's equipment. Safe to call more than once. */
+function fitOut(world, p) {
+  if (!p.props || p.props.length === 0 || p.fitted) return false;
+  p.fitted = true;
+  let any = false;
+  for (const [typeId, x, y, z, rot] of p.props) {
+    if (world.props?.canPlace(world, typeId, x, y, z, rot).ok) {
+      world.props.add(typeId, x, y, z, rot);
+      any = true;
+    }
+  }
+  return any;
 }
 
 /**
