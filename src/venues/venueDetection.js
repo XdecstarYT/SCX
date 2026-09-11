@@ -7,7 +7,6 @@ import { rateVenue, eventTier } from './ratings.js';
 
 const VENUE_TYPES = {
   football:   'Football Stadium',
-  soccer:     'Soccer Stadium',
   rugby:      'Rugby Stadium',
   cricket:    'Cricket Ground',
   afl:        'Australian Rules Oval',
@@ -206,6 +205,7 @@ export function detectVenues(world, opts = {}) {
     seatRoofCoverage: 0,
     heightAboveField: 0,
     structuralWarnings: 0,
+    builtReach: 0,
     _fieldComp: f.comp,
   }));
 
@@ -231,11 +231,26 @@ export function detectVenues(world, opts = {}) {
     }
   };
 
-  // Seating -> capacity
-  assign('seating', (v, c) => { v.seatVoxels += c.area; v.footprintVoxels += c.area; });
-  assign('seating_vip', (v, c) => { v.vipVoxels += c.area; v.footprintVoxels += c.area; });
-  assign('seating_standing', (v, c) => { v.standVoxels += c.area; v.footprintVoxels += c.area; });
-  assign('luxury_box', (v, c) => { v.boxVoxels += c.area; v.footprintVoxels += c.area; });
+  // Seating -> capacity. The stands also tell us how big the building really
+  // is, which the playing surface on its own does not.
+  const seating = (v, c, prop) => {
+    v[prop] += c.area;
+    v.footprintVoxels += c.area;
+    v.builtReach = Math.max(v.builtReach, cornerDistance(c, v.centre));
+  };
+  assign('seating', (v, c) => seating(v, c, 'seatVoxels'));
+  assign('seating_vip', (v, c) => seating(v, c, 'vipVoxels'));
+  assign('seating_standing', (v, c) => seating(v, c, 'standVoxels'));
+  assign('luxury_box', (v, c) => seating(v, c, 'boxVoxels'));
+
+  // Grow each venue's reach to cover the stands before looking for the
+  // facilities that serve them. A basketball floor is 30m across but a
+  // 16,000-seat arena around it is 120m across, and its concourses, media
+  // centre and restrooms are part of that building - measuring reach from the
+  // playing surface alone left them belonging to nothing.
+  for (const v of venues) {
+    if (v.builtReach > 0) v.reach = Math.max(v.reach, v.builtReach * 1.3 + 10);
+  }
 
   // Facilities -> counted voxels, and gate counts for entrances/exits
   for (const key of FACILITY_ZONES) {
@@ -331,6 +346,15 @@ function equipmentFor(world, v) {
     equipmentMissing: missing,
     equipmentWanted: wanted,
   };
+}
+
+/** Distance from a point to the farthest corner of a component's bounds. */
+function cornerDistance(comp, centre) {
+  return Math.max(
+    Math.hypot(comp.minX - centre.x, comp.minZ - centre.z),
+    Math.hypot(comp.maxX - centre.x, comp.minZ - centre.z),
+    Math.hypot(comp.minX - centre.x, comp.maxZ - centre.z),
+    Math.hypot(comp.maxX - centre.x, comp.maxZ - centre.z));
 }
 
 function topZonedY(world, x, z, zid) {

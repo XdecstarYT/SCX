@@ -158,3 +158,66 @@ test('the plot you are given costs nothing to keep', async () => {
   assert.equal(block('grass').maintenance, 0, 'natural ground should not carry upkeep');
   assert.equal(block('dirt').maintenance, 0);
 });
+
+test('every sport can be built, rated and hosted at every tier it offers', async () => {
+  // A sport that ships a zone, blocks, equipment and a venue type but cannot
+  // reach an event is a dead end that costs the player money to discover.
+  const { auditSport } = await import('../sim/sports.mjs');
+  const { SPORT_ZONES } = await import('../src/data/zones.js');
+  const seen = new Set();
+  const problems = [];
+  for (const sz of SPORT_ZONES) {
+    if (seen.has(sz.sport)) continue;      // soccer and football are one sport
+    seen.add(sz.sport);
+    const r = auditSport(sz);
+    if (!r.built) { problems.push(`${sz.sport}: no venue on its own regulation surface`); continue; }
+    for (const p of r.problems) problems.push(`${sz.sport}: ${p}`);
+  }
+  assert.deepEqual(problems, [], `\n  ${problems.join('\n  ')}`);
+});
+
+test('every sport has a ladder to climb, not a single rung', async () => {
+  const { SPORT_ZONES } = await import('../src/data/zones.js');
+  const sports = new Set(SPORT_ZONES.map((z) => z.sport));
+  const byS = {};
+  for (const t of EVENT_TEMPLATES) (byS[t.sport] = byS[t.sport] || new Set()).add(t.tier);
+  for (const s of sports) {
+    const tiers = byS[s];
+    assert.ok(tiers, `${s} has a venue type but no events at all`);
+    for (const rung of ['local', 'regional', 'national']) {
+      assert.ok(tiers.has(rung), `${s} has no ${rung} event - the ladder has a missing rung`);
+    }
+  }
+});
+
+test('a requirement line never says the player has enough while failing', async () => {
+  // "have 50%, need 50%" that still blocks the bid is unarguable from the
+  // player's side of the screen.
+  const { checkRequirements } = await import('../src/events/eventRequirements.js');
+  const venue = {
+    capacity: { total: 10_000 }, field: { regulation: 1, surfaceOk: true, w: 53, d: 34 },
+    sport: 'football', sportName: 'Football', parkingCars: 4_000,
+    ratings: { overall: 70, crowdFlow: 70, safety: 70, comfort: 70, appearance: 70,
+      measures: { concession: 0.4996 } },
+  };
+  const ev = { req: [{ key: 'measure', measure: 'concession', min: 0.5, label: 'Food and beverage' }] };
+  const check = checkRequirements(ev, venue, { reputation: { venue: 50 }, transitShare: 0.1 });
+  const line = check.lines[0];
+  assert.equal(line.have, line.need, 'the probe should land on the rounding boundary');
+  assert.ok(line.ok, `line reads "have ${line.have}, need ${line.need}" but is marked failing`);
+});
+
+test('the climb to an international final can actually be played', { timeout: 400_000 }, () => {
+  // The whole arc, end to end: a starting plot and $3.5M, to a complex that
+  // wins and hosts an international-tier event. This is the claim the README
+  // used to make on trust.
+  const run = play(1000, 900);
+  const s = run.summary;
+  assert.equal(s.insolventDays, 0, `went into deficit on ${s.insolventDays} days`);
+  assert.ok(s.tierFirstSeen.local !== undefined, 'never hosted a local event');
+  assert.ok(s.tierFirstSeen.regional !== undefined, 'never reached regional');
+  assert.ok(s.tierFirstSeen.national !== undefined, 'never reached national');
+  assert.ok(s.tierFirstSeen.international !== undefined,
+    `never reached international in ${s.days} days (got to ${s.tier}, ${s.capacity} capacity, rating ${s.rating})`);
+  assert.ok(s.sites >= 2, 'never expanded into a second city');
+});

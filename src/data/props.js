@@ -36,7 +36,7 @@ const TURFDARK = 0x2b6b33;
 export const PROPS = [
   // ------------------------------------------------------------- football
   {
-    key: 'goal_soccer', name: 'Soccer Goal', sport: 'soccer', group: 'football',
+    key: 'goal_soccer', name: 'Soccer Goal', sport: 'football', group: 'football',
     foot: { w: 5, d: 2 }, provides: 'goal', needs: ['pitch_football'], pairs: 2,
     cost: 14_000, maintenance: 6, appearance: 2,
     hint: 'A regulation 7.3m goal. A soccer pitch needs one at each end.',
@@ -78,7 +78,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'corner_flag', color: 0xd8b13a, name: 'Corner Flag', sport: 'soccer', group: 'football',
+    key: 'corner_flag', color: 0xd8b13a, name: 'Corner Flag', sport: 'football', group: 'football',
     foot: { w: 1, d: 1 }, provides: 'flag', needs: null, pairs: 4,
     cost: 900, maintenance: 0.6, appearance: 1,
     hint: 'One at each corner of the pitch. Small, but every ground has them.',
@@ -379,7 +379,6 @@ export function propsInGroup(g) {
  */
 export const SPORT_EQUIPMENT = {
   football:   [{ provides: 'goal', need: 2 }, { provides: 'flag', need: 4 }, { provides: 'bench', need: 2 }],
-  soccer:     [{ provides: 'goal', need: 2 }, { provides: 'flag', need: 4 }, { provides: 'bench', need: 2 }],
   rugby:      [{ provides: 'goal', need: 2 }, { provides: 'flag', need: 4 }, { provides: 'bench', need: 2 }],
   afl:        [{ provides: 'goal', need: 2 }, { provides: 'bench', need: 2 }],
   basketball: [{ provides: 'hoop', need: 2 }, { provides: 'bench', need: 2 }],

@@ -43,7 +43,11 @@ export function checkRequirements(ev, venue, state) {
       }
       case 'measure': {
         const have = measureValue(venue, r.measure);
-        lines.push(row(r.label, have >= r.min, pctText(have), pctText(r.min)));
+        // Compare at the precision the player is shown. Comparing raw values
+        // produced lines that read "have 50%, need 50%" and still failed,
+        // which is unarguable from the player's side of the screen.
+        lines.push(row(r.label, Math.round(have * 100) >= Math.round(r.min * 100),
+          pctText(have), pctText(r.min)));
         break;
       }
       default:
@@ -68,10 +72,10 @@ const row = (label, ok, have, need) => ({ label, ok, have: String(have), need: S
 const pctText = (v) => `${Math.round(v * 100)}%`;
 
 const SPORT_NAMES = {
-  football: 'Football', soccer: 'Soccer', rugby: 'Rugby', cricket: 'Cricket',
+  football: 'Football', rugby: 'Rugby', cricket: 'Cricket', afl: 'Australian Rules',
   basketball: 'Basketball', tennis: 'Tennis', athletics: 'Athletics',
-  swimming: 'Swimming', ice: 'Ice', combat: 'Combat', concert: 'Any surface',
-  ceremony: 'Any surface',
+  swimming: 'Swimming', ice: 'Ice', combat: 'Combat', baseball: 'Baseball',
+  esports: 'Esports', concert: 'Any surface', ceremony: 'Any surface',
 };
 export function sportName(s) { return SPORT_NAMES[s] || s; }
 

@@ -22,8 +22,11 @@ export const ENDGAME_GOALS = [
   {
     id: 'district', name: 'Mega Sports District', tier: 'build',
     desc: 'Own the largest plot and operate four registered venues on it.',
-    progress: (s) => Math.min(1, (s.landTier / 3) * 0.5 + Math.min(1, s.venues.registered.length / 4) * 0.5),
-    detail: (s) => `plot tier ${s.landTier + 1}/4 · ${s.venues.registered.length}/4 venues`,
+    // Land moved onto sites when the game gained more than one city; reading
+    // it off the top-level state made this goal read NaN and never complete.
+    progress: (s) => Math.min(1, (maxLandTier(s) / 3) * 0.5
+      + Math.min(1, s.venues.registered.length / 4) * 0.5),
+    detail: (s) => `plot tier ${maxLandTier(s) + 1}/4 · ${s.venues.registered.length}/4 venues`,
   },
   {
     id: 'every_sport', name: 'Every Sport Under One Roof', tier: 'build',

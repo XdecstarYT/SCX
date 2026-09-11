@@ -188,8 +188,20 @@ export class Strategy {
       this.b.floodlights(4);
       this.actions.builds++;
     }
-    if ((m.parking ?? 1) < 0.7 && this.spendable > 400_000) {
-      this.b.addParking();
+    if ((m.parking ?? 1) < 0.7) {
+      // Flat asphalt first while there is cheap ground; once the plot is busy
+      // or the crowd is big, stack it instead.
+      const big = (this.game.primaryVenue?.capacity.total || 0) > 12_000;
+      if (big && this.spendable > 3_500_000) {
+        if (this.b.addGarage(6)) this.actions.builds++;
+      } else if (this.spendable > 400_000) {
+        if (this.b.addParking()) this.actions.builds++;
+      }
+    }
+    // Transport is more than parking: a big crowd needs a way in that is not
+    // a car, and the ratio requirement grows with every seat you add.
+    if ((m.parking ?? 1) < 0.8 && this.spendable > 900_000) {
+      this.b.addTransit();
       this.actions.builds++;
     }
   }

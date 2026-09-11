@@ -203,3 +203,76 @@ test('bid packages and contract terms all do something', () => {
     assert.notEqual(t.strength, 0, `term ${t.key} does not move the organiser`);
   }
 });
+
+test('every endgame goal reads sanely and can actually be completed', async () => {
+  const { ENDGAME_GOALS, endgameProgress } = await import('../src/data/endgame.js');
+  const { Game } = await import('../src/core/game.js');
+
+  // A brand new game: every goal should read 0-ish and never NaN.
+  const fresh = new Game();
+  fresh.newGame({ complexName: 'Fresh', seed: 1 });
+  for (const g of endgameProgress(fresh.state).goals) {
+    assert.ok(Number.isFinite(g.value), `${g.id} reports a non-finite progress on a new game`);
+    assert.ok(!/NaN|undefined|Infinity/.test(g.detail), `${g.id} reads "${g.detail}" on a new game`);
+  }
+
+  // A complex that has done everything: every goal should be complete. This is
+  // what catches a goal reading a field that moved - the Mega Sports District
+  // goal read state.landTier long after land moved onto sites, so it sat at
+  // NaN forever.
+  const done = new Game();
+  done.newGame({ complexName: 'Done', seed: 1 });
+  const s = done.state;
+  Object.assign(s.stats, {
+    bestCapacity: 95_000, bestRating: 96, totalAttendance: 2_000_000,
+    lifetimeProfit: 500_000_000, bidsWon: 90, bidsPlaced: 100,
+    sportsHosted: ['football', 'rugby', 'cricket', 'tennis', 'ice', 'swimming'],
+    tiersHosted: ['local', 'regional', 'national', 'international', 'world'],
+    ceremonyHosted: true,
+  });
+  s.reputation.venue = 100;
+  s.reputation.community = 100;
+  s.reputation.fans = 100;
+  s.sites = [
+    { id: 'site1', cityId: 'meridian', landTier: 3, utilities: {} },
+    { id: 'site2', cityId: 'harbour', landTier: 2, utilities: {} },
+    { id: 'site3', cityId: 'summit', landTier: 1, utilities: {} },
+  ];
+  s.venues.registered = [
+    { key: 'a', siteId: 'site1' }, { key: 'b', siteId: 'site1' },
+    { key: 'c', siteId: 'site1' }, { key: 'd', siteId: 'site1' },
+    { key: 'e', siteId: 'site2' }, { key: 'f', siteId: 'site3' },
+  ];
+  for (const r of s.rivals) r.reputation = 20;
+
+  const report = endgameProgress(s);
+  const incomplete = report.goals.filter((g) => !g.complete);
+  assert.deepEqual(incomplete.map((g) => `${g.id} (${g.detail})`), [],
+    'a complex that has done everything still has unreachable goals');
+  assert.equal(report.complete, ENDGAME_GOALS.length);
+});
+
+test('every achievement can be earned', async () => {
+  const { ACHIEVEMENTS } = await import('../src/data/achievements.js');
+  const { Game } = await import('../src/core/game.js');
+  const g = new Game();
+  g.newGame({ complexName: 'Done', seed: 1 });
+  const s = g.state;
+  Object.assign(s.stats, {
+    blocksPlaced: 50_000, blocksRemoved: 100, regulationFields: 3, venuesDetected: 4,
+    equipmentFitted: 40, fullyFittedVenues: 2, bidsPlaced: 100, bidsWon: 90,
+    eventsHosted: 60, sellouts: 12, totalAttendance: 2_000_000,
+    lifetimeProfit: 500_000_000, bestCapacity: 95_000, bestRating: 96,
+    bestSatisfaction: 97, sportsHosted: ['football', 'rugby', 'cricket'],
+    tiersHosted: ['local', 'regional', 'national', 'international', 'world'],
+  });
+  s.reputation.venue = 100;
+  s.sites = [{ id: 'site1', cityId: 'meridian', landTier: 3, utilities: {} },
+    { id: 'site2', cityId: 'harbour', landTier: 0, utilities: {} }];
+  s.venues.registered = [{ key: 'a', siteId: 'site1' }];
+  s.sponsors = [{ id: 'x', naming: true }];
+
+  const unearned = ACHIEVEMENTS.filter((a) => !a.check(s));
+  assert.deepEqual(unearned.map((a) => `${a.id}: ${a.desc}`), [],
+    'a complex that has done everything still has unearned achievements');
+});

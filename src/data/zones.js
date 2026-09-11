@@ -10,7 +10,10 @@
 export const ZONES = [
   // ------------------------------------------------------------ sport areas
   { key: 'pitch_football',  name: 'Football Pitch',   group: 'sport', color: 0x3fbf5a, sport: 'football',   regulation: { w: 45, d: 28, ideal: { w: 53, d: 34 } }, surfaces: ['turf', 'turf_synth'] },
-  { key: 'pitch_soccer',    name: 'Soccer Pitch',     group: 'sport', color: 0x35b57e, sport: 'soccer',     regulation: { w: 45, d: 28, ideal: { w: 53, d: 34 } }, surfaces: ['turf', 'turf_synth'] },
+  // Soccer and football are the same code here, down to the dimensions, so
+  // this is a second name for the same sport rather than a second sport. A
+  // separate sport would be a dead end: nothing would ever be scheduled on it.
+  { key: 'pitch_soccer',    name: 'Soccer Pitch',     group: 'sport', color: 0x35b57e, sport: 'football',   regulation: { w: 45, d: 28, ideal: { w: 53, d: 34 } }, surfaces: ['turf', 'turf_synth'] },
   { key: 'pitch_rugby',     name: 'Rugby Pitch',      group: 'sport', color: 0x2f9e63, sport: 'rugby',      regulation: { w: 50, d: 34, ideal: { w: 60, d: 35 } }, surfaces: ['turf', 'turf_synth'] },
   { key: 'pitch_cricket',   name: 'Cricket Field',    group: 'sport', color: 0x5cbf49, sport: 'cricket',    regulation: { w: 65, d: 65, ideal: { w: 75, d: 75 } }, surfaces: ['turf', 'turf_synth'], oval: true },
   { key: 'pitch_afl',       name: 'Australian Rules Oval', group: 'sport', color: 0x49a83f, sport: 'afl',   regulation: { w: 68, d: 55, ideal: { w: 82, d: 70 } }, surfaces: ['turf', 'turf_synth'], oval: true },

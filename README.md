@@ -20,10 +20,11 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test           # 92 headless simulation tests
-npm run test:balance  # plays 360 in-game days headlessly and checks the economy
-npm run sim        # the same playthrough, with charts (--days 720 --seeds 5)
-npm run sim:land   # what each plot size is actually worth
+npm test              # 92 headless simulation tests
+npm run test:balance  # plays whole seasons headlessly and checks the economy
+npm run sim           # a playthrough with charts (--days 720 --seeds 5)
+npm run sim:sports    # builds every sport and puts it to its own events
+npm run sim:land      # what each plot size is actually worth
 npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
@@ -264,7 +265,7 @@ reinvests and expands using the same `Game` methods the UI calls, for hundreds
 of in-game days. It exists because "the economy feels about right" is not a
 claim anyone should ship.
 
-Running it found five things that were wrong, all of which are now fixed:
+Running it found nine things that were wrong, all of which are now fixed:
 
 | What it found | Why it mattered |
 | --- | --- |
@@ -273,20 +274,32 @@ Running it found five things that were wrong, all of which are now fixed:
 | A flat $20,000 marketing charge on every event | More than the entire gate of a community fixture. Marketing is now the organiser's ambition, which is what the tier measures. |
 | Incident costs were flat sums | The same $120,000 roof closure was a rounding error at an international final and fatal at a community ground. Costs now scale with the tier and are capped at a share of what the event was worth. |
 | Upkeep was charged on the plot's own grass | 15% of an early complex's entire bill was for the lawn it was given. Natural ground is now free to keep. |
+| Five sports had venues but no events | Rugby, cricket, swimming, ice and soccer shipped zones, blocks, equipment and venue types with nothing ever scheduled on them. You could build a cricket ground, register it, and discover the dead end only after paying for it. Every sport now has a local → regional → national ladder, and soccer is a second name for football rather than a separate sport with nowhere to go. |
+| A venue's "reach" was measured from the playing surface alone | A basketball floor is 30m across; a 16,000-seat arena around it is 120m across. Its own concourses, media centre and restrooms fell outside the venue and counted for nothing, so small-floor sports could never pass a national requirement. Reach now follows the stands. |
+| Requirements could read "have 50%, need 50%" and still fail | The comparison used raw values and the display rounded them. It now compares at the precision the player is shown. |
+| The Mega Sports District goal could never complete | It read `state.landTier`, which moved onto sites when the game gained more than one city. Its progress had read NaN ever since. A test now sweeps every goal and every achievement for this. |
 
 It also caught three prefabs — the stadium entrance, the food court and the
 performance centre — shipping with roofs that the game's own structural
 inspector flagged, which caused event-day incidents. They have columns now, and
 a test holds every prefab to the game's own rule.
 
-What a competently played year looks like now:
+`npm run sim:sports` is the other half: it builds every one of the thirteen
+sports to championship size, fits it out, buys it the land it needs, and puts
+it to every event that sport offers. That is what turned up the dead ends
+above, and it is a test now — a sport cannot ship with a venue type and nothing
+to host.
+
+What a played complex looks like now — the whole arc, from a starting plot and
+$3.5M to an international final:
 
 ```
-day  11  first local event hosted
-day  44  regional tier
-day 191  national tier
-day 360  ~20,000 capacity, rating 78, reputation 100, $8M in hand, never insolvent
-day 720  $36M in hand, 53 events hosted
+day  55  first local event hosted
+day  62  regional tier
+day 163  national tier
+day 723  international tier
+day 900  38,000 capacity, rating 85, reputation 100, two cities,
+         the largest plot, 69 events hosted, never once insolvent
 ```
 
 `tests/balance.test.js` asserts the shape of that rather than the figures —
@@ -295,17 +308,38 @@ assertions here would break on every balance tweak and teach us nothing. It
 takes 27 seconds, so it is `npm run test:balance` rather than part of the fast
 suite; `npm run test:all` runs both.
 
+## Performance, measured
+
+`npm run e2e` ends with a stress build: the largest plot, a 46-ring bowl, a
+championship pitch, a canopy and fitted equipment — 852,000 blocks and 79,752
+seats, far past anything the game leads you toward.
+
+| | draw calls | triangles | median frame |
+| --- | --- | --- | --- |
+| First person, inside the bowl | 80 | 4k | 0.5ms |
+| Zone overlay | 106 | 4k | 0.6ms |
+| Overview, whole site on screen | 248 | 7k | 0.8ms |
+
+A 1,600-block fill takes under a millisecond to place and 22ms to remesh. An
+ordinary stadium — the one the tutorial walks you to — renders in under 30
+calls; 248 is the worst case the game can produce, with one mesh per built
+chunk and nothing to cull when the entire site is on screen. The frame times
+are from software rendering and mean nothing; the call and triangle counts do.
+
 ## What is deliberately not here yet
 
-- **The top two tiers are reachable but not demonstrated.** A dense bowl gets
-  to 68,000 seats on the starting plot and 173,000 on a large one, so capacity
-  is not the constraint, and by day 720 the simulated player is sitting on
-  $36M. But that player builds in rings around one pitch and plateaus around
-  20,000 seats, so the run to an international or world final has not been
-  played end to end.
-- **Ice, aquatic, cricket, Australian Rules, combat, baseball and esports
-  venues** have zones, blocks, equipment, venue types and event templates, but
-  far less balancing than football and basketball.
+- **The world tier has not been played to.** The simulated player reaches an
+  international final on day 723 with 38,000 seats. A world-tier event wants
+  52,000 and a rating of 82. A dense bowl reaches 68,000 seats on the starting
+  plot and 173,000 on the largest, so this is a matter of the simulated player
+  building further rather than of the game not supporting it — but it has not
+  been demonstrated, so it is listed here.
+- **The non-football sports are proven, not tuned.** `npm run sim:sports`
+  builds every one of the thirteen to championship size and shows it winning
+  and hosting at every tier it offers, which is why the dead ends above were
+  found. What it does not show is whether their economics are *interesting* —
+  whether a cricket ground is a different business from a football stadium
+  rather than the same one with a rounder pitch.
 - **Prefab prices are derived, not tuned.** A prefab costs exactly what its
   blocks and fittings cost, with no discount for convenience and no premium for
   it. Whether that is the right economic call is unproven.
@@ -313,7 +347,9 @@ suite; `npm run test:all` runs both.
   pitch, rings of seating around it, facilities in the nearest gap, one sport.
   That is enough to prove the economy works and to surface a cost scaling off
   the wrong quantity. It says nothing about what a skilled player could reach.
-- **Real-device performance is unmeasured.** Everything here was profiled under
-  software rendering, which tells you nothing about a phone.
+- **Real-device performance is still unmeasured.** The draw-call and triangle
+  counts above are real and hold up; the frame times are from software
+  rendering and tell you nothing about a phone's thermal behaviour, fill rate
+  or memory pressure.
 
 Nothing in that list is exposed in the UI as a dead button.

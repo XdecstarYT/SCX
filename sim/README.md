@@ -9,6 +9,7 @@ real player could trip over too.
 npm run sim                          # 5 seeds x 360 days, with charts
 node sim/longrun.mjs --days 720 --seeds 3 --verbose
 npm run sim:land                     # what each plot size is actually worth
+npm run sim:sports                   # every sport, built and put to its events
 ```
 
 ## Files
@@ -19,6 +20,7 @@ npm run sim:land                     # what each plot size is actually worth
 | `strategy.mjs` | the head: what to bid, what to build next, when to buy land, whom to hire |
 | `longrun.mjs` | the run loop, the day-by-day trace, and `diagnose()` — which reads a run and says what is wrong with it |
 | `landcurve.mjs` | gives the player each plot size with money no object, to find what the land can hold |
+| `sports.mjs` | builds every sport to championship size and puts it to its own events, so a sport with a venue type and nothing to host cannot ship |
 
 ## Reading a run
 

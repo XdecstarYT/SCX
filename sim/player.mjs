@@ -7,6 +7,7 @@
  * hundred days and show where the economy sags or runs away.
  */
 import { generatePrefab } from '../src/voxel/prefabs.js';
+import { generateParkingGarage } from '../src/voxel/structures.js';
 import { applyPlan, pricePlan } from '../src/voxel/buildTools.js';
 import { blockId } from '../src/data/blocks.js';
 import { zoneId } from '../src/data/zones.js';
@@ -46,6 +47,9 @@ export class SimPlayer {
     this.plots = [];              // where the next stand or room goes
     this.built = { stands: 0, rings: 0, rooms: {}, parking: 0, lights: 0, sites: 1 };
     this.roomSlot = 0;
+    // Ground kept clear for the bowl to grow into. A player who fills the ring
+    // road with sheds can never extend the stands past them.
+    this.bowlReserve = 46;
     this.skipped = { cash: 0, space: 0 };
     // Set when the *bowl* runs out of room, which is the only kind of space
     // pressure worth buying land for. A facility that cannot find a slot near
@@ -102,6 +106,7 @@ export class SimPlayer {
     const ground = GROUND_Y - 1;
     const near = opts.near || null;      // {x, z} to stay close to
     const maxDist = opts.maxDist ?? Infinity;
+    const minDist = opts.minDist ?? 0;    // keep clear of the bowl's future rings
 
     // "Free" means still natural ground. Testing only the height would count a
     // laid pitch as free - it is flush with the terrain - and the player would
@@ -128,7 +133,7 @@ export class SimPlayer {
       for (let x = 2; x + w + margin < size; x += stride) {
         const cx = x + w / 2, cz = z + d / 2;
         const dist = near ? Math.hypot(cx - near.x, cz - near.z) : 0;
-        if (dist > maxDist) continue;
+        if (dist > maxDist || dist < minDist) continue;
         if (near && dist >= bestD) continue;      // already have something closer
         if (!free(x, z)) continue;
         if (!near) return { x, z };
@@ -187,7 +192,13 @@ export class SimPlayer {
     const y = G + Math.floor(this.built.rings * 0.8);
     const x0 = cx - halfW - ring, x1 = cx + halfW + ring;
     const z0 = cz - halfD - ring, z1 = cz + halfD + ring;
-    if (x0 < 2 || z0 < 2 || x1 >= w.size - 2 || z1 >= w.size - 2 || y >= 58) {
+    // A ring that runs off one side of the plot still has three good sides.
+    // Clamping rather than abandoning is what lets the bowl keep growing after
+    // buying land, instead of stopping at whichever edge it met first.
+    const lo = 2, hi = w.size - 3;
+    const cx0 = Math.max(lo, x0), cx1 = Math.min(hi, x1);
+    const cz0 = Math.max(lo, z0), cz1 = Math.min(hi, z1);
+    if (y >= 58 || cx1 - cx0 < 4 || cz1 - cz0 < 4) {
       this.skipped.space++; this.spaceTight = true; return null;
     }
     // Every fifth ring is a concourse rather than seats, so the crowd can move.
@@ -205,8 +216,14 @@ export class SimPlayer {
       for (let yy = G - 1; yy < y; yy++) cells.push(x, yy, z, conc, 0);
       cells.push(x, y, z, top, tz);
     };
-    for (let x = x0; x <= x1; x++) { column(x, z0); column(x, z1); }
-    for (let z = z0 + 1; z < z1; z++) { column(x0, z); column(x1, z); }
+    for (let x = cx0; x <= cx1; x++) {
+      if (z0 >= lo) column(x, z0);
+      if (z1 <= hi) column(x, z1);
+    }
+    for (let z = Math.max(cz0, z0 + 1); z <= Math.min(cz1, z1 - 1); z++) {
+      if (x0 >= lo) column(x0, z);
+      if (x1 <= hi) column(x1, z);
+    }
     if (!cells.length) {
       // This ring is entirely blocked by something already standing there.
       // Step over it and try the next one out rather than giving up on the
@@ -218,7 +235,12 @@ export class SimPlayer {
     }
     this.blockedRings = 0;
     const r = this.commit(cells, concourse ? 'Concourse ring' : 'Seating ring');
-    if (r) this.built.rings++;
+    if (r) {
+      this.built.rings++;
+      // Keep the next few rings' worth of ground clear as the bowl grows.
+      this.bowlReserve = Math.max(this.bowlReserve,
+        Math.max(halfW, halfD) + this.built.rings + 12);
+    }
     return r;
   }
 
@@ -235,6 +257,7 @@ export class SimPlayer {
     const v = this.game.primaryVenue;
     const spot = this.findFreeArea(w, d, {
       near: this.pitchCentre,
+      minDist: this.bowlReserve,
       maxDist: v ? v.reach * 0.92 : 60,
     });
     if (!spot) { this.skipped.space++; this.spaceTight = true; return null; }
@@ -254,8 +277,9 @@ export class SimPlayer {
       const n = this.built.rooms[z] || 0;
       // Facilities count toward the nearest venue, so they stay in reach too.
       const v = this.game.primaryVenue;
-      const spot = this.findFreeArea(9, 8, { near: this.pitchCentre, maxDist: v ? v.reach : 70 })
-        || this.findFreeArea(9, 8);
+      const spot = this.findFreeArea(9, 8, {
+        near: this.pitchCentre, minDist: this.bowlReserve, maxDist: v ? v.reach : 70,
+      }) || this.findFreeArea(9, 8, { near: this.pitchCentre, minDist: this.bowlReserve });
       if (!spot) { this.skipped.space++; continue; }
       const cells = room(spot.x, spot.z, spot.x + 8, spot.z + 7, G - 1, 3, 'tile', z);
       if (this.commit(cells, `Room: ${z}`)) this.built.rooms[z] = n + 1;
@@ -275,10 +299,48 @@ export class SimPlayer {
     if (this.commit(cells, 'Floodlights')) this.built.lights += n;
   }
 
+  /**
+   * A multi-level car park, using the same generator the in-game Garage tool
+   * drives. Flat asphalt cannot park an international crowd on any plot the
+   * game sells - stacking it is the intended answer.
+   */
+  addGarage(levels = 5) {
+    const spot = this.findFreeArea(26, 26, { near: this.pitchCentre, minDist: this.bowlReserve })
+      || this.findFreeArea(26, 26);
+    if (!spot) { this.skipped.space++; return null; }
+    const plan = generateParkingGarage(this.game.world,
+      { x: spot.x, z: spot.z }, { x: spot.x + 25, z: spot.z + 25 }, { levels });
+    if (!plan.cells.length) { this.skipped.space++; return null; }
+    const r = this.commit(plan.cells, 'Parking garage');
+    if (r) this.built.garages = (this.built.garages || 0) + 1;
+    return r;
+  }
+
+  /** A transit interchange, bus bays and taxi ranks. */
+  addTransit() {
+    const G = GROUND_Y;
+    const jobs = [
+      [22, 12, 'transit', 'pavement'],
+      [18, 8, 'parking_bus', 'bus_lane'],
+      [16, 8, 'parking_taxi', 'park_taxi'],
+      [30, 4, 'road_bus', 'bus_lane'],
+    ];
+    let built = 0;
+    for (const [fw, fd, zk, bk] of jobs) {
+      const spot = this.findFreeArea(fw, fd, { near: this.pitchCentre, minDist: this.bowlReserve })
+        || this.findFreeArea(fw, fd);
+      if (!spot) { this.skipped.space++; continue; }
+      const cells = slab(spot.x, spot.z, spot.x + fw - 1, spot.z + fd - 1, G - 1, bk, zk);
+      if (this.commit(cells, `Transit: ${zk}`)) built++;
+    }
+    return built ? { built } : null;
+  }
+
   addParking() {
     const G = GROUND_Y;
-    // Parking is a complex-wide asset, so it can go anywhere with room.
-    const spot = this.findFreeArea(40, 12) || this.findFreeArea(20, 8);
+    // Parking is a complex-wide asset, so it can go anywhere clear of the bowl.
+    const spot = this.findFreeArea(40, 12, { near: this.pitchCentre, minDist: this.bowlReserve })
+      || this.findFreeArea(20, 8, { near: this.pitchCentre, minDist: this.bowlReserve });
     if (!spot) { this.skipped.space++; return null; }
     const r = this.commit(
       slab(spot.x, spot.z, spot.x + 39, spot.z + 11, G - 1, 'asphalt', 'parking'), 'Parking');
