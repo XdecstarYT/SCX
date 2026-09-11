@@ -291,22 +291,32 @@ above, and it is a test now — a sport cannot ship with a venue type and nothin
 to host.
 
 What a played complex looks like now — the whole arc, from a starting plot and
-$3.5M to an international final:
+$3.5M to the ceremony the endgame is named after:
 
 ```
-day  55  first local event hosted
-day  62  regional tier
-day 163  national tier
-day 723  international tier
-day 900  38,000 capacity, rating 85, reputation 100, two cities,
-         the largest plot, 69 events hosted, never once insolvent
+day   22  first local event hosted
+day   36  regional tier
+day  198  national tier
+day  398  international tier
+day  542  the largest plot is full; a second complex begins in the second city
+day  572  world tier - the Games Opening Ceremony
+day 1080  194,940 seats across two cities, rating 88, reputation 100,
+          77 events hosted, never once insolvent, and $55M in the bank
+          rather than half a billion with nothing to buy
 ```
+
+Getting there turned up one thing that was the game's fault rather than the
+simulated player's, and it is the kind a player would never diagnose:
+
+| What was wrong | Why it mattered |
+| --- | --- |
+| Buying land only added ground on two sides | A complex built in the middle of the starting plot — the obvious place — ended up jammed in a corner of the largest one, with half of every later parcel out of its venue's reach and its bowl able to grow only half as far as the plot suggested. There was no warning and no way to move a stadium, so the trap was permanent and cost real money to discover. New land now wraps the plot on every side, and everything already standing moves with it: blocks, equipment, work under construction, the venue's registration and name, and the camera. |
 
 `tests/balance.test.js` asserts the shape of that rather than the figures —
-solvent, events to bid on, regional tier inside a year — because tight
-assertions here would break on every balance tweak and teach us nothing. It
-takes 27 seconds, so it is `npm run test:balance` rather than part of the fast
-suite; `npm run test:all` runs both.
+solvent, events to bid on, every rung of the ladder climbed in order — because
+tight assertions here would break on every balance tweak and teach us nothing.
+It takes about four minutes, so it is `npm run test:balance` rather than part
+of the fast suite; `npm run test:all` runs both.
 
 ## Performance, measured
 
@@ -328,12 +338,10 @@ are from software rendering and mean nothing; the call and triangle counts do.
 
 ## What is deliberately not here yet
 
-- **The world tier has not been played to.** The simulated player reaches an
-  international final on day 723 with 38,000 seats. A world-tier event wants
-  52,000 and a rating of 82. A dense bowl reaches 68,000 seats on the starting
-  plot and 173,000 on the largest, so this is a matter of the simulated player
-  building further rather than of the game not supporting it — but it has not
-  been demonstrated, so it is listed here.
+- **A third city has not been played to.** Two complexes are played end to end;
+  the game offers more cities than that, and nothing has driven one. The second
+  is what the runaway-wealth check needed, so a third is a question of interest
+  rather than of solvency.
 - **The non-football sports are proven, not tuned.** `npm run sim:sports`
   builds every one of the thirteen to championship size and shows it winning
   and hosting at every tier it offers, which is why the dead ends above were
@@ -343,10 +351,12 @@ are from software rendering and mean nothing; the call and triangle counts do.
 - **Prefab prices are derived, not tuned.** A prefab costs exactly what its
   blocks and fittings cost, with no discount for convenience and no premium for
   it. Whether that is the right economic call is unproven.
-- **The simulated player is not a good player.** It builds to a formula: one
-  pitch, rings of seating around it, facilities in the nearest gap, one sport.
-  That is enough to prove the economy works and to surface a cost scaling off
-  the wrong quantity. It says nothing about what a skilled player could reach.
+- **The simulated player is not a good player.** It builds to a formula: a
+  pitch, rings of seating around it, facilities at spread bearings outside the
+  bowl, a canopy over the top rings, and a second complex of the same shape
+  once the first plot is full. That is enough to climb every tier and to
+  surface a cost scaling off the wrong quantity. It says nothing about what a
+  skilled player could reach, and it only ever builds football.
 - **Real-device performance is still unmeasured.** The draw-call and triangle
   counts above are real and hold up; the frame times are from software
   rendering and tell you nothing about a phone's thermal behaviour, fill rate

@@ -9,10 +9,15 @@ import { monthlyFinance } from '../src/core/economy.js';
 /** Keep this many months of upkeep in hand before spending on anything. */
 const RESERVE_MONTHS = 2;
 
+
 export class Strategy {
   constructor(game, builder, opts = {}) {
     this.game = game;
-    this.b = builder;
+    // One builder per site. Each holds the coordinates of the complex it is
+    // putting up, so a second city needs its own rather than sharing the
+    // first's idea of where the pitch is.
+    this.builders = new Map([[game.siteId, builder]]);
+    this.newBuilder = opts.newBuilder || null;
     this.log = opts.log || (() => {});
     this.aggression = opts.aggression ?? 1;   // >1 bids higher and builds sooner
     this.noBidDays = 0;
@@ -21,6 +26,48 @@ export class Strategy {
   }
 
   get s() { return this.game.state; }
+
+  /** The builder for whichever site the player is standing on. */
+  get b() {
+    return this.builders.get(this.game.siteId) || this.builders.values().next().value;
+  }
+
+  /** Every builder's tallies added up, for the run summary. */
+  get skipped() {
+    const out = { cash: 0, space: 0 };
+    for (const b of this.builders.values()) {
+      out.cash += b.skipped.cash;
+      out.space += b.skipped.space;
+    }
+    return out;
+  }
+
+  /**
+   * Go and work on a site with room on it.
+   *
+   * A complex that has filled its largest plot cannot absorb another dollar,
+   * and the game's answer to that is the second city it let you buy. Without
+   * this the player stands in a finished stadium watching the bank balance
+   * compound, which is a flat endgame and reads as a broken economy.
+   */
+  chooseSite() {
+    if (!this.newBuilder || this.s.sites.length < 2) return;
+    if (!this.b.spaceTight) return;                     // still room where we are
+    for (const site of this.s.sites) {
+      if (site.id === this.game.siteId) continue;
+      const other = this.builders.get(site.id);
+      if (other && other.spaceTight) continue;          // that one is full too
+      if (!this.game.switchSite(site.id).ok) continue;
+      if (!other) {
+        const b = this.newBuilder();
+        this.builders.set(site.id, b);
+        b.openingComplex();
+        this.game.analyze(true);
+        this.log(`day ${this.s.day}: started a second complex in ${site.name}`);
+      }
+      return;
+    }
+  }
 
   get reserve() {
     let monthly = 0;
@@ -34,6 +81,7 @@ export class Strategy {
   day() {
     this.register();
     this.bid();
+    this.chooseSite();
     this.reinvest();
   }
 
@@ -130,8 +178,17 @@ export class Strategy {
 
     // Space pressure is re-judged from today's attempts, not remembered.
     this.b.spaceTight = false;
-    this.fixRatings();
-    this.grow();
+    const service = this.fixRatings();
+    // Seats the complex cannot service are worth less than no seats: every
+    // facility measure is a ratio against capacity, so a ring added to a bowl
+    // that is already short of restrooms drags the rating - and with it the
+    // tier - down. Feed the stands you have before building more of them.
+    //
+    // Only while that is actually going somewhere, though. A shortfall the
+    // player cannot do anything about today - no money for it, nowhere to put
+    // it - must not hold the stadium still forever, so growth is deferred only
+    // on the ticks where a facility genuinely went up.
+    if (!service.built) this.grow();
     this.people();
   }
 
@@ -161,10 +218,15 @@ export class Strategy {
     }
   }
 
-  /** Build whatever the primary venue's issue list is asking for. */
+  /**
+   * Build whatever the primary venue's issue list is asking for. Returns how
+   * much the venue wanted and how much of it actually went up today, which is
+   * what decides whether the bowl grows this tick.
+   */
   fixRatings() {
+    const out = { wanted: 0, built: 0 };
     const v = this.game.primaryVenue;
-    if (!v) return;
+    if (!v) return out;
     const m = v.ratings.measures;
     const want = [];
     const need = (key, zone) => { if ((m[key] ?? 1) < 0.75) want.push(zone); };
@@ -175,35 +237,81 @@ export class Strategy {
     need('locker', 'locker');
     need('concourse', 'concourse');
     need('exit', 'exit');
+    need('entrance', 'entrance');
+    // Vomitories are the difference between a bowl and a crowd crush: they are
+    // most of the crowd-flow and safety scores, and both are gates on the top
+    // two tiers of event rather than a rounding error on the rating.
+    need('stairs', 'stairs');
     need('media', 'media');
     need('broadcast', 'broadcast');
     need('hospitality', 'hospitality');
     need('retail', 'retail');
     need('fanzone', 'fanzone');
+    need('training', 'training');
+    out.wanted = want.length;
     if (want.length && this.spendable > 400_000) {
-      this.b.rooms(want.slice(0, 3));
-      this.actions.builds++;
+      const n = this.b.rooms(want.slice(0, 3));
+      out.built += n;
+      if (n) this.actions.builds++;
     }
-    if ((m.lighting ?? 1) < 0.7 && this.spendable > 900_000) {
-      this.b.floodlights(4);
-      this.actions.builds++;
+    // Several of the game's measures count separate pieces spread around the
+    // ground, not total area: eight exits on one side of a bowl empty it no
+    // faster than one does. Those are laid at bearings instead of dropped in
+    // whatever gap is nearest.
+    const cap = v.capacity.total;
+    const f = v.facilities;
+    const wantGates = (key, have, per) => {
+      const need = Math.max(2, Math.ceil(cap / per) + 1);
+      if (have >= need) return;
+      out.wanted++;
+      if (this.spendable < 900_000) return;
+      const n = this.b.spreadExits(key, Math.min(3, need - have));
+      if (n) { out.built += n; this.actions.builds++; }
+    };
+    wantGates('exit', f.exitGates, 9_000);
+    wantGates('entrance', f.entranceGates, 12_000);
+    // Blue-light access. The bowl paves over the opening complex's route as it
+    // grows past it, so this has to be re-laid further out as the ground grows.
+    if ((this.game.analysis.complex.emergencyRoad || 0) < Math.max(30, cap / 900)) {
+      out.wanted++;
+      if (this.spendable > 900_000 && this.b.emergencyRoad()) {
+        out.built++;
+        this.actions.builds++;
+      }
+    }
+    // Cover. Comfort and appearance are the last two measures to come good on
+    // a big open bowl, and a canopy is the only thing that moves either much.
+    if ((m.roof ?? 1) < 0.6) {
+      out.wanted++;
+      if (this.spendable > 6_000_000 && this.b.addRoof()) {
+        out.built++;
+        this.actions.builds++;
+      }
+    }
+    if ((m.lighting ?? 1) < 0.9) {
+      out.wanted++;
+      if (this.spendable > 900_000 && this.b.floodlights(4)) {
+        out.built++;
+        this.actions.builds++;
+      }
     }
     if ((m.parking ?? 1) < 0.7) {
+      out.wanted++;
       // Flat asphalt first while there is cheap ground; once the plot is busy
       // or the crowd is big, stack it instead.
       const big = (this.game.primaryVenue?.capacity.total || 0) > 12_000;
       if (big && this.spendable > 3_500_000) {
-        if (this.b.addGarage(6)) this.actions.builds++;
+        if (this.b.addGarage(6)) { out.built++; this.actions.builds++; }
       } else if (this.spendable > 400_000) {
-        if (this.b.addParking()) this.actions.builds++;
+        if (this.b.addParking()) { out.built++; this.actions.builds++; }
       }
     }
     // Transport is more than parking: a big crowd needs a way in that is not
     // a car, and the ratio requirement grows with every seat you add.
     if ((m.parking ?? 1) < 0.8 && this.spendable > 900_000) {
-      this.b.addTransit();
-      this.actions.builds++;
+      if (this.b.addTransit()) { out.built++; this.actions.builds++; }
     }
+    return out;
   }
 
   /** Capacity is what unlocks the next tier of events, so it gets the surplus. */

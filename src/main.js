@@ -620,7 +620,9 @@ class App {
     bus.on('analysis', () => { this.refreshStatus(); this.tutorial?.refresh(); });
     bus.on('eventreport', (r) => this.playEvent(r));
     bus.on('randomevent', (d) => this.eventsUi.showRandomEvent(d));
-    bus.on('landchange', () => {
+    bus.on('landchange', (off) => {
+      // New land wraps the old plot, so the complex moved. Follow it.
+      if (off) this.rig.shift(off * BLOCK_SIZE, off * BLOCK_SIZE);
       this.worldRenderer.rebuildAll();
       this.worldRenderer.flush();
     });

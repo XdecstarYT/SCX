@@ -148,6 +148,32 @@ export class PropLayer {
     return rec;
   }
 
+  /**
+   * Move every placed prop by (dx, dz) voxels, keeping its facing.
+   *
+   * Called when the plot grows around the complex. A goal that stayed put
+   * while its pitch moved would end up in the crowd.
+   */
+  shift(dx, dz) {
+    if (!dx && !dz) return;
+    const recs = [...this.byAnchor.values()];
+    this.byAnchor = new Map();
+    this.occupied = new Map();
+    for (const rec of recs) {
+      rec.x += dx;
+      rec.z += dz;
+      rec.key = packPos(rec.x, rec.y, rec.z);
+      rec.bounds = worldBounds(rec);
+      rec.pickBounds = inflate(rec.bounds, PICK_MARGIN);
+      this.byAnchor.set(rec.key, rec);
+      for (const [cx, cy, cz] of this.cellsFor(rec.typeId, rec.x, rec.y, rec.z, rec.rot)) {
+        this.occupied.set(packPos(cx, cy, cz), rec.key);
+      }
+    }
+    this.version++;
+    this.dirty = true;
+  }
+
   /** Remove by anchor cell. Returns the removed record, or null. */
   remove(x, y, z) {
     const key = packPos(x, y, z);

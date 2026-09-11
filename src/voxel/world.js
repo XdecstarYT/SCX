@@ -201,22 +201,91 @@ export class VoxelWorld {
     this.version++;
   }
 
-  /** Extend the plot when land is upgraded, filling the new ring with terrain. */
+  /**
+   * Write one voxel without touching the world-wide block and zone counts.
+   * Only `shift` may use this: a translation moves voxels around without
+   * creating or destroying any, so the totals are already correct and
+   * recounting them would be both slower and a chance to get them wrong.
+   */
+  rawSet(x, y, z, id, zid) {
+    const c = this.chunkAt(x, z, true);
+    const i = Chunk.index(x - c.cx * CX, y, z - c.cz * CZ);
+    if (c.blocks[i] === AIR && id !== AIR) c.nonEmpty++;
+    c.blocks[i] = id;
+    c.zones[i] = zid;
+    if (id !== AIR && y > c.maxY) c.maxY = y;
+  }
+
+  /**
+   * Move everything already standing by (dx, dz) voxels.
+   *
+   * The plot grows outward from its centre, so a complex built in the middle
+   * of the starting plot is still in the middle of the largest one. Without
+   * this the new land would all arrive on two sides, every stand the player
+   * had already built would end up in a corner, and a bowl could only ever
+   * grow half as far as the plot it stands on suggests.
+   */
+  shift(dx, dz) {
+    if (!dx && !dz) return;
+    const src = [...this.chunks.values()];
+    this.chunks = new Map();
+    if (dx % CX === 0 && dz % CZ === 0) {
+      // The offset lands on a chunk boundary, so the chunks only need renaming.
+      const ox = dx / CX, oz = dz / CZ;
+      for (const c of src) {
+        c.cx += ox;
+        c.cz += oz;
+        this.chunks.set(this.key(c.cx, c.cz), c);
+      }
+    } else {
+      for (const c of src) {
+        if (!c.nonEmpty) continue;
+        const bx = c.cx * CX + dx, bz = c.cz * CZ + dz;
+        for (let y = 0; y <= c.maxY; y++) {
+          for (let z = 0; z < CZ; z++) {
+            for (let x = 0; x < CX; x++) {
+              const i = Chunk.index(x, y, z);
+              const id = c.blocks[i];
+              if (id === AIR) continue;
+              this.rawSet(bx + x, y, bz + z, id, c.zones[i]);
+            }
+          }
+        }
+      }
+    }
+    this.dirtyChunks = new Set();
+    for (const c of this.chunks.values()) {
+      c.dirty = true;
+      c.zoneDirty = true;
+      this.dirtyChunks.add(c);
+    }
+    this.props.shift(dx, dz);
+    this.version++;
+  }
+
+  /**
+   * Extend the plot when land is upgraded, wrapping the new land around the
+   * old one. Returns the offset everything moved by, which the caller needs
+   * in order to fix up the voxel coordinates it holds outside the world.
+   */
   expandTo(newSize) {
-    if (newSize <= this.size) return;
+    if (newSize <= this.size) return 0;
     const old = this.size;
+    const off = (newSize - old) >> 1;
     this.size = newSize;
+    this.shift(off, off);
     const grass = blockId('grass');
     const dirt = blockId('dirt');
     for (let x = 0; x < newSize; x++) {
       for (let z = 0; z < newSize; z++) {
-        if (x < old && z < old) continue;
+        if (x >= off && x < off + old && z >= off && z < off + old) continue;
         for (let y = 0; y < GROUND_Y; y++) {
           this.setBlock(x, y, z, y === GROUND_Y - 1 ? grass : dirt, ZONE_NONE);
         }
       }
     }
     this.version++;
+    return off;
   }
 
   forEachChunk(fn) { this.chunks.forEach(fn); }

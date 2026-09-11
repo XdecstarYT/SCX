@@ -251,3 +251,82 @@ test('registering a venue sticks without waiting for the next analysis', () => {
   g.renameVenue(g.primaryVenue.key, 'The Riverside');
   assert.equal(g.registeredVenues()[0].name, 'The Riverside');
 });
+
+// -------------------------------------------------------------- buying land
+//
+// New land wraps the old plot on every side. Anything else leaves a complex
+// built in the middle of the starting plot stranded in a corner of the
+// largest one, with half of every future purchase out of its reach.
+
+test('buying land grows the plot around the complex, not away from it', () => {
+  const g = started();
+  const before = g.world.size;
+  const centre = { x: g.primaryVenue.centre.x, z: g.primaryVenue.centre.z };
+  const offCentreBefore = Math.hypot(centre.x - before / 2, centre.z - before / 2);
+  const cap = g.primaryVenue.capacity.total;
+  // Terrain grows with the plot, so count what the player built instead.
+  const built = g.world.blockCounts.get(blockId('seat'));
+  const props = g.world.props.size;
+
+  assert.ok(g.buyLand().ok);
+  g.analyze(true);
+
+  const after = g.world.size;
+  assert.ok(after > before, 'the plot got bigger');
+  // Everything that was standing is still standing, and still one venue.
+  assert.equal(g.world.blockCounts.get(blockId('seat')), built, 'no seats lost or gained');
+  assert.equal(g.world.props.size, props, 'equipment came along');
+  assert.equal(g.primaryVenue.capacity.total, cap, 'capacity is unchanged');
+  // And it is no further from the middle of the plot than it was before.
+  const v = g.primaryVenue;
+  const offCentreAfter = Math.hypot(v.centre.x - after / 2, v.centre.z - after / 2);
+  assert.ok(offCentreAfter <= offCentreBefore + 1,
+    `complex stayed centred (was ${offCentreBefore.toFixed(1)}, now ${offCentreAfter.toFixed(1)})`);
+  // There is new buildable ground on every side of it, not just two.
+  const G = GROUND_Y;
+  const grass = blockId('grass');
+  assert.equal(g.world.getBlock(1, G - 1, Math.floor(after / 2)), grass, 'ground to the west');
+  assert.equal(g.world.getBlock(after - 2, G - 1, Math.floor(after / 2)), grass, 'ground to the east');
+  assert.equal(g.world.getBlock(Math.floor(after / 2), G - 1, 1), grass, 'ground to the north');
+  assert.equal(g.world.getBlock(Math.floor(after / 2), G - 1, after - 2), grass, 'ground to the south');
+});
+
+test('a venue stays registered, and keeps its name, across a land purchase', () => {
+  const g = started();
+  const name = g.primaryVenue.name;
+  assert.equal(g.state.venues.registered.length, 1);
+  assert.ok(g.buyLand().ok);
+  g.analyze(true);
+  assert.equal(g.state.venues.registered.length, 1, 'still registered');
+  assert.equal(g.primaryVenue.registered, true);
+  assert.equal(g.primaryVenue.name, name, 'kept its name');
+  assert.equal(g.state.venues.registered[0].key, g.primaryVenue.key, 'relinked to the moved venue');
+});
+
+test('work under construction moves with the plot and still finishes where it belongs', () => {
+  const g = started();
+  const w = g.world;
+  const G = GROUND_Y;
+  // Order a stand big enough that the game stages it rather than building it
+  // outright, so there is a real backlog to carry through the purchase.
+  const x0 = 10, z0 = 10, side = 24;
+  const cells = [];
+  const seat = blockId('seat'), seating = zoneId('seating');
+  for (let z = z0; z < z0 + side; z++) {
+    for (let x = x0; x < x0 + side; x++) cells.push(x, G, z, seat, seating);
+  }
+  const r = g.stageOrApply({ label: 'Test stand', cells, cost: 50_000, count: cells.length / 5 });
+  assert.ok(r, 'the stand became a construction site');
+  const queued = g.state.construction[0].total;
+
+  assert.ok(g.buyLand().ok);
+  const off = (g.world.size - 128) >> 1;
+  const p = g.state.construction[0];
+  assert.equal(p.total, queued, 'the same number of blocks is still queued');
+  assert.equal(p.cells[0], x0 + off, 'and they are queued at the moved coordinates');
+  assert.equal(p.cells[2], z0 + off);
+
+  // Let it finish, and check it landed on the moved ground rather than the old.
+  g.rushConstruction(p.id);
+  assert.equal(w.getBlock(x0 + off, G, z0 + off), seat, 'built where the plan now points');
+});

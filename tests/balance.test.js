@@ -207,17 +207,32 @@ test('a requirement line never says the player has enough while failing', async 
   assert.ok(line.ok, `line reads "have ${line.have}, need ${line.need}" but is marked failing`);
 });
 
-test('the climb to an international final can actually be played', { timeout: 400_000 }, () => {
+test('the whole climb, local to world tier, can actually be played', { timeout: 400_000 }, () => {
   // The whole arc, end to end: a starting plot and $3.5M, to a complex that
-  // wins and hosts an international-tier event. This is the claim the README
-  // used to make on trust.
+  // wins and hosts a world-tier event - the ceremony the endgame is named
+  // after. This is the claim the README used to make on trust.
   const run = play(1000, 900);
   const s = run.summary;
+  const where = `got to ${s.tier}, ${s.capacity} capacity, rating ${s.rating}`;
   assert.equal(s.insolventDays, 0, `went into deficit on ${s.insolventDays} days`);
-  assert.ok(s.tierFirstSeen.local !== undefined, 'never hosted a local event');
-  assert.ok(s.tierFirstSeen.regional !== undefined, 'never reached regional');
-  assert.ok(s.tierFirstSeen.national !== undefined, 'never reached national');
-  assert.ok(s.tierFirstSeen.international !== undefined,
-    `never reached international in ${s.days} days (got to ${s.tier}, ${s.capacity} capacity, rating ${s.rating})`);
+  for (const tier of ['local', 'regional', 'national', 'international', 'world']) {
+    assert.ok(s.tierFirstSeen[tier] !== undefined,
+      `never hosted a ${tier} event in ${s.days} days (${where})`);
+  }
+  // And in that order: a ladder you can skip rungs on is not a progression.
+  const order = ['local', 'regional', 'national', 'international', 'world'];
+  for (let i = 1; i < order.length; i++) {
+    assert.ok(s.tierFirstSeen[order[i]] >= s.tierFirstSeen[order[i - 1]],
+      `${order[i]} arrived before ${order[i - 1]}`);
+  }
   assert.ok(s.sites >= 2, 'never expanded into a second city');
+  assert.ok(s.sportsHosted.includes('ceremony'),
+    `never hosted the opening ceremony (hosted ${s.sportsHosted.join(', ')})`);
+  // A second city that is bought and never built on is a money sink that does
+  // not sink anything: the cash piles up and the endgame goes flat.
+  assert.ok(s.venues >= 2, `bought ${s.sites} sites but only built ${s.venues} venue(s)`);
+  const half = run.trace[Math.floor(run.trace.length / 2)];
+  assert.ok(s.cash < 5e8, `finished on ${Math.round(s.cash / 1e6)}M with nothing left to buy`);
+  assert.ok(s.capacity > half.capacity,
+    'the complex stopped growing halfway through and the money had nowhere to go');
 });

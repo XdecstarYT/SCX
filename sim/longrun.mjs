@@ -38,7 +38,11 @@ export function playOnce(seed, days = DAYS, opts = {}) {
   game.notify = () => {};
 
   const builder = new SimPlayer(game, { log });
-  const strat = new Strategy(game, builder, { log, aggression: opts.aggression ?? 1 });
+  const strat = new Strategy(game, builder, {
+    log,
+    aggression: opts.aggression ?? 1,
+    newBuilder: () => new SimPlayer(game, { log }),
+  });
 
   builder.openingComplex();
   game.analyze(true);
@@ -55,7 +59,16 @@ export function playOnce(seed, days = DAYS, opts = {}) {
     game.analyze(true);
 
     const s = game.state;
-    const v = game.primaryVenue;
+    // Read the whole empire, not the site the player happens to be standing
+    // on: once there are two complexes, the active one's numbers say nothing
+    // about how the business is doing.
+    const all = game.allVenues();
+    const best = all.reduce((a, x) => (!a || x.ratings.overall > a.ratings.overall ? x : a), null);
+    const v = best ? {
+      capacity: { total: all.reduce((n, x) => n + x.capacity.total, 0) },
+      ratings: best.ratings,
+      tier: all.reduce((t, x) => (TIER_ORDER.indexOf(x.tier) > TIER_ORDER.indexOf(t) ? x.tier : t), 'none'),
+    } : null;
     if (s.cash < worstCash) worstCash = s.cash;
     if (s.cash < 0) insolventDays++;
     if (firstRegisterDay === null && s.venues.registered.length) firstRegisterDay = s.day;
@@ -70,11 +83,13 @@ export function playOnce(seed, days = DAYS, opts = {}) {
       capacity: v?.capacity.total || 0,
       rating: v?.ratings.overall || 0,
       tier: v?.tier || 'none',
+      venues: all.length,
       hosted: s.stats.eventsHosted,
       won: s.stats.bidsWon,
       lost: s.stats.bidsLost,
       upkeep: monthlyUpkeep(game),
-      blocks: game.analysis.complex?.totalBlocks || 0,
+      blocks: [...game.state.sites].reduce(
+        (n, site) => n + (game.analyses.get(site.id)?.complex?.totalBlocks || 0), 0),
       backlog: (s.construction || []).length,
       profit: s.stats.lifetimeProfit,
     });
@@ -86,6 +101,9 @@ export function playOnce(seed, days = DAYS, opts = {}) {
   return {
     seed,
     trace,
+    // The finished complex, so a caller can put it to an event and see for
+    // itself rather than taking the summary's word for it.
+    game,
     summary: {
       seed,
       days,
@@ -105,11 +123,12 @@ export function playOnce(seed, days = DAYS, opts = {}) {
       blocks: last.blocks,
       upkeep: last.upkeep,
       sites: s.sites.length,
+      venues: last.venues,
       staff: s.staff.length,
       sponsors: s.sponsors.length,
       research: s.research.completed.length,
       actions: strat.actions,
-      skipped: builder.skipped,
+      skipped: strat.skipped,
       longestNoBid: strat.noBidDays,
       lastMonthProfit: months.length ? months[months.length - 1].net : 0,
       sportsHosted: (s.stats.sportsHosted || []).slice(),
@@ -176,7 +195,7 @@ function printRun(run) {
   console.log(`  events ${String(s.hosted).padStart(3)} hosted   bids ${s.won}W/${s.lost}L `
     + `(${(s.winRate * 100).toFixed(0)}%)   tier ${s.tier}   sports ${s.sportsHosted.join(',') || '-'}`);
   console.log(`  blocks ${s.blocks.toLocaleString()}   upkeep ${fmt(s.upkeep)}/month   `
-    + `sites ${s.sites}   staff ${s.staff}   sponsors ${s.sponsors}   research ${s.research}`);
+    + `sites ${s.sites}   venues ${s.venues}   staff ${s.staff}   sponsors ${s.sponsors}   research ${s.research}`);
   console.log(`  built ${s.actions.builds}  land ${s.actions.land}  utils ${s.actions.upgrades}  `
     + `skipped ${s.skipped.cash} cash / ${s.skipped.space} space`);
   console.log(`  tiers reached: ${reached.map((t) => `${t}@d${s.tierFirstSeen[t]}`).join(' ') || 'none'}`);

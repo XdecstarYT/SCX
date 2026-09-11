@@ -179,6 +179,59 @@ if (!await buy.count()) {
     }));
     if (home.site !== 'site1' || !home.venue) problems.push('the home site did not come back');
     console.log('  \u2713 returned home to ' + home.venue + ' (' + home.cap + ' capacity)');
+
+    // Buying a bigger plot grows the land around what is already standing, so
+    // the stadium keeps its place on the plot and the view stays on it. If it
+    // did not, every parcel after the first would be half wasted.
+    const land = await page.evaluate(async () => {
+      const a = window.__sct;
+      const before = {
+        size: a.game.world.size,
+        cap: a.game.primaryVenue.capacity.total,
+        centre: { ...a.game.primaryVenue.centre },
+        cam: { x: a.rig.focus.x, z: a.rig.focus.z },
+        registered: a.game.state.venues.registered.length,
+        name: a.game.primaryVenue.name,
+      };
+      a.game.state.cash = 300_000_000;
+      const r = a.game.buyLand();
+      await new Promise((res) => setTimeout(res, 600));
+      const v = a.game.primaryVenue;
+      return {
+        ok: !!r.ok, before,
+        after: {
+          size: a.game.world.size,
+          cap: v.capacity.total,
+          centre: { ...v.centre },
+          cam: { x: a.rig.focus.x, z: a.rig.focus.z },
+          registered: a.game.state.venues.registered.length,
+          name: v.name,
+          meshes: a.worldRenderer.meshes.size,
+        },
+      };
+    });
+    const b = land.before, af = land.after;
+    if (!land.ok) problems.push('could not buy a bigger plot');
+    else if (af.size <= b.size) problems.push('the plot did not get bigger');
+    else {
+      const offset = (af.size - b.size) / 2;
+      const moved = af.centre.x - b.centre.x;
+      if (Math.abs(moved - offset) > 2) {
+        problems.push('the stadium did not stay put on its plot: expected it to move '
+          + offset + ' voxels, it moved ' + moved);
+      }
+      if (af.cap !== b.cap) problems.push('capacity changed on a land purchase: ' + b.cap + ' -> ' + af.cap);
+      if (af.registered !== b.registered || af.name !== b.name) {
+        problems.push('the venue lost its registration or its name when the plot grew');
+      }
+      const camMoved = af.cam.x - b.cam.x;
+      if (Math.abs(camMoved - offset * 2) > 4) {
+        problems.push('the camera did not follow the complex (moved ' + camMoved.toFixed(0) + 'm)');
+      }
+      console.log('  \u2713 the plot grew to ' + af.size + ' around the stadium; ' + af.cap
+        + ' seats kept, ' + af.meshes + ' chunks redrawn');
+      await page.screenshot({ path: `${SHOTS}/S-bigger-plot.png` });
+    }
   }
 }
 

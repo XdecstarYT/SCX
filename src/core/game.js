@@ -16,6 +16,7 @@ import {
   createProject, tickConstruction, rushProject, cancelProject,
   constructionSummary, shouldStage, projectDays,
 } from './construction.js';
+import { PLAN_STRIDE } from '../voxel/structures.js';
 import { STAFF_ROLES, makeHire } from '../data/staff.js';
 import { SPONSORS, ALL_SPONSORS, availableSponsors, blockedSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
@@ -975,14 +976,48 @@ export class Game {
     s.cash -= cost;
     this.record('land', -cost);
     site.landTier++;
-    this.world.expandTo(next.size);
+    // The new land wraps the old plot rather than arriving on two sides, so
+    // everything already standing moves to stay where it was relative to the
+    // land. Coordinates held outside the world have to move with it.
+    const off = this.world.expandTo(next.size);
+    if (off) this.onPlotShift(off);
     this.analysisDirty = true;
     this.analyze(true);
     this.notify('land', 'Land acquired', `Your plot is now ${next.label}.`);
     this.checkAchievements();
-    this.bus.emit('landchange');
+    this.bus.emit('landchange', off);
     this.bus.emit('state');
     return { ok: true };
+  }
+
+  /**
+   * The plot grew around the complex: bring everything that stores voxel
+   * coordinates outside the world along with it.
+   */
+  onPlotShift(off) {
+    const s = this.state;
+    for (const p of s.construction || []) {
+      if ((p.siteId || s.activeSite) !== this.siteId) continue;
+      for (let i = 0; i < p.cells.length; i += PLAN_STRIDE) {
+        p.cells[i] += off;
+        p.cells[i + 2] += off;
+      }
+      for (const q of p.props || []) { q[1] += off; q[3] += off; }
+      if (p.bbox) {
+        p.bbox.minX += off; p.bbox.maxX += off;
+        p.bbox.minZ += off; p.bbox.maxZ += off;
+      }
+    }
+    // Registrations are re-linked to detected venues by position, so moving
+    // the remembered centre is enough to keep a venue registered through a
+    // land purchase.
+    for (const r of s.venues.registered) {
+      if ((r.siteId || 'site1') !== this.siteId) continue;
+      r.cx += off;
+      r.cz += off;
+    }
+    // Undo would put blocks back where they no longer are.
+    this.history = new History(this.world);
   }
 
   // --------------------------------------------------------------- finance

@@ -48,6 +48,18 @@ export class CameraRig {
 
   setWorld(world) { this.world = world; }
 
+  /**
+   * The plot grew around the complex and everything moved with it. Move the
+   * camera and the avatar the same way, or buying land would teleport the
+   * player sideways across their own stadium.
+   */
+  shift(dx, dz) {
+    this.focus.x += dx;
+    this.focus.z += dz;
+    this.pos.x += dx;
+    this.pos.z += dz;
+  }
+
   setMode(mode) {
     if (mode === this.mode) return;
     const prev = this.mode;

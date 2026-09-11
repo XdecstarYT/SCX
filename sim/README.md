@@ -33,8 +33,16 @@ which would break on every balance tweak and teach us nothing.
 
 ## Its limits
 
-It is not a good player. It builds to a formula: one pitch, rings of seating
-around it, facilities in whatever gap is nearest, one sport. That is enough to
-prove the economy works and to surface the kind of bug where a cost scales off
+It is not a good player. It builds to a formula: a pitch, rings of seating
+around it, facilities at spread bearings outside the bowl, a canopy over the
+top rings, and a second complex of the same shape in the second city once the
+first plot is full. It only ever builds football. That is enough to climb every
+tier, world included, and to surface the kind of bug where a cost scales off
 the wrong quantity. It is not enough to tell you what a skilled player could
 reach, and conclusions from it should be read that way.
+
+Two things it has to do that a player does not, because a player can see the
+screen: it remembers where it laid its own pitch rather than re-reading the
+analyser (which measures a half-built pitch as a narrow strip), and it listens
+for `landchange` to move those coordinates when a land purchase grows the plot
+around the complex.
