@@ -222,6 +222,10 @@ export const PREFABS = [
     hint: 'A two-storey training centre with a practice net and a medical bay.',
     build(c) {
       room(c, 22, 17, 5, { floor: 'rubber', wall: 'facade_c', roof: 'roof_metal', zone: 'training' });
+      // Roof trusses on a 7-block grid: metal spans 8, the hall is 22 x 17.
+      for (const x of [7, 14]) {
+        for (const z of [3, 9, 15]) for (let y = 0; y < 5; y++) c.set(x, y, z, 'beam');
+      }
       c.fill(16, -1, 1, 20, -1, 6, 'tile', 'medical');
       c.walls(15, 0, 20, 7, 0, 3, 'concrete');
       for (let y = 0; y < 2; y++) c.set(15, y, 4, null);
@@ -257,8 +261,12 @@ export const PREFABS = [
         for (let y = 0; y < 2; y++) { c.set(x, y, 4, 'metal'); c.set(x, y, 5, 'metal'); }
       }
       for (let x = 0; x <= 17; x += 17) for (let y = 0; y < 6; y++) c.set(x, y, 4, 'facade_c');
-      for (let x = 0; x <= 17; x++) c.set(x, 6, 4, 'roof_metal');
       for (let x = 0; x <= 17; x++) for (let z = 3; z <= 6; z++) c.set(x, 6, z, 'roof_metal');
+      // Columns every five metres along both edges: a metal canopy spans 8
+      // blocks, so the middle of an 18-wide gate needs something under it.
+      for (let x = 0; x <= 17; x += 5) {
+        for (const z of [3, 6]) for (let y = 0; y < 6; y++) c.set(x, y, z, 'steel');
+      }
       c.set(9, 5, 3, 'advert');
       c.set(8, 5, 3, 'advert');
     },
@@ -273,6 +281,11 @@ export const PREFABS = [
       c.fill(1, -1, 8, 18, -1, 11, 'tile', 'concession');
       c.walls(0, 0, 19, 12, 0, 4, 'facade_m');
       c.fill(0, 4, 0, 19, 4, 12, 'roof_glass');
+      // Pillars on a 5-block grid. Glass spans 6, so a 20x13 hall cannot be
+      // roofed off its walls alone - and the inspector notices.
+      for (let x = 5; x <= 15; x += 5) {
+        for (const z of [2, 6, 10]) for (let y = 0; y < 4; y++) c.set(x, y, z, 'steel');
+      }
       // Counters facing the middle, with a gap you can walk through.
       for (let x = 2; x <= 17; x++) { c.set(x, 0, 4, 'metal'); c.set(x, 0, 8, 'metal'); }
       for (const x of [9, 10]) { c.set(x, 0, 4, null); c.set(x, 0, 8, null); }

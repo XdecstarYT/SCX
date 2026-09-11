@@ -30,16 +30,38 @@ export function generateEvent(state, seedSalt = 0) {
   const pool = EVENT_TEMPLATES.filter((t) => tiers.includes(t.tier));
   if (pool.length === 0) return null;
 
+  // Organisers approach venues that could plausibly host them, so the board
+  // leans toward the sports you have actually built for. Without this a
+  // football-only complex spends whole months looking at tennis and basketball
+  // opportunities it can never bid on.
+  const hosted = hostableSports(state);
+
   // Weight toward the player's current level: reachable events are common,
   // stretch events are rare but visible.
   const weighted = [];
   for (const t of pool) {
     const gap = TIER_ORDER.indexOf(t.tier) - TIER_ORDER.indexOf(currentTier(state.reputation.venue));
-    const w = gap <= 0 ? 6 : gap === 1 ? 2 : 1;
-    for (let i = 0; i < w; i++) weighted.push(t);
+    const tierW = gap <= 0 ? 6 : gap === 1 ? 2 : 1;
+    // A quarter of the board stays outside what you have built: that is the
+    // visible argument for adding a second sport.
+    const sportW = hosted.size === 0 || hosted.has(t.sport) ? 4 : 1;
+    for (let i = 0; i < tierW * sportW; i++) weighted.push(t);
   }
   const tpl = rng.pick(weighted);
   return instantiate(tpl, state, rng);
+}
+
+/**
+ * Sports the player has a registered venue for. Concerts and ceremonies are
+ * included once any venue exists, because a stage goes into whatever you have.
+ */
+export function hostableSports(state) {
+  const out = new Set();
+  for (const r of state.venues?.registered || []) {
+    if (r.sport) out.add(r.sport);
+  }
+  if (out.size > 0) { out.add('concert'); out.add('ceremony'); }
+  return out;
 }
 
 function currentTier(rep) {

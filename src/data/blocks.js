@@ -24,7 +24,10 @@
 
 export const BLOCKS = [
   // ---------------------------------------------------------------- natural
-  { key: 'grass',      name: 'Grass',            category: 'terrain', color: 0x6d9c56, cost: 12,   maintenance: 0.4, solid: true, support: 4 },
+  // Natural ground costs nothing to keep: the plot arrives covered in it, and
+  // billing upkeep on the lawn you were given made it the single largest line
+  // on an early complex's books.
+  { key: 'grass',      name: 'Grass',            category: 'terrain', color: 0x6d9c56, cost: 12,   maintenance: 0,   solid: true, support: 4 },
   { key: 'dirt',       name: 'Dirt',             category: 'terrain', color: 0x6b5342, cost: 6,    maintenance: 0,   solid: true, support: 4 },
   { key: 'sand',       name: 'Sand',             category: 'terrain', color: 0xc9b083, cost: 8,    maintenance: 0.1, solid: true, support: 3 },
   { key: 'water',      name: 'Water',            category: 'terrain', color: 0x2f7fb5, cost: 30,   maintenance: 1.2, solid: false, transparent: true, opacity: 0.72, support: 0 },

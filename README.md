@@ -20,7 +20,10 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test           # 91 headless simulation tests
+npm test           # 92 headless simulation tests
+npm run test:balance  # plays 360 in-game days headlessly and checks the economy
+npm run sim        # the same playthrough, with charts (--days 720 --seeds 5)
+npm run sim:land   # what each plot size is actually worth
 npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
@@ -207,6 +210,7 @@ to license.
 
 | System | What it reads | What happens when it is wrong |
 | --- | --- | --- |
+| Event board | which sports you have registered venues for | organisers stop offering you events you could never host |
 | Venue analysis | zones, block geometry, roof coverage, supports | events you cannot bid for, with a named reason |
 | Equipment | which fittings sit inside each venue's reach | a named shortfall, and up to six points of functionality left on the table |
 | Utility networks | pitch area, fixtures, broadcast feeds, enclosed volume | degraded ratings and specific failures on event day |
@@ -253,18 +257,62 @@ to license.
   rectangular ground measures identically either way, so no existing venue
   changed.
 
+## Balance, measured
+
+`sim/` is a headless player. It builds a complex, registers it, bids, hosts,
+reinvests and expands using the same `Game` methods the UI calls, for hundreds
+of in-game days. It exists because "the economy feels about right" is not a
+claim anyone should ship.
+
+Running it found five things that were wrong, all of which are now fixed:
+
+| What it found | Why it mattered |
+| --- | --- |
+| The event board ignored what you had built | A football-only complex spent whole months looking at tennis and basketball it could never bid on. Organisers now approach venues that could plausibly host them; a quarter of the board still shows other sports, as the argument for building a second one. |
+| Event setup cost scaled with the venue's *capacity* | Every stand you built made small events less affordable, so growing punished you. It now scales with the crowd that actually turns up. |
+| A flat $20,000 marketing charge on every event | More than the entire gate of a community fixture. Marketing is now the organiser's ambition, which is what the tier measures. |
+| Incident costs were flat sums | The same $120,000 roof closure was a rounding error at an international final and fatal at a community ground. Costs now scale with the tier and are capped at a share of what the event was worth. |
+| Upkeep was charged on the plot's own grass | 15% of an early complex's entire bill was for the lawn it was given. Natural ground is now free to keep. |
+
+It also caught three prefabs — the stadium entrance, the food court and the
+performance centre — shipping with roofs that the game's own structural
+inspector flagged, which caused event-day incidents. They have columns now, and
+a test holds every prefab to the game's own rule.
+
+What a competently played year looks like now:
+
+```
+day  11  first local event hosted
+day  44  regional tier
+day 191  national tier
+day 360  ~20,000 capacity, rating 78, reputation 100, $8M in hand, never insolvent
+day 720  $36M in hand, 53 events hosted
+```
+
+`tests/balance.test.js` asserts the shape of that rather than the figures —
+solvent, events to bid on, regional tier inside a year — because tight
+assertions here would break on every balance tweak and teach us nothing. It
+takes 27 seconds, so it is `npm run test:balance` rather than part of the fast
+suite; `npm run test:all` runs both.
+
 ## What is deliberately not here yet
 
-- **Long-run balance is unproven.** The systems are tested individually and the
-  loop is tested end to end, but nobody has played 300 in-game days. The
-  progression from a community ground to a world championship host is designed
-  rather than demonstrated.
+- **The top two tiers are reachable but not demonstrated.** A dense bowl gets
+  to 68,000 seats on the starting plot and 173,000 on a large one, so capacity
+  is not the constraint, and by day 720 the simulated player is sitting on
+  $36M. But that player builds in rings around one pitch and plateaus around
+  20,000 seats, so the run to an international or world final has not been
+  played end to end.
 - **Ice, aquatic, cricket, Australian Rules, combat, baseball and esports
   venues** have zones, blocks, equipment, venue types and event templates, but
   far less balancing than football and basketball.
 - **Prefab prices are derived, not tuned.** A prefab costs exactly what its
   blocks and fittings cost, with no discount for convenience and no premium for
   it. Whether that is the right economic call is unproven.
+- **The simulated player is not a good player.** It builds to a formula: one
+  pitch, rings of seating around it, facilities in the nearest gap, one sport.
+  That is enough to prove the economy works and to surface a cost scaling off
+  the wrong quantity. It says nothing about what a skilled player could reach.
 - **Real-device performance is unmeasured.** Everything here was profiled under
   software rendering, which tells you nothing about a phone.
 

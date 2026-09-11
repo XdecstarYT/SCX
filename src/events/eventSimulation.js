@@ -5,6 +5,23 @@ const TIER_BROADCAST = { local: 0, regional: 120_000, national: 900_000, interna
 const TIER_STAFF_RATE = { local: 0.9, regional: 1.2, national: 1.7, international: 2.3, world: 3.1 };
 
 /**
+ * What an organiser spends promoting each tier. The floor is the campaign they
+ * would run regardless; perHead scales the rest with the crowd they expect.
+ */
+const TIER_MARKETING = {
+  local:         { floor: 2_000,   perHead: 1.0 },
+  regional:      { floor: 14_000,  perHead: 1.2 },
+  national:      { floor: 45_000,  perHead: 1.5 },
+  international: { floor: 95_000,  perHead: 1.8 },
+  world:         { floor: 160_000, perHead: 2.0 },
+};
+
+/** What an incident actually costs, relative to the national-tier figures. */
+const TIER_INCIDENT = {
+  local: 0.14, regional: 0.45, national: 1, international: 1.7, world: 2.4,
+};
+
+/**
  * Simulate a hosted event against the player's real venue.
  *
  * Nothing here is a flat multiplier on "stadium level" - attendance, spend and
@@ -162,12 +179,24 @@ export function simulateEvent(ev, venue, state, contract) {
   const securityCost = Math.round(attendance * 3.1 * staffRate * days);
   const cleaning = Math.round(attendance * 1.4 * days);
   const utilities = Math.round((state.complex.powerDemand * 42 + 5_000) * days);
-  const setup = Math.round((18_000 + venue.capacity.total * 2.4) * days * ev.wear);
+  // Setup scales with the part of the ground actually opened, not with how
+  // big the ground is. Charging by total capacity meant every stand you built
+  // made small events *less* affordable, which is backwards: a club hires the
+  // stadium and opens one stand, it does not pay to prepare all four.
+  const setup = Math.round((6_000 + attendance * 3.4 + venue.capacity.total * 0.5) * days * ev.wear);
   const insurance = Math.round(totalRevenue * (0.018 + ev.risk * 0.03));
-  const marketingCost = Math.round(20_000 + attendance * 1.9);
+  // Marketing is the organiser's commercial ambition, which is what the tier
+  // measures. A community open day does not run a national campaign.
+  const mk = TIER_MARKETING[ev.tier] || TIER_MARKETING.local;
+  const marketingCost = Math.round(mk.floor + attendance * 1.9 * mk.perHead);
   const transport = Math.round(carsUsed * 2.4 + attendance * 0.6);
   const packageCost = Math.round(totalRevenue * bidCostMultiplier(contract));
-  const incidentCost = incidents.reduce((s, i) => s + (i.cost || 0), 0);
+  // Incident costs are quoted at national scale. The same failure costs a
+  // community ground community-ground money, and is capped at a share of what
+  // the event was worth - a bad day should hurt, not be unsurvivable.
+  const incidentScale = TIER_INCIDENT[ev.tier] ?? 1;
+  const rawIncidents = incidents.reduce((s, i) => s + (i.cost || 0), 0) * incidentScale;
+  const incidentCost = Math.round(Math.min(rawIncidents, totalRevenue * 0.35));
 
   const costs = {
     staff: staffCost, security: securityCost, cleaning, utilities,

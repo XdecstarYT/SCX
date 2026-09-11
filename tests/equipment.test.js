@@ -295,3 +295,22 @@ test('a staged prefab installs its equipment when the project completes', async 
   assert.equal(g.world.props.size, plan.props.length,
     'the finished pitch did not get its goals, flags and benches');
 });
+
+test('no prefab ships with a roof the inspector would flag', () => {
+  // The game warns about roof sections that outrun their supports, and those
+  // warnings cause event-day incidents. A prefab the game itself hands you
+  // must not fail its own structural check.
+  for (const def of PREFABS) {
+    const w = new VoxelWorld(200);
+    w.generateTerrain();
+    // A pitch nearby, so the prefab is inside a detected venue's reach.
+    for (let x = 100; x < 154; x++) {
+      for (let z = 150; z < 184; z++) w.setBlock(x, GROUND_Y - 1, z, blockId('turf'), zoneId('pitch_football'));
+    }
+    const plan = generatePrefab(w, def.key, { x: 100, y: GROUND_Y, z: 110 }, 0);
+    applyPlan(w, plan.cells, def.key, plan.props);
+    const { venues } = detectVenues(w, {});
+    assert.equal(venues[0]?.structuralWarnings ?? 0, 0,
+      `${def.key} leaves roof sections without support`);
+  }
+});
