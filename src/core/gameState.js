@@ -80,7 +80,7 @@ export function createState(opts = {}) {
     settings: {
       sound: true, music: false, reducedMotion: false, highContrast: false,
       largeText: false, sensitivity: 1, invertY: false, showFps: false,
-      autosave: true, handedness: 'right',
+      autosave: true, handedness: 'right', shadows: 'auto',
     },
   };
 }

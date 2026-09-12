@@ -20,7 +20,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test              # 106 headless simulation tests
+npm test              # 109 headless simulation tests
 npm run test:balance  # plays whole seasons headlessly and checks the economy
 npm run sim           # a playthrough with charts (--days 720 --seeds 5)
 npm run sim:sports    # builds every sport and puts it to its own events
@@ -371,6 +371,42 @@ tallied along the way: cities, venues, total capacity, the largest ground,
 events, spectators, profit, blocks placed. It is not a game over. The complex
 is still there, and the last line says so.
 
+## How it looks
+
+No textures and no image assets: every surface is flat architectural colour
+from the block table, lit at runtime. Four things do the work of making that
+read as a building rather than a stack of cubes.
+
+- **Corner occlusion.** Every face corner is darkened by how much is tucked
+  around it, the standard three-neighbour voxel rule, computed in the mesher.
+  Faces only merge when their occlusion matches and is even across the face,
+  so the contact darkening is exact rather than smeared along a wall — a flat
+  slab still meshes into a handful of quads, and a test holds it to that.
+  Without this a bowl of seating, the underside of a canopy and the inside of
+  a vomitory are all the same flat tone, and nothing looks like it is touching
+  anything else.
+- **Sun shadows.** One orthographic depth pass, fitted around whatever the
+  camera is looking at and snapped to whole texels so the edge does not crawl.
+  The world's material is a custom shader that knows nothing about Three's
+  lights, so this is hand-rolled rather than the built-in one. It is the most
+  expensive thing the renderer does, so it is a setting — Auto leaves it off
+  on a phone — and it fades out at night and under overcast weather, where a
+  hard shadow would look wrong.
+- **Surface finish.** Blocks declare how they catch light. `turf` gets the
+  mown bands a groundsman cuts into a pitch, and no panel seams, because the
+  per-metre grid is the one thing that reads as tiling on grass. `gloss` —
+  glass, metal, ice, water, canopies — gets a real specular highlight with a
+  Fresnel edge. `seat` gets heavy per-voxel variation, because a deck of seats
+  is thousands of separate mouldings and never one flat colour. Everything
+  else gets a little grain so a fifty-metre concrete wall is not dead flat.
+- **A horizon.** The plot is a finite square of voxels, so the world used to
+  stop at the fence with sky underneath it. A ground plane, lit by the same
+  terms as the voxels and fading into the same fog, closes it.
+
+The cost of all that, at the worst case the game can produce: triangles rise
+from 4k to 19k in first person and 7k to 56k across the whole site, draw calls
+are unchanged, and a 1,600-block fill takes 30ms to remesh rather than 22.
+
 ## Performance, measured
 
 `npm run e2e` ends with a stress build: the largest plot, a 46-ring bowl, a
@@ -379,11 +415,12 @@ seats, far past anything the game leads you toward.
 
 | | draw calls | triangles | median frame |
 | --- | --- | --- | --- |
-| First person, inside the bowl | 80 | 4k | 0.5ms |
-| Zone overlay | 106 | 4k | 0.6ms |
-| Overview, whole site on screen | 248 | 7k | 0.8ms |
+| First person, inside the bowl | 80 | 19k | 0.6ms |
+| Zone overlay | 106 | 19k | 0.6ms |
+| Overview, whole site on screen | 249 | 56k | 0.6ms |
 
-A 1,600-block fill takes under a millisecond to place and 22ms to remesh. An
+A 1,600-block fill takes under a millisecond to place and 30ms to remesh.
+Shadows add a second pass over whatever falls inside the sun's frustum. An
 ordinary stadium — the one the tutorial walks you to — renders in under 30
 calls; 248 is the worst case the game can produce, with one mesh per built
 chunk and nothing to cull when the entire site is on screen. The frame times

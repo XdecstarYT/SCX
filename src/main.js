@@ -8,6 +8,7 @@ import { BuildController } from './voxel/buildController.js';
 import { CameraRig, CAMERA_MODES } from './input/cameras.js';
 import { InputController, bindJoystick } from './input/controls.js';
 import { Sky } from './world/sky.js';
+import { SunShadows } from './world/shadows.js';
 import { LiveEventShow } from './world/liveEvent.js';
 import { Hud } from './ui/hud.js';
 import { BuildDock } from './ui/buildDock.js';
@@ -149,6 +150,7 @@ class App {
       this.rig.setWorld(world);
     } else {
       this.worldRenderer = new WorldRenderer(this.scene, world);
+      this.sky.setPlot(world.size);
       this.rig = new CameraRig(this.camera, world);
       this.controller = new BuildController(this.game, this.scene, this.rig);
       this.controller.restoreBlueprints();
@@ -185,6 +187,7 @@ class App {
     this.worldRenderer.world = world;
     this.show.world = world;
     this.propRenderer.setWorld(world);
+    this.sky.setPlot(world.size);
     this.controller.rig = this.rig;
     this.worldRenderer.flush();
 
@@ -279,6 +282,51 @@ class App {
   }
 
   /** Ask before a demolition that would be painful to undo by hand. */
+  /**
+   * Draw the sun's depth buffer, fitted around what the camera is looking at.
+   *
+   * Strength fades out at night - there is no sun to cast one - and with the
+   * weather, because an overcast sky is one big soft light and a hard shadow
+   * under it looks wrong.
+   */
+  renderShadows(env) {
+    const want = this.shadowQuality();
+    if (!want) {
+      if (this.shadows) { this.worldRenderer.setShadow(null, 0); this.propRenderer.setShadow(null, 0); }
+      return;
+    }
+    if (!this.shadows) this.shadows = new SunShadows(want);
+    const amt = Math.max(0, 1 - env.night * 1.35) * (env.shadowStrength ?? 1);
+    if (amt <= 0.01) {
+      this.worldRenderer.setShadow(null, 0);
+      this.propRenderer.setShadow(null, 0);
+      return;
+    }
+    // Fit the map to roughly what is on screen: tight when walking, wide when
+    // surveying the whole site.
+    const focus = this.rig.isWalking ? this.rig.pos : this.rig.focus;
+    const radius = this.rig.isWalking ? 70 : Math.min(360, 40 + this.rig.dist * 0.85);
+    this.shadows.update(env.sunDir, focus, radius);
+    this.shadows.render(this.renderer, this.scene, [
+      this.sky.mesh, this.controller.ghost, this.controller.outline,
+      this.controller.bbox, this.controller.propGhost?.group,
+      this.effects.particles, this.effects.flashes, this.camera,
+    ]);
+    this.worldRenderer.setShadow(this.shadows, amt);
+    this.propRenderer.setShadow(this.shadows, amt);
+  }
+
+  /** Shadow map size for the current setting, or 0 for off. */
+  shadowQuality() {
+    const q = this.game?.state?.settings?.shadows ?? 'auto';
+    if (q === 'off') return 0;
+    if (q === 'high') return 2048;
+    if (q === 'on') return 1024;
+    // Auto: on everywhere but a touch device, which needs the headroom more
+    // than it needs the shadow.
+    return this.isTouch ? 0 : 1024;
+  }
+
   /**
    * The finale: every long-term goal complete.
    *
@@ -659,6 +707,7 @@ class App {
     bus.on('landchange', (off) => {
       // New land wraps the old plot, so the complex moved. Follow it.
       if (off) this.rig.shift(off * BLOCK_SIZE, off * BLOCK_SIZE);
+      this.sky.setPlot(this.game.world.size);
       this.worldRenderer.rebuildAll();
       this.worldRenderer.flush();
     });
@@ -949,6 +998,7 @@ class App {
     this.worldRenderer.world = world;
     this.show.world = world;
     this.propRenderer.setWorld(world);
+    this.sky.setPlot(world.size);
     this.rig.setWorld(world);
     this.controller.anchor = null;
     this.worldRenderer.rebuildAll();
@@ -1191,6 +1241,7 @@ class App {
     this.propRenderer.setEnvironment(env);
     this.renderer.setClearColor(env.fogColor);
 
+    this.renderShadows(env);
     this.renderer.render(this.scene, this.camera);
   }
 

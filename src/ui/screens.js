@@ -1,4 +1,4 @@
-import { el, fill, section, ratingCell, meter, pill, toggleRow, sliderRow, issueRow, emptyState, animateNumber } from './dom.js';
+import { el, fill, section, ratingCell, meter, pill, toggleRow, sliderRow, choiceRow, issueRow, emptyState, animateNumber } from './dom.js';
 import { fmtMoney, fmtNum, monthlyFinance, LEDGER_CATEGORIES, takeLoan, loanCapacity, repayLoan, MAINTENANCE_RATE } from '../core/economy.js';
 import { TIER_LABEL } from '../venues/ratings.js';
 import { PROVIDES_LABEL } from '../data/props.js';
@@ -846,7 +846,11 @@ export class Screens {
           toggleRow('Reduced motion', 'Disable animated counters and transitions', s.settings.reducedMotion, (v) => { set('reducedMotion', v); }),
           toggleRow('High contrast', 'Stronger borders and brighter text', s.settings.highContrast, (v) => set('highContrast', v)),
           toggleRow('Large text', 'Increase UI text size', s.settings.largeText, (v) => set('largeText', v)),
-          toggleRow('Show FPS', 'Display a frame-rate counter', s.settings.showFps, (v) => set('showFps', v)))),
+          toggleRow('Show FPS', 'Display a frame-rate counter', s.settings.showFps, (v) => set('showFps', v)),
+          choiceRow('Sun shadows',
+            'The most expensive thing the renderer does. Automatic leaves them off on a phone.',
+            [['auto', 'Auto'], ['off', 'Off'], ['on', 'On'], ['high', 'Sharp']],
+            s.settings.shadows || 'auto', (v) => set('shadows', v)))),
 
       section('Controls',
         el('div.card', {},

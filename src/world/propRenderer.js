@@ -138,6 +138,15 @@ export class PropRenderer {
     u.uFogFar.value = env.fogFar;
   }
 
+  setShadow(shadows, amount) {
+    const u = this.material.uniforms;
+    u.uShadowAmt.value = amount;
+    if (!shadows || amount <= 0) return;
+    u.uShadowMap.value = shadows.target.depthTexture;
+    u.uShadowMatrix.value.copy(shadows.matrix);
+    u.uShadowTexel.value = 1 / shadows.size;
+  }
+
   setDim(v) { this.material.uniforms.uDim.value = v; }
   setVisible(v) { this.group.visible = v; }
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GROUND_Y, BLOCK_SIZE } from '../core/constants.js';
 
 /**
  * Sky dome + day/night + weather. Deliberately cheap: one inverted sphere with
@@ -71,6 +72,65 @@ export class Sky {
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
 
+    // Ground plane.
+    //
+    // The plot is a finite square of voxels, so without this the world simply
+    // stops at the fence and you see sky underneath it - the single clearest
+    // sign that you are standing on a game board rather than in a place. This
+    // is the land the plot was cut out of: it sits a hair below the terrain
+    // surface, takes the same light, and fades into the fog like everything
+    // else, so the horizon closes.
+    const groundGeo = new THREE.PlaneGeometry(1, 1);
+    groundGeo.rotateX(-Math.PI / 2);
+    this.groundMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uNear: { value: new THREE.Color(0x53733f) },
+        uFar: { value: new THREE.Color(0x5c6b4c) },
+        uFogColor: { value: new THREE.Color(0xa8c4dc) },
+        uFogNear: { value: 200 }, uFogFar: { value: 1500 },
+        uCentre: { value: new THREE.Vector2() },
+      },
+      vertexShader: `
+        varying vec3 vWorld;
+        void main(){
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorld = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }`,
+      fragmentShader: `
+        precision highp float;
+        uniform vec3 uNear; uniform vec3 uFar; uniform vec3 uFogColor;
+        uniform float uFogNear; uniform float uFogFar; uniform vec2 uCentre;
+        varying vec3 vWorld;
+        float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+        // Smoothed value noise. The un-smoothed version tiles the countryside
+        // into obvious squares, which is worse than leaving it flat.
+        float vnoise(vec2 p){
+          vec2 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+                     mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+        void main(){
+          float d = distance(vWorld.xz, uCentre);
+          // Two octaves of very broad variation, so the land beyond the fence
+          // has fields in it rather than being one flat sheet of green.
+          float blotch = vnoise(vWorld.xz * 0.004) * 0.7 + vnoise(vWorld.xz * 0.017) * 0.3;
+          vec3 col = mix(uNear, uFar, smoothstep(60.0, 900.0, d));
+          col *= 0.945 + blotch * 0.11;
+          float f = smoothstep(uFogNear, uFogFar, distance(vWorld, cameraPosition));
+          gl_FragColor = vec4(mix(col, uFogColor, f), 1.0);
+        }`,
+      depthWrite: true,
+    });
+    // A hair below the terrain surface, so the plot's own grass wins wherever
+    // the two meet rather than z-fighting along every edge.
+    this.groundY = GROUND_Y * BLOCK_SIZE - 0.06;
+    this.ground = new THREE.Mesh(groundGeo, this.groundMat);
+    this.ground.renderOrder = -1;
+    this.ground.frustumCulled = false;
+    scene.add(this.ground);
+
     this.env = {
       sunDir: new THREE.Vector3(0.4, 0.8, 0.3).normalize(),
       sunColor: new THREE.Color(0xfffaf0),
@@ -78,6 +138,7 @@ export class Sky {
       groundColor: new THREE.Color(0x424a55),
       fogColor: new THREE.Color(0xa8c4dc),
       night: 0,
+      shadowStrength: 1,
       fogNear: 200,
       fogFar: 1100,
     };
@@ -89,6 +150,12 @@ export class Sky {
    * @param dayFraction 0..1 through the in-game day
    * @param weather one of WEATHER_TINT
    */
+  /** Centre the surrounding land on the plot, so it reads as land around it. */
+  setPlot(sizeVoxels) {
+    const c = (sizeVoxels * BLOCK_SIZE) / 2;
+    this.groundMat.uniforms.uCentre.value.set(c, c);
+  }
+
   update(dayFraction, weather = 'sunny', cameraPos = null, viewDistance = 900) {
     const hour = ((dayFraction % 1) + 1) % 1 * 24;
     let i = 0;
@@ -125,12 +192,35 @@ export class Sky {
     this.uniforms.uSunDir.value.copy(this.env.sunDir);
     this.uniforms.uNight.value = this.env.night;
 
+    // Overcast weather is one big soft light, so a hard shadow under it reads
+    // wrong. Sun strength doubles as how crisp a shadow the sun can throw.
+    this.env.shadowStrength = Math.min(1, w.sunMul * 1.05);
+
     this.env.skyColor.copy(this.uniforms.uHorizon.value).lerp(this.uniforms.uTop.value, 0.4);
     this.env.fogFar = viewDistance * w.fogMul;
     this.env.fogNear = this.env.fogFar * 0.32;
 
     if (cameraPos) this.mesh.position.copy(cameraPos);
     this.mesh.scale.setScalar(Math.max(600, viewDistance * 1.4));
+
+    // The surrounding land takes the same light as everything else, so it greys
+    // over in bad weather and goes blue at dusk along with the rest. The terms
+    // are the voxel shader's, for an upward-facing surface, or the plot's own
+    // grass and the field beyond the fence would not be the same green.
+    const gu = this.groundMat.uniforms;
+    const ndl = Math.max(0, this.env.sunDir.y);
+    const wrap = Math.max(0, this.env.sunDir.y * 0.5 + 0.5);
+    const amb = this.env.skyColor.clone().multiplyScalar(0.78)
+      .add(this.env.sunColor.clone().multiplyScalar(ndl * 0.66 + wrap * 0.22));
+    gu.uNear.value.setHex(0x6d9c56).multiply(amb);
+    gu.uFar.value.setHex(0x6f8a5c).multiply(amb);
+    gu.uFogColor.value.copy(this.env.fogColor);
+    gu.uFogNear.value = this.env.fogNear;
+    gu.uFogFar.value = this.env.fogFar;
+    if (cameraPos) {
+      this.ground.position.set(cameraPos.x, this.groundY, cameraPos.z);
+      this.ground.scale.setScalar(Math.max(2000, viewDistance * 3));
+    }
     return this.env;
   }
 }

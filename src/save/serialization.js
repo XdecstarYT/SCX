@@ -162,7 +162,7 @@ export function migrate(save) {
   const s = save.state;
   s.settings = { sound: true, music: false, reducedMotion: false, highContrast: false,
     largeText: false, sensitivity: 1, invertY: false, showFps: false, autosave: true,
-    handedness: 'right', ...(s.settings || {}) };
+    handedness: 'right', shadows: 'auto', ...(s.settings || {}) };
   s.modifiers = s.modifiers || [];
   s.venues = s.venues || { registered: [] };
   s.events = { board: [], scheduled: [], history: [], lastGeneratedDay: 0, ...(s.events || {}) };

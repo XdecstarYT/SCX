@@ -58,6 +58,55 @@ function faceVisible(id, nid, transparentPass) {
   return id !== nid;                      // glass/glass interfaces are culled
 }
 
+/**
+ * Does the voxel at these padded coordinates cast contact shadow on its
+ * neighbours? Glass and other see-through blocks do not: a window should let
+ * light past rather than darken the wall beside it.
+ */
+function occludes(px, py, pz) {
+  if (px < 0 || py < 0 || pz < 0 || px >= PX || py >= PY || pz >= PZ) return 0;
+  const id = scratchPad[pidx(px, py, pz)];
+  if (id === AIR) return 0;
+  const b = block(id);
+  return b.solid && !b.transparent ? 1 : 0;
+}
+
+/**
+ * Corner ambient occlusion, the standard three-neighbour rule: a corner is
+ * darkest when both sides next to it are filled, lighter when one side or the
+ * diagonal is, and open otherwise. Returns 0 (darkest) to 3 (open).
+ *
+ * This is what makes a stack of merged quads read as architecture: without it
+ * a bowl of seating, the underside of a canopy and the inside of a vomitory
+ * are all the same flat tone, and nothing in the scene looks like it is
+ * touching anything else.
+ */
+function aoCorner(bx, by, bz, uAxis, vAxis, su, sv) {
+  const p = [bx, by, bz];
+  const a = [0, 0, 0]; a[uAxis] = su;
+  const b = [0, 0, 0]; b[vAxis] = sv;
+  const s1 = occludes(p[0] + a[0], p[1] + a[1], p[2] + a[2]);
+  const s2 = occludes(p[0] + b[0], p[1] + b[1], p[2] + b[2]);
+  if (s1 && s2) return 0;
+  const c = occludes(p[0] + a[0] + b[0], p[1] + a[1] + b[1], p[2] + a[2] + b[2]);
+  return 3 - (s1 + s2 + c);
+}
+
+/** All four corners of one face, packed two bits each in c0..c3 order. */
+function aoPack(bx, by, bz, uAxis, vAxis) {
+  const a0 = aoCorner(bx, by, bz, uAxis, vAxis, -1, -1);
+  const a1 = aoCorner(bx, by, bz, uAxis, vAxis, 1, -1);
+  const a2 = aoCorner(bx, by, bz, uAxis, vAxis, 1, 1);
+  const a3 = aoCorner(bx, by, bz, uAxis, vAxis, -1, 1);
+  return a0 | (a1 << 2) | (a2 << 4) | (a3 << 6);
+}
+
+/** Surface finish -> the shader's numeric id. */
+const FINISH_ID = { matte: 0, turf: 1, gloss: 2, seat: 3 };
+
+/** A face whose four corners match can be merged with its neighbours. */
+const AO_UNIFORM = new Set([0x00, 0x55, 0xAA, 0xFF]);
+
 class MeshBuilder {
   constructor() {
     this.pos = [];
@@ -65,16 +114,20 @@ class MeshBuilder {
     this.col = [];
     this.uv = [];
     this.emis = [];
+    this.ao = [];
+    this.fin = [];
     this.idx = [];
     this.count = 0;
   }
-  quad(corners, normal, r, g, b, w, h, emis, flip = false) {
+  quad(corners, normal, r, g, b, w, h, emis, flip = false, ao = null, fin = 0) {
     const base = this.count;
     for (let i = 0; i < 4; i++) {
       this.pos.push(corners[i][0], corners[i][1], corners[i][2]);
       this.nor.push(normal[0], normal[1], normal[2]);
       this.col.push(r, g, b);
       this.emis.push(emis);
+      this.ao.push(ao ? ao[i] : 3);
+      this.fin.push(fin);
     }
     // Back faces walk the corners in reverse, so their UVs must follow suit or
     // the panel seams come out stretched.
@@ -119,6 +172,8 @@ function greedy(chunk, transparentPass, mb) {
     q[d] = 1;
     const maskW = DIMS[u], maskH = DIMS[v];
     const mask = new Int32Array(maskW * maskH);
+    // Corner occlusion for each face in the mask, packed two bits per corner.
+    const aoMask = new Int32Array(maskW * maskH);
 
     for (x[d] = -1; x[d] < DIMS[d];) {
       // Build the face mask for this slice.
@@ -131,6 +186,17 @@ function greedy(chunk, transparentPass, mb) {
           const bVis = x[d] < DIMS[d] - 1 && faceVisible(b, a, transparentPass);
           // Positive id = face points along +d (owned by a), negative = -d.
           mask[n] = aVis ? a : (bVis ? -b : 0);
+          // Occlusion is sampled from the open side of the face - the voxel the
+          // light arrives through - which is `a + q` for a front face and `a`
+          // itself for a back one.
+          if (mask[n] !== 0) {
+            const fx = x[0] + 1 + (aVis ? q[0] : 0);
+            const fy = x[1] + 1 + (aVis ? q[1] : 0);
+            const fz = x[2] + 1 + (aVis ? q[2] : 0);
+            aoMask[n] = aoPack(fx, fy, fz, u, v);
+          } else {
+            aoMask[n] = 0xFF;
+          }
         }
       }
 
@@ -143,15 +209,24 @@ function greedy(chunk, transparentPass, mb) {
           const c = mask[n];
           if (c === 0) { i++; n++; continue; }
 
+          // Faces only merge when their occlusion matches and is even across
+          // the face. A corner where the shading varies stays its own quad, so
+          // the contact darkening is exact rather than smeared across a wall.
+          const ao = aoMask[n];
+          const mergeable = AO_UNIFORM.has(ao);
+
           let w = 1;
-          while (i + w < maskW && mask[n + w] === c) w++;
+          if (mergeable) while (i + w < maskW && mask[n + w] === c && aoMask[n + w] === ao) w++;
 
           let h = 1;
-          grow: while (j + h < maskH) {
-            for (let k = 0; k < w; k++) {
-              if (mask[n + k + h * maskW] !== c) break grow;
+          if (mergeable) {
+            grow: while (j + h < maskH) {
+              for (let k = 0; k < w; k++) {
+                const m = n + k + h * maskW;
+                if (mask[m] !== c || aoMask[m] !== ao) break grow;
+              }
+              h++;
             }
-            h++;
           }
 
           const id = Math.abs(c);
@@ -164,6 +239,7 @@ function greedy(chunk, transparentPass, mb) {
           const g = (((col >> 8) & 255) / 255) * shade;
           const bcol = ((col & 255) / 255) * shade;
           const emis = bl.emissive ? 1 : 0;
+          const fin = FINISH_ID[bl.finish] || 0;
 
           x[u] = i; x[v] = j;
           const du = [0, 0, 0]; du[u] = w;
@@ -178,7 +254,9 @@ function greedy(chunk, transparentPass, mb) {
 
           const nrm = NORMALS[dir];
           const corners = back ? [c0, c3, c2, c1] : [c0, c1, c2, c3];
-          mb.quad(corners, nrm, r, g, bcol, w, h, emis, back);
+          const a0 = ao & 3, a1 = (ao >> 2) & 3, a2 = (ao >> 4) & 3, a3 = (ao >> 6) & 3;
+          const aoq = back ? [a0, a3, a2, a1] : [a0, a1, a2, a3];
+          mb.quad(corners, nrm, r, g, bcol, w, h, emis, back, aoq, fin);
 
           // Clear the consumed rectangle.
           for (let l = 0; l < h; l++) {

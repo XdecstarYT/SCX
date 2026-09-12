@@ -447,3 +447,85 @@ test('every material in the palette can be bought, placed and taken back out', a
     if (++x > 28) { x = 1; z += 1; }
   }
 });
+
+// ------------------------------------------------------------- how it looks
+//
+// The mesher decides what the world looks like as much as the shader does, so
+// the two things it now carries - corner occlusion and surface finish - are
+// worth holding to, especially the merging, which is what keeps the triangle
+// count sane.
+
+test('corner occlusion darkens what is tucked into a corner, and nothing else', async () => {
+  const { meshChunk } = await import('../src/voxel/mesher.js');
+  const { CHUNK_X } = await import('../src/core/constants.js');
+  const G = GROUND_Y;
+
+  // Up-facing vertices only, as {x, z, ao} in world metres. Merging means
+  // vertices exist at quad corners rather than at every voxel, so the test
+  // reads the spread of values rather than looking any one of them up.
+  const topVerts = (w) => {
+    const built = meshChunk(w, w.chunkAt(8, 8, false));
+    const { pos, nor, ao } = built.opaque;
+    const out = [];
+    for (let i = 0; i < ao.length; i++) {
+      if (nor[i * 3 + 1] !== 1) continue;
+      if (pos[i * 3 + 1] !== G * 2) continue;            // the ground surface
+      out.push({ x: pos[i * 3], z: pos[i * 3 + 2], ao: ao[i] });
+    }
+    return out;
+  };
+
+  // Open ground: nothing is occluded anywhere.
+  const open = new VoxelWorld(CHUNK_X * 2);
+  open.generateTerrain();
+  const flat = topVerts(open);
+  assert.ok(flat.length > 0, 'the probe found no ground to measure');
+  assert.ok(flat.every((v) => v.ao === 3), 'flat open ground should have no occlusion');
+
+  // Now stand a wall on it. Ground tucked against the foot of the wall must
+  // come out darker; ground well away from it must not.
+  const walled = new VoxelWorld(CHUNK_X * 2);
+  walled.generateTerrain();
+  for (let z = 2; z < 14; z++) {
+    for (let y = G; y < G + 4; y++) walled.setBlock(8, y, z, blockId('concrete'));
+  }
+  const shaded = topVerts(walled);
+  const wallX = 8 * 2;
+  const near = shaded.filter((v) => Math.abs(v.x - wallX) <= 4 && v.z > 4 && v.z < 26);
+  const far = shaded.filter((v) => Math.abs(v.x - wallX) > 12);
+  assert.ok(near.length > 0 && far.length > 0, 'the probe missed its samples');
+  assert.ok(Math.min(...near.map((v) => v.ao)) < 3,
+    'the ground at the foot of a wall should be occluded');
+  assert.ok(far.every((v) => v.ao === 3),
+    'ground well away from the wall should be untouched');
+});
+
+test('occlusion does not stop a flat wall merging into a handful of quads', async () => {
+  const { meshChunk } = await import('../src/voxel/mesher.js');
+  const { CHUNK_X } = await import('../src/core/constants.js');
+  const G = GROUND_Y;
+  // A large unbroken slab, floating clear of anything that could occlude it.
+  const w = new VoxelWorld(CHUNK_X * 2);
+  for (let z = 0; z < CHUNK_X; z++) {
+    for (let x = 0; x < CHUNK_X; x++) w.setBlock(x, G + 6, z, blockId('concrete'));
+  }
+  const built = meshChunk(w, w.chunkAt(4, 4, false));
+  const quads = built.opaque.count / 4;
+  // 16x16 of unoccluded slab: a top, a bottom and four thin sides. If the
+  // occlusion pass had broken merging, this would be hundreds.
+  assert.ok(quads <= 8, `a flat slab meshed into ${quads} quads; merging is broken`);
+});
+
+test('every block carries a surface finish the shader knows', async () => {
+  const { BLOCK_BY_ID } = await import('../src/data/blocks.js');
+  const known = new Set(['matte', 'turf', 'gloss', 'seat']);
+  for (const b of BLOCK_BY_ID.slice(1)) {
+    assert.ok(known.has(b.finish), `${b.key} has finish "${b.finish}", which the shader cannot render`);
+  }
+  // And the ones that obviously should differ, do.
+  const finishOf = (k) => BLOCK_BY_ID.find((b) => b.key === k).finish;
+  assert.equal(finishOf('turf'), 'turf');
+  assert.equal(finishOf('glass'), 'gloss');
+  assert.equal(finishOf('seat'), 'seat');
+  assert.equal(finishOf('concrete'), 'matte');
+});

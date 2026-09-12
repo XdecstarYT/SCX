@@ -14,14 +14,20 @@ const VERT = /* glsl */`
   attribute vec3 color;
   attribute vec2 quadUv;
   attribute float emis;
+  attribute float ao;
+  attribute float fin;
   varying vec3 vColor;
   varying vec2 vUv;
   varying vec3 vNormal;
   varying float vEmis;
+  varying float vAo;
+  varying float vFin;
   varying float vDist;
   varying vec3 vWorld;
   void main() {
     vColor = color;
+    vAo = ao;
+    vFin = fin;
     vUv = quadUv;
     vEmis = emis;
     // Chunk meshes draw one instance; props draw many, so the same material
@@ -52,6 +58,11 @@ const FRAG = /* glsl */`
   uniform float uNight;
   uniform float uOpacity;
   uniform float uSeam;
+  uniform float uAo;
+  uniform sampler2D uShadowMap;
+  uniform mat4 uShadowMatrix;
+  uniform float uShadowTexel;
+  uniform float uShadowAmt;
   uniform vec3 uHighlight;
   uniform float uHighlightAmt;
   uniform float uDim;
@@ -59,8 +70,41 @@ const FRAG = /* glsl */`
   varying vec2 vUv;
   varying vec3 vNormal;
   varying float vEmis;
+  varying float vAo;
+  varying float vFin;
   varying float vDist;
   varying vec3 vWorld;
+
+  /**
+   * How much sun reaches this fragment. Four taps in a rotated square, which
+   * is enough to take the staircase off a shadow edge at this texel density
+   * without costing a sixteenth of the frame.
+   */
+  float sunVisibility(vec3 worldPos, float ndl) {
+    if (uShadowAmt <= 0.0) return 1.0;
+    vec4 lp = uShadowMatrix * vec4(worldPos, 1.0);
+    vec3 sc = lp.xyz / lp.w * 0.5 + 0.5;
+    if (sc.x < 0.001 || sc.x > 0.999 || sc.y < 0.001 || sc.y > 0.999 || sc.z > 1.0) return 1.0;
+    // Slope-scaled bias: a surface edge-on to the sun needs far more of it.
+    float bias = 0.0009 + 0.0045 * (1.0 - ndl);
+    float t = uShadowTexel;
+    float sum = 0.0;
+    sum += step(sc.z - bias, texture2D(uShadowMap, sc.xy + vec2( t,  t)).r);
+    sum += step(sc.z - bias, texture2D(uShadowMap, sc.xy + vec2(-t,  t)).r);
+    sum += step(sc.z - bias, texture2D(uShadowMap, sc.xy + vec2( t, -t)).r);
+    sum += step(sc.z - bias, texture2D(uShadowMap, sc.xy + vec2(-t, -t)).r);
+    // Fade the whole thing out at the edge of the map rather than cutting it.
+    vec2 e = abs(sc.xy - 0.5) * 2.0;
+    float edge = 1.0 - smoothstep(0.82, 0.99, max(e.x, e.y));
+    return mix(1.0, sum * 0.25, uShadowAmt * edge);
+  }
+
+  // Cheap value noise, used to break up flat colour fields at close range.
+  float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
 
   void main() {
     vec3 N = normalize(vNormal);
@@ -68,7 +112,59 @@ const FRAG = /* glsl */`
     // Soft wrap term keeps shadowed faces readable instead of pure black.
     float wrap = max(dot(N, uSunDir) * 0.5 + 0.5, 0.0);
     vec3 hemi = mix(uGroundColor, uSkyColor, N.y * 0.5 + 0.5);
-    vec3 lit = vColor * (hemi * 0.78 + uSunColor * (ndl * 0.66 + wrap * 0.22));
+
+    // Corner occlusion, interpolated across the quad. Ambient light is what
+    // gets blocked in a corner, so it takes the full weight; direct sun is
+    // only slightly dimmed, which keeps a sunlit corner from going muddy.
+    float ao = clamp(vAo * 0.3333, 0.0, 1.0);
+    ao = mix(1.0 - uAo, 1.0, ao * ao * (3.0 - 2.0 * ao));
+
+    // --------------------------------------------------------- the surface
+    // Three finishes, because a mown pitch, a pane of glass and a concrete
+    // wall do not catch light the same way, and flat colour for all three is
+    // what makes a voxel scene read as plastic.
+    vec3 base = vColor;
+    float gloss = 0.0;
+    float seamMul = 1.0;
+    float grain = 0.044;
+
+    if (vFin > 2.5) {
+      // Seating. A deck of seats is thousands of separate mouldings, and the
+      // one thing it never is, is a single flat colour.
+      grain = 0.10;
+    } else if (vFin > 1.5) {
+      // Glass, metal, ice, water: a real highlight, so a facade catches the
+      // sun and a roof has a sheen along its length.
+      gloss = 1.0;
+      grain = 0.018;
+    } else if (vFin > 0.5) {
+      // Mown turf. Groundsmen cut in bands and the nap of the grass throws the
+      // light differently each way, which is why a pitch on television is
+      // striped. Five-metre bands, plus a fine speckle so it is not a gradient.
+      // Grass has no panel seams: it is the one surface where the per-metre
+      // grid reads as tiling rather than as construction.
+      float band = sin(vWorld.x * 0.2094);
+      base *= 1.0 + smoothstep(-0.25, 0.25, band) * 0.075 - 0.037;
+      seamMul = 0.0;
+      grain = 0.034;
+    }
+    base *= (1.0 - grain * 0.5) + hash21(floor(vWorld.xz * 0.55 + vWorld.y * 0.31)) * grain;
+
+    // Shadow dims the direct sun only. Skylight still reaches a shaded wall,
+    // which is why real shade is blue rather than black.
+    float sun = sunVisibility(vWorld, ndl);
+    vec3 direct = uSunColor * (ndl * 0.66 * sun + wrap * 0.22 * mix(0.55, 1.0, sun));
+    vec3 lit = base * (hemi * 0.78 * ao + direct * mix(1.0, ao, 0.45));
+
+    if (gloss > 0.0) {
+      vec3 V = normalize(cameraPosition - vWorld);
+      vec3 H = normalize(uSunDir + V);
+      float spec = pow(max(dot(N, H), 0.0), 48.0);
+      // Fresnel: glancing angles catch far more, which is what makes glass
+      // read as glass rather than as pale blue paint.
+      float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+      lit += uSunColor * (spec * 0.55 * sun + fres * 0.10) * ao * (1.0 - uNight * 0.7);
+    }
 
     // Panel seams: one line per metre of real surface, faded out by distance
     // via fwidth so it never turns into moire.
@@ -77,7 +173,7 @@ const FRAG = /* glsl */`
     vec2 w = fwidth(vUv) * 1.5 + 0.012;
     vec2 g = smoothstep(vec2(0.0), w, d);
     float seam = min(g.x, g.y);
-    lit *= mix(1.0 - uSeam, 1.0, seam);
+    lit *= mix(1.0 - uSeam * seamMul, 1.0, seam);
 
     // Emissive elements (screens, floodlights) glow after dark.
     lit += vColor * vEmis * (0.25 + uNight * 1.9);
@@ -104,6 +200,11 @@ export function createVoxelMaterial(opts = {}) {
       uNight: { value: 0 },
       uOpacity: { value: opts.opacity ?? 1 },
       uSeam: { value: opts.seam ?? 0.16 },
+      uAo: { value: opts.ao ?? 0.62 },
+      uShadowMap: { value: null },
+      uShadowMatrix: { value: new THREE.Matrix4() },
+      uShadowTexel: { value: 1 / 1024 },
+      uShadowAmt: { value: 0 },
       uHighlight: { value: new THREE.Color(0x39e08a) },
       uHighlightAmt: { value: 0 },
       uDim: { value: 1 },
@@ -123,6 +224,8 @@ function buildGeometry(mb) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(mb.col, 3));
   g.setAttribute('quadUv', new THREE.Float32BufferAttribute(mb.uv, 2));
   g.setAttribute('emis', new THREE.Float32BufferAttribute(mb.emis, 1));
+  g.setAttribute('ao', new THREE.Float32BufferAttribute(mb.ao, 1));
+  g.setAttribute('fin', new THREE.Float32BufferAttribute(mb.fin, 1));
   g.setIndex(mb.idx);
   g.computeBoundingSphere();
   return g;
@@ -268,6 +371,17 @@ export class WorldRenderer {
 
   setZoneDim(v) {
     for (const m of [this.matOpaque, this.matTransparent]) m.uniforms.uDim.value = v;
+  }
+
+  /** Point both voxel materials at the sun's depth buffer. */
+  setShadow(shadows, amount) {
+    for (const m of [this.matOpaque, this.matTransparent]) {
+      m.uniforms.uShadowAmt.value = amount;
+      if (!shadows || amount <= 0) continue;
+      m.uniforms.uShadowMap.value = shadows.target.depthTexture;
+      m.uniforms.uShadowMatrix.value.copy(shadows.matrix);
+      m.uniforms.uShadowTexel.value = 1 / shadows.size;
+    }
   }
 
   /** Push environment uniforms (day/night, weather) to both voxel materials. */

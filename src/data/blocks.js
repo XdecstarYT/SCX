@@ -20,6 +20,8 @@
  *                voxels, so these are deliberately small numbers.
  *   autoZone     zone key auto-painted when placed (player can repaint)
  *   unlock       research/level id required, null = available from the start
+ *   finish       how the surface catches light: 'matte' (default), 'turf' for
+ *                mown grass, 'gloss' for glass, metal, ice and water
  */
 
 export const BLOCKS = [
@@ -27,41 +29,41 @@ export const BLOCKS = [
   // Natural ground costs nothing to keep: the plot arrives covered in it, and
   // billing upkeep on the lawn you were given made it the single largest line
   // on an early complex's books.
-  { key: 'grass',      name: 'Grass',            category: 'terrain', color: 0x6d9c56, cost: 12,   maintenance: 0,   solid: true, support: 4 },
+  { key: 'grass',      name: 'Grass',            category: 'terrain', color: 0x6d9c56, cost: 12,   maintenance: 0,   solid: true, support: 4, finish: 'turf' },
   { key: 'dirt',       name: 'Dirt',             category: 'terrain', color: 0x6b5342, cost: 6,    maintenance: 0,   solid: true, support: 4 },
   { key: 'sand',       name: 'Sand',             category: 'terrain', color: 0xc9b083, cost: 8,    maintenance: 0.1, solid: true, support: 3 },
-  { key: 'water',      name: 'Water',            category: 'terrain', color: 0x2f7fb5, cost: 30,   maintenance: 1.2, solid: false, transparent: true, opacity: 0.72, support: 0 },
+  { key: 'water',      name: 'Water',            category: 'terrain', color: 0x2f7fb5, cost: 30,   maintenance: 1.2, solid: false, transparent: true, opacity: 0.72, support: 0, finish: 'gloss' },
   { key: 'tree',       name: 'Tree',             category: 'terrain', color: 0x2f6b39, cost: 220,  maintenance: 4,   solid: true, support: 1 },
   { key: 'hedge',      name: 'Hedge',            category: 'terrain', color: 0x3f7a45, cost: 90,   maintenance: 3,   solid: true, support: 1 },
 
   // ------------------------------------------------------------- structural
   { key: 'concrete',   name: 'Concrete',         category: 'structure', color: 0x9aa0a6, cost: 55,  maintenance: 0.9, solid: true, support: 9 },
   { key: 'reinforced', name: 'Reinforced Conc.', category: 'structure', color: 0x7c838a, cost: 130, maintenance: 1.4, solid: true, support: 16, unlock: 'adv_materials' },
-  { key: 'steel',      name: 'Steel',            category: 'structure', color: 0x8d97a3, cost: 165, maintenance: 1.8, solid: true, support: 20 },
+  { key: 'steel',      name: 'Steel',            category: 'structure', color: 0x8d97a3, cost: 165, maintenance: 1.8, solid: true, support: 20, finish: 'gloss' },
   { key: 'beam',       name: 'Structural Beam',  category: 'structure', color: 0x5b6672, cost: 190, maintenance: 2.0, solid: true, support: 26 },
   { key: 'stone',      name: 'Stone',            category: 'structure', color: 0x8b8b86, cost: 70,  maintenance: 0.8, solid: true, support: 11 },
   { key: 'brick',      name: 'Brick',            category: 'structure', color: 0xa8604c, cost: 68,  maintenance: 0.9, solid: true, support: 9 },
-  { key: 'metal',      name: 'Metal Panel',      category: 'structure', color: 0xa9b2bb, cost: 92,  maintenance: 1.3, solid: true, support: 7 },
+  { key: 'metal',      name: 'Metal Panel',      category: 'structure', color: 0xa9b2bb, cost: 92,  maintenance: 1.3, solid: true, support: 7, finish: 'gloss' },
 
   // --------------------------------------------------------------- exterior
-  { key: 'glass',      name: 'Glass',            category: 'exterior', color: 0x9fd4e8, cost: 210, maintenance: 3.0, solid: true, transparent: true, opacity: 0.42, support: 2 },
+  { key: 'glass',      name: 'Glass',            category: 'exterior', color: 0x9fd4e8, cost: 210, maintenance: 3.0, solid: true, transparent: true, opacity: 0.42, support: 2, finish: 'gloss' },
   { key: 'facade_c',   name: 'Concrete Facade',  category: 'exterior', color: 0xd6d9dd, cost: 120, maintenance: 1.4, solid: true, support: 6, appearance: 2 },
-  { key: 'facade_m',   name: 'Metal Facade',     category: 'exterior', color: 0xbcc6d0, cost: 175, maintenance: 1.9, solid: true, support: 6, appearance: 3 },
+  { key: 'facade_m',   name: 'Metal Facade',     category: 'exterior', color: 0xbcc6d0, cost: 175, maintenance: 1.9, solid: true, support: 6, appearance: 3, finish: 'gloss' },
   { key: 'facade_b',   name: 'Brick Facade',     category: 'exterior', color: 0x94503f, cost: 130, maintenance: 1.2, solid: true, support: 6, appearance: 2 },
   { key: 'facade_s',   name: 'Stone Facade',     category: 'exterior', color: 0xb9b3a6, cost: 155, maintenance: 1.3, solid: true, support: 6, appearance: 3 },
 
   // --------------------------------------------------------------- flooring
   { key: 'floor_conc', name: 'Concrete Floor',   category: 'surface', color: 0xb0b5ba, cost: 45,  maintenance: 0.6, solid: true, support: 8 },
-  { key: 'tile',       name: 'Tile',             category: 'surface', color: 0xdfe4e8, cost: 88,  maintenance: 1.1, solid: true, support: 6, appearance: 2 },
+  { key: 'tile',       name: 'Tile',             category: 'surface', color: 0xdfe4e8, cost: 88,  maintenance: 1.1, solid: true, support: 6, appearance: 2, finish: 'gloss' },
   { key: 'hardwood',   name: 'Hardwood Court',   category: 'surface', color: 0xc8974f, cost: 165, maintenance: 2.4, solid: true, support: 5, autoZone: 'court_basketball' },
   { key: 'rubber',     name: 'Rubber Floor',     category: 'surface', color: 0x4b5158, cost: 95,  maintenance: 1.4, solid: true, support: 5, autoZone: 'training' },
-  { key: 'turf',       name: 'Natural Turf',     category: 'surface', color: 0x357f3c, cost: 130, maintenance: 3.6, solid: true, support: 4, autoZone: 'pitch_football' },
-  { key: 'turf_synth', name: 'Synthetic Turf',   category: 'surface', color: 0x2f8f57, cost: 175, maintenance: 1.5, solid: true, support: 4, autoZone: 'pitch_football', unlock: 'adv_surfaces' },
+  { key: 'turf',       name: 'Natural Turf',     category: 'surface', color: 0x357f3c, cost: 130, maintenance: 3.6, solid: true, support: 4, autoZone: 'pitch_football', finish: 'turf' },
+  { key: 'turf_synth', name: 'Synthetic Turf',   category: 'surface', color: 0x2f8f57, cost: 175, maintenance: 1.5, solid: true, support: 4, autoZone: 'pitch_football', unlock: 'adv_surfaces', finish: 'turf' },
   { key: 'clay',       name: 'Clay Court',       category: 'surface', color: 0xc4744a, cost: 120, maintenance: 2.8, solid: true, support: 4, autoZone: 'court_tennis' },
   { key: 'track',      name: 'Running Track',    category: 'surface', color: 0xb4553d, cost: 190, maintenance: 2.2, solid: true, support: 5, autoZone: 'track_athletics' },
-  { key: 'ice',        name: 'Ice Surface',      category: 'surface', color: 0xd3ecf5, cost: 240, maintenance: 6.5, solid: true, support: 4, power: 0.004, autoZone: 'rink_ice', unlock: 'ice_tech' },
-  { key: 'pool',       name: 'Pool Water',       category: 'surface', color: 0x35a5cf, cost: 260, maintenance: 5.4, solid: true, transparent: true, opacity: 0.62, support: 3, power: 0.002, autoZone: 'pool_swimming', unlock: 'aquatics' },
-  { key: 'infield',    name: 'Baseball Infield',  category: 'surface', color: 0xb08a5e, cost: 145, maintenance: 2.6, solid: true, support: 4, autoZone: 'field_baseball', unlock: 'diamond' },
+  { key: 'ice',        name: 'Ice Surface',      category: 'surface', color: 0xd3ecf5, cost: 240, maintenance: 6.5, solid: true, support: 4, power: 0.004, autoZone: 'rink_ice', unlock: 'ice_tech', finish: 'gloss' },
+  { key: 'pool',       name: 'Pool Water',       category: 'surface', color: 0x35a5cf, cost: 260, maintenance: 5.4, solid: true, transparent: true, opacity: 0.62, support: 3, power: 0.002, autoZone: 'pool_swimming', unlock: 'aquatics', finish: 'gloss' },
+  { key: 'infield',    name: 'Baseball Infield',  category: 'surface', color: 0xb08a5e, cost: 145, maintenance: 2.6, solid: true, support: 4, autoZone: 'field_baseball', unlock: 'diamond', finish: 'turf' },
   { key: 'stage',      name: 'Stage Deck',        category: 'surface', color: 0x2a2d33, cost: 210, maintenance: 2.2, solid: true, support: 6, autoZone: 'stage_event' },
   { key: 'esports',    name: 'Esports Stage',     category: 'surface', color: 0x2b2f52, emissive: 0x4455cc, cost: 320, maintenance: 3.4, solid: true, support: 5, power: 0.008, autoZone: 'arena_esports', appearance: 4, unlock: 'esports' },
   { key: 'asphalt',    name: 'Asphalt',          category: 'surface', color: 0x40464c, cost: 38,  maintenance: 0.5, solid: true, support: 7, autoZone: 'parking' },
@@ -79,26 +81,26 @@ export const BLOCKS = [
   { key: 'park_vip',   name: 'VIP Parking',      category: 'roads', color: 0x5a4a70, cost: 96,  maintenance: 1.1, solid: true, support: 7, autoZone: 'parking_vip', appearance: 1 },
 
   // ---------------------------------------------------------------- seating
-  { key: 'seat',       name: 'Seating',          category: 'seating', color: 0x2f6fd0, cost: 320, maintenance: 4.2, solid: true, support: 5, autoZone: 'seating' },
-  { key: 'seat_alt',   name: 'Seating (Accent)', category: 'seating', color: 0xd8b13a, cost: 320, maintenance: 4.2, solid: true, support: 5, autoZone: 'seating', appearance: 2 },
-  { key: 'seat_box',   name: 'Luxury Box',       category: 'seating', color: 0x8a6ad0, cost: 2600, maintenance: 26.0, solid: true, support: 5, autoZone: 'luxury_box', appearance: 6, revenue: 340, unlock: 'hospitality' },
-  { key: 'seat_vip',   name: 'VIP Seating',      category: 'seating', color: 0x7b4fd0, cost: 980, maintenance: 12.0, solid: true, support: 5, autoZone: 'seating_vip', appearance: 3, unlock: 'hospitality' },
-  { key: 'terrace',    name: 'Standing Terrace', category: 'seating', color: 0x6c7480, cost: 140, maintenance: 1.8, solid: true, support: 6, autoZone: 'seating_standing' },
+  { key: 'seat',       name: 'Seating',          category: 'seating', color: 0x39628f, cost: 320, maintenance: 4.2, solid: true, support: 5, autoZone: 'seating', finish: 'seat' },
+  { key: 'seat_alt',   name: 'Seating (Accent)', category: 'seating', color: 0xd8b13a, cost: 320, maintenance: 4.2, solid: true, support: 5, autoZone: 'seating', appearance: 2, finish: 'seat' },
+  { key: 'seat_box',   name: 'Luxury Box',       category: 'seating', color: 0x8a6ad0, cost: 2600, maintenance: 26.0, solid: true, support: 5, autoZone: 'luxury_box', appearance: 6, revenue: 340, unlock: 'hospitality', finish: 'seat' },
+  { key: 'seat_vip',   name: 'VIP Seating',      category: 'seating', color: 0x7b4fd0, cost: 980, maintenance: 12.0, solid: true, support: 5, autoZone: 'seating_vip', appearance: 3, unlock: 'hospitality', finish: 'seat' },
+  { key: 'terrace',    name: 'Standing Terrace', category: 'seating', color: 0x6c7480, cost: 140, maintenance: 1.8, solid: true, support: 6, autoZone: 'seating_standing', finish: 'seat' },
   { key: 'stair',      name: 'Stairs',           category: 'seating', color: 0x9b9fa4, cost: 90,  maintenance: 1.0, solid: true, support: 6, autoZone: 'stairs' },
 
   // ---------------------------------------------------------------- roofing
   { key: 'roof_conc',  name: 'Concrete Roof',    category: 'roof', color: 0x8f959b, cost: 145, maintenance: 1.6, solid: true, support: 3, spans: 5 },
-  { key: 'roof_metal', name: 'Metal Roof',       category: 'roof', color: 0xb6bfc8, cost: 175, maintenance: 1.9, solid: true, support: 3, spans: 8, appearance: 2 },
-  { key: 'roof_glass', name: 'Glass Roof',       category: 'roof', color: 0xbfe2ef, cost: 320, maintenance: 3.4, solid: true, transparent: true, opacity: 0.4, support: 2, spans: 6, appearance: 4, unlock: 'adv_materials' },
-  { key: 'roof_stadium', name: 'Stadium Canopy', category: 'roof', color: 0xe3e8ec, cost: 420, maintenance: 4.2, solid: true, support: 3, spans: 14, appearance: 5, unlock: 'canopy' },
-  { key: 'roof_retract', name: 'Retractable Panel', category: 'roof', color: 0xcfd8e0, cost: 980, maintenance: 11.0, solid: true, support: 3, spans: 12, appearance: 7, power: 0.004, unlock: 'retractable' },
+  { key: 'roof_metal', name: 'Metal Roof',       category: 'roof', color: 0xb6bfc8, cost: 175, maintenance: 1.9, solid: true, support: 3, spans: 8, appearance: 2, finish: 'gloss' },
+  { key: 'roof_glass', name: 'Glass Roof',       category: 'roof', color: 0xbfe2ef, cost: 320, maintenance: 3.4, solid: true, transparent: true, opacity: 0.4, support: 2, spans: 6, appearance: 4, unlock: 'adv_materials', finish: 'gloss' },
+  { key: 'roof_stadium', name: 'Stadium Canopy', category: 'roof', color: 0xe3e8ec, cost: 420, maintenance: 4.2, solid: true, support: 3, spans: 14, appearance: 5, unlock: 'canopy', finish: 'gloss' },
+  { key: 'roof_retract', name: 'Retractable Panel', category: 'roof', color: 0xcfd8e0, cost: 980, maintenance: 11.0, solid: true, support: 3, spans: 12, appearance: 7, power: 0.004, unlock: 'retractable', finish: 'gloss' },
 
   // ------------------------------------------------------------- decorative
   { key: 'team_a',     name: 'Team Colour A',    category: 'decor', color: 0x1f4fa0, cost: 60,  maintenance: 0.7, solid: true, support: 5, appearance: 2 },
   { key: 'team_b',     name: 'Team Colour B',    category: 'decor', color: 0xc23a3a, cost: 60,  maintenance: 0.7, solid: true, support: 5, appearance: 2 },
   { key: 'team_c',     name: 'Team Colour C',    category: 'decor', color: 0xf0f2f4, cost: 60,  maintenance: 0.7, solid: true, support: 5, appearance: 2 },
   { key: 'advert',     name: 'Advertising Panel',category: 'decor', color: 0xe8ac2a, cost: 240, maintenance: 2.0, solid: true, support: 3, appearance: 3, revenue: 55 },
-  { key: 'screen',     name: 'Digital Screen',   category: 'decor', color: 0x14202e, emissive: 0x2c6fd8, cost: 1400, maintenance: 16, solid: true, support: 3, appearance: 8, power: 0.015, revenue: 260, unlock: 'broadcast' },
+  { key: 'screen',     name: 'Digital Screen',   category: 'decor', color: 0x14202e, emissive: 0x2c6fd8, cost: 1400, maintenance: 16, solid: true, support: 3, appearance: 8, power: 0.015, revenue: 260, unlock: 'broadcast', finish: 'gloss' },
   { key: 'banner',     name: 'Banner',           category: 'decor', color: 0xb0273f, cost: 70,  maintenance: 1.0, solid: true, support: 1, appearance: 3 },
   { key: 'flag',       name: 'Flag',             category: 'decor', color: 0xe4e9ee, cost: 110, maintenance: 1.4, solid: true, support: 1, appearance: 3 },
   { key: 'floodlight', name: 'Floodlight',       category: 'decor', color: 0xf5f1d8, emissive: 0xfff3c0, cost: 1600, maintenance: 22, solid: true, support: 4, appearance: 4, power: 0.3, light: true },
@@ -114,7 +116,7 @@ export const BLOCKS = [
   // position here, so appending costs nothing in the UI.
   // --------------------------------------------------------------------------
   { key: 'timber',     name: 'Timber Frame',     category: 'structure', color: 0xa9793f, cost: 34,  maintenance: 1.6, solid: true, support: 5, appearance: 1 },
-  { key: 'window',     name: 'Window',           category: 'exterior', color: 0xbfe0ef, cost: 190, maintenance: 2.6, solid: true, transparent: true, opacity: 0.34, support: 3, appearance: 3 },
+  { key: 'window',     name: 'Window',           category: 'exterior', color: 0xbfe0ef, cost: 190, maintenance: 2.6, solid: true, transparent: true, opacity: 0.34, support: 3, appearance: 3, finish: 'gloss' },
   // A doorway is a hole you can walk through, so it does not block movement,
   // and it zones itself as an entrance: the analyser counts each separate run
   // of entrance zone as a gate, and gates are most of what crowd flow and
@@ -150,6 +152,7 @@ BLOCKS.forEach((b, i) => {
     light: false,
     autoZone: null,
     unlock: null,
+    finish: 'matte',
     ...b,
   };
   BLOCK_BY_ID.push(rec);

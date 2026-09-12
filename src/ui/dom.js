@@ -84,6 +84,20 @@ export function toggleRow(label, desc, on, onchange) {
   return row;
 }
 
+/** A row of mutually exclusive choices, for settings that are not on/off. */
+export function choiceRow(label, desc, options, value, onchange) {
+  const btns = options.map(([val, text]) => el('button.btn.sm' + (val === value ? '.primary' : ''), {
+    onclick: () => {
+      for (const b of btns) b.classList.remove('primary');
+      btns[options.findIndex(([v]) => v === val)].classList.add('primary');
+      onchange(val);
+    },
+  }, text));
+  return el('div.field', {},
+    el('div', {}, el('div.small', { text: label }), desc && el('div.tiny.faint', { text: desc })),
+    el('div.btnrow', { style: { marginTop: '6px' } }, ...btns));
+}
+
 export function sliderRow(label, min, max, value, step, oninput, format = (v) => v) {
   const out = el('span.small.mono', { text: format(value) });
   const input = el('input.input', {
