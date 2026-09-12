@@ -529,3 +529,55 @@ test('every block carries a surface finish the shader knows', async () => {
   assert.equal(finishOf('seat'), 'seat');
   assert.equal(finishOf('concrete'), 'matte');
 });
+
+test('pitch markings follow the surface the player actually built', async () => {
+  const { pitchRects, SPORT_MARKS } = await import('../src/world/pitchMarks.js');
+  const { BLOCK_SIZE } = await import('../src/core/constants.js');
+  const G = GROUND_Y;
+
+  // A football pitch and a basketball court on the same plot.
+  const w = new VoxelWorld(128);
+  w.generateTerrain();
+  for (let x = 40; x < 94; x++) {
+    for (let z = 46; z < 81; z++) w.setBlock(x, G - 1, z, blockId('turf'), zoneId('pitch_football'));
+  }
+  for (let x = 10; x < 25; x++) {
+    for (let z = 10; z < 18; z++) w.setBlock(x, G - 1, z, blockId('hardwood'), zoneId('court_basketball'));
+  }
+  const rects = pitchRects(detectVenues(w, { complexName: 'M' }));
+  assert.equal(rects.length, 2, `expected two marked surfaces, got ${rects.length}`);
+
+  // Biggest first, so a main stadium wins the eight slots the shader keeps.
+  assert.equal(rects[0].sport, SPORT_MARKS.football);
+  assert.equal(rects[1].sport, SPORT_MARKS.basketball);
+
+  // The rectangle is the pitch, in world metres, long axis first.
+  const p = rects[0];
+  assert.ok(p.halfW >= p.halfD, 'the long axis should come first');
+  assert.ok(Math.abs(p.halfW - 54 * BLOCK_SIZE / 2) <= BLOCK_SIZE,
+    `half-width ${p.halfW}m does not match a 54-voxel pitch`);
+  assert.ok(Math.abs(p.cx - 67 * BLOCK_SIZE) <= 2 * BLOCK_SIZE,
+    `the marked centre ${p.cx}m is not on the pitch`);
+
+  // Enlarge the pitch; the markings must grow with it rather than stay put.
+  for (let x = 34; x < 100; x++) {
+    for (let z = 42; z < 85; z++) w.setBlock(x, G - 1, z, blockId('turf'), zoneId('pitch_football'));
+  }
+  const bigger = pitchRects(detectVenues(w, { complexName: 'M' }))
+    .find((r) => r.sport === SPORT_MARKS.football);
+  assert.ok(bigger.halfW > p.halfW, 'the marking rectangle did not follow the enlarged pitch');
+});
+
+test('a surface with no regulation marking set is left alone', async () => {
+  const { pitchRects } = await import('../src/world/pitchMarks.js');
+  const G = GROUND_Y;
+  const w = new VoxelWorld(96);
+  w.generateTerrain();
+  // A concert stage: a real venue, but nothing to paint on it.
+  for (let x = 30; x < 52; x++) {
+    for (let z = 30; z < 42; z++) w.setBlock(x, G - 1, z, blockId('stage'), zoneId('stage_event'));
+  }
+  const a = detectVenues(w, { complexName: 'S' });
+  assert.ok(a.venues.length > 0, 'the probe built no venue');
+  assert.deepEqual(pitchRects(a), [], 'a stage should not get pitch markings');
+});

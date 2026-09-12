@@ -1,6 +1,6 @@
 import { CHUNK_X, CHUNK_Y, CHUNK_Z, BLOCK_SIZE } from '../core/constants.js';
 import { block, AIR } from '../data/blocks.js';
-import { zone } from '../data/zones.js';
+import { zone, SPORT_ZONES } from '../data/zones.js';
 import { Chunk } from './world.js';
 
 const CX = CHUNK_X, CY = CHUNK_Y, CZ = CHUNK_Z;
@@ -103,6 +103,14 @@ function aoPack(bx, by, bz, uAxis, vAxis) {
 
 /** Surface finish -> the shader's numeric id. */
 const FINISH_ID = { matte: 0, turf: 1, gloss: 2, seat: 3 };
+
+/**
+ * Every material any sport can be played on, taken from the zone table so it
+ * cannot drift. The shader draws pitch markings only on these, which is what
+ * keeps the halfway line on the grass instead of running up the terracing.
+ */
+const SPORT_SURFACES = new Set(SPORT_ZONES.flatMap((z) => z.surfaces));
+const SPORTS_BIT = 8;
 
 /** A face whose four corners match can be merged with its neighbours. */
 const AO_UNIFORM = new Set([0x00, 0x55, 0xAA, 0xFF]);
@@ -239,7 +247,8 @@ function greedy(chunk, transparentPass, mb) {
           const g = (((col >> 8) & 255) / 255) * shade;
           const bcol = ((col & 255) / 255) * shade;
           const emis = bl.emissive ? 1 : 0;
-          const fin = FINISH_ID[bl.finish] || 0;
+          const fin = (FINISH_ID[bl.finish] || 0)
+            + (SPORT_SURFACES.has(bl.key) ? SPORTS_BIT : 0);
 
           x[u] = i; x[v] = j;
           const du = [0, 0, 0]; du[u] = w;

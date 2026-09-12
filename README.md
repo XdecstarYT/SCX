@@ -20,7 +20,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test              # 109 headless simulation tests
+npm test              # 111 headless simulation tests
 npm run test:balance  # plays whole seasons headlessly and checks the economy
 npm run sim           # a playthrough with charts (--days 720 --seeds 5)
 npm run sim:sports    # builds every sport and puts it to its own events
@@ -402,6 +402,15 @@ read as a building rather than a stack of cubes.
 - **A horizon.** The plot is a finite square of voxels, so the world used to
   stop at the fence with sky underneath it. A ground plane, lit by the same
   terms as the voxels and fading into the same fog, closes it.
+- **Pitch markings.** A painted line is 10cm wide and a voxel is 2m, so
+  markings cannot be built out of the world — they have to be painted on it.
+  The analyser already knows where every playing surface is and how big it is,
+  so those rectangles go to the shader as uniforms and each sport draws its own
+  regulation set inside one: halfway lines and penalty boxes, keys and
+  three-point arcs, service boxes, blue lines and face-off circles, a cricket
+  strip, 50-metre arcs, lane ropes, a baseball diamond. Nothing about the world
+  changes, so markings cost nothing, need no upkeep, and follow the pitch if
+  the player reshapes it — enlarge a ground and the lines move out with it.
 
 The cost of all that, at the worst case the game can produce: triangles rise
 from 4k to 19k in first person and 7k to 56k across the whole site, draw calls

@@ -24,6 +24,7 @@ const VERT = /* glsl */`
   varying float vFin;
   varying float vDist;
   varying vec3 vWorld;
+  varying vec3 vWNormal;
   void main() {
     vColor = color;
     vAo = ao;
@@ -39,6 +40,11 @@ const VERT = /* glsl */`
       ln = mat3(instanceMatrix) * ln;
     #endif
     vNormal = normalize(normalMatrix * ln);
+    // The sun direction, the camera position and the pitch rectangles are all
+    // in world space, so the normal they are compared against has to be too.
+    // Lighting used the view-space normal against a world-space sun, which
+    // meant the lit side of a building followed the camera as you orbited it.
+    vWNormal = normalize(mat3(modelMatrix) * ln);
     vec4 mv = modelViewMatrix * local;
     vWorld = (modelMatrix * local).xyz;
     vDist = -mv.z;
@@ -63,6 +69,9 @@ const FRAG = /* glsl */`
   uniform mat4 uShadowMatrix;
   uniform float uShadowTexel;
   uniform float uShadowAmt;
+  uniform int uPitchCount;
+  uniform vec4 uPitch[8];          // centre x, centre z, half width, half depth
+  uniform float uPitchSport[8];
   uniform vec3 uHighlight;
   uniform float uHighlightAmt;
   uniform float uDim;
@@ -74,6 +83,7 @@ const FRAG = /* glsl */`
   varying float vFin;
   varying float vDist;
   varying vec3 vWorld;
+  varying vec3 vWNormal;
 
   /**
    * How much sun reaches this fragment. Four taps in a rotated square, which
@@ -99,6 +109,158 @@ const FRAG = /* glsl */`
     return mix(1.0, sum * 0.25, uShadowAmt * edge);
   }
 
+  // ------------------------------------------------------------- markings
+  // Pitch markings, drawn procedurally rather than placed as blocks.
+  //
+  // A line is 10cm wide and a voxel is 2m, so these cannot be built out of the
+  // world: they have to be painted on it. The analyser already knows where
+  // every playing surface is and how big it is, so the rectangles come in as
+  // uniforms and each sport draws its own regulation set inside one. Nothing
+  // about the world changes, which means markings cost nothing, need no
+  // upkeep, and follow the pitch if the player reshapes it.
+  //
+  // Everything is in metres from the centre of the pitch, scaled so a pitch
+  // built under regulation size still gets proportionate markings.
+
+  float lineMask(float d, float w) {
+    float aa = fwidth(d) * 0.9 + 0.004;
+    // A 10cm line is thinner than a pixel from anywhere but the touchline, so
+    // without a floor of about one pixel the markings simply dissolve as you
+    // pull the camera back - which is the one view they matter most in.
+    float hw = max(w, aa);
+    return 1.0 - smoothstep(hw, hw + aa, d);
+  }
+  // Distance to a rectangle's outline.
+  float dRectEdge(vec2 p, vec2 h) {
+    vec2 d = abs(p) - h;
+    float outside = length(max(d, 0.0));
+    float inside = min(max(d.x, d.y), 0.0);
+    return abs(outside + inside);
+  }
+  // Distance to a line segment.
+  float dSeg(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a, ba = b - a;
+    float t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+    return length(pa - ba * t);
+  }
+  float dCircle(vec2 p, float r) { return abs(length(p) - r); }
+  // An arc, clipped to the half-plane the goal or basket sits on.
+  float dArc(vec2 p, vec2 c, float r, float side) {
+    return (p.x - c.x) * side > 0.0 ? dCircle(p - c, r) : 1e6;
+  }
+
+  /**
+   * Markings for one sport, in metres from the pitch centre. h is the pitch
+   * half-extent and k scales the regulation dimensions onto whatever size the
+   * player actually built.
+   */
+  float pitchMarks(int sport, vec2 p, vec2 h, float k) {
+    float w = 0.06 * max(k, 0.6);      // half-width of a painted line
+    float m = 0.0;
+    float d = 1e6;
+
+    if (sport == 1 || sport == 2) {
+      // Football and rugby: touchlines, halfway, and the boxes at each end.
+      d = min(d, dRectEdge(p, h));
+      d = min(d, abs(p.x));
+      if (sport == 1) {
+        d = min(d, dCircle(p, 9.15 * k));
+        // Penalty area and goal area, mirrored.
+        vec2 q = vec2(abs(p.x), p.y);
+        d = min(d, max(dRectEdge(q - vec2(h.x - 8.25 * k, 0.0), vec2(8.25, 20.15) * k), 0.0));
+        d = min(d, dRectEdge(q - vec2(h.x - 2.75 * k, 0.0), vec2(2.75, 9.16) * k));
+        m = max(m, lineMask(length(p), 0.22 * k));                       // centre spot
+        m = max(m, lineMask(length(q - vec2(h.x - 11.0 * k, 0.0)), 0.22 * k));
+      } else {
+        // Rugby: 22-metre lines and the 10s either side of halfway.
+        vec2 q = vec2(abs(p.x), p.y);
+        d = min(d, abs(q.x - (h.x - 22.0 * k)));
+        d = min(d, abs(q.x - 10.0 * k));
+      }
+    } else if (sport == 3) {
+      // Cricket: the boundary, the inner ring, and the strip in the middle.
+      d = min(d, dCircle(p, min(h.x, h.y)));
+      d = min(d, dCircle(p, min(h.x, h.y) * 0.62));
+      d = min(d, dRectEdge(p, vec2(10.06, 1.52) * k));
+      vec2 q = vec2(abs(p.x), p.y);
+      d = min(d, max(dSeg(q, vec2(10.06 * k, -1.32 * k), vec2(10.06 * k, 1.32 * k)), 0.0));
+    } else if (sport == 4) {
+      // Australian Rules: an oval boundary, the centre square and circles,
+      // and the 50-metre arcs.
+      d = min(d, abs(length(p / h) - 1.0) * min(h.x, h.y));
+      d = min(d, dRectEdge(p, vec2(25.0, 25.0) * k));
+      d = min(d, dCircle(p, 10.0 * k));
+      d = min(d, dCircle(p, 3.0 * k));
+      vec2 q = vec2(abs(p.x), p.y);
+      d = min(d, dArc(q, vec2(h.x, 0.0), 50.0 * k, -1.0));
+    } else if (sport == 5) {
+      // Basketball: the key, the free-throw circle and the three-point line.
+      d = min(d, dRectEdge(p, h));
+      d = min(d, abs(p.x));
+      d = min(d, dCircle(p, 1.8 * k));
+      vec2 q = vec2(abs(p.x), p.y);
+      d = min(d, dRectEdge(q - vec2(h.x - 2.9 * k, 0.0), vec2(2.9, 2.45) * k));
+      d = min(d, dCircle(q - vec2(h.x - 5.8 * k, 0.0), 1.8 * k));
+      d = min(d, dArc(q, vec2(h.x - 1.575 * k, 0.0), 6.75 * k, -1.0));
+    } else if (sport == 6) {
+      // Tennis: doubles and singles lines, service boxes, centre marks.
+      d = min(d, dRectEdge(p, h));
+      d = min(d, abs(p.x));
+      d = min(d, abs(abs(p.y) - h.y * 0.815));         // singles sidelines
+      vec2 q = vec2(abs(p.x), p.y);
+      d = min(d, abs(q.x - 6.4 * k));                  // service lines
+      d = min(d, max(dSeg(p, vec2(-6.4 * k, 0.0), vec2(6.4 * k, 0.0)), 0.0));
+    } else if (sport == 7) {
+      // Athletics: an oval track of lanes around the infield.
+      float e = length(p / h);
+      for (int i = 0; i <= 8; i++) {
+        d = min(d, abs(e - (0.55 + float(i) * 0.05)) * min(h.x, h.y));
+      }
+      d = min(d, dRectEdge(p, h));
+    } else if (sport == 8) {
+      // Swimming: lane ropes down the pool and the turn flags across it.
+      d = min(d, dRectEdge(p, h));
+      for (int i = 1; i <= 7; i++) {
+        d = min(d, abs(p.y - (-h.y + 2.0 * h.y * float(i) / 8.0)));
+      }
+      vec2 q = vec2(abs(p.x), p.y);
+      d = min(d, abs(q.x - (h.x - 5.0 * k)));
+    } else if (sport == 9) {
+      // Ice hockey: centre line, blue lines, face-off circles.
+      d = min(d, dRectEdge(p, h));
+      d = min(d, abs(p.x));
+      vec2 q = vec2(abs(p.x), p.y);
+      d = min(d, abs(q.x - 7.3 * k));                  // blue lines
+      d = min(d, abs(q.x - (h.x - 4.0 * k)));          // goal lines
+      d = min(d, dCircle(p, 4.5 * k));
+      d = min(d, dCircle(vec2(q.x - (h.x - 10.0 * k), abs(p.y) - 7.0 * k), 4.5 * k));
+    } else if (sport == 10) {
+      // Baseball: foul lines out from home, the infield arc and the diamond.
+      vec2 home = vec2(-h.x * 0.62, 0.0);
+      vec2 r = p - home;
+      float ang = atan(r.y, r.x);
+      d = min(d, dSeg(p, home, home + vec2(cos(0.7854), sin(0.7854)) * (h.x * 1.9)));
+      d = min(d, dSeg(p, home, home + vec2(cos(-0.7854), sin(-0.7854)) * (h.x * 1.9)));
+      if (abs(ang) < 0.7854) {
+        d = min(d, dCircle(r, 27.4 * k));              // infield arc
+        d = min(d, dCircle(r, 57.9 * k));              // warning track
+      }
+      // The diamond itself: four bases 27.4m apart.
+      float b = 19.4 * k;
+      vec2 a1 = home + vec2(b, -b), a2 = home + vec2(b * 2.0, 0.0), a3 = home + vec2(b, b);
+      d = min(d, dSeg(p, home, a1));
+      d = min(d, dSeg(p, a1, a2));
+      d = min(d, dSeg(p, a2, a3));
+      d = min(d, dSeg(p, a3, home));
+    } else if (sport == 11) {
+      // Combat: the mat edge and the fighters' marks.
+      d = min(d, dRectEdge(p, h));
+      d = min(d, dRectEdge(p, h * 0.72));
+      d = min(d, dCircle(p, 1.0 * k));
+    }
+    return max(m, lineMask(d, w));
+  }
+
   // Cheap value noise, used to break up flat colour fields at close range.
   float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -107,7 +269,7 @@ const FRAG = /* glsl */`
   }
 
   void main() {
-    vec3 N = normalize(vNormal);
+    vec3 N = normalize(vWNormal);
     float ndl = max(dot(N, uSunDir), 0.0);
     // Soft wrap term keeps shadowed faces readable instead of pure black.
     float wrap = max(dot(N, uSunDir) * 0.5 + 0.5, 0.0);
@@ -128,16 +290,21 @@ const FRAG = /* glsl */`
     float seamMul = 1.0;
     float grain = 0.044;
 
-    if (vFin > 2.5) {
+    // The finish id and the "this is a playing surface" flag share one
+    // attribute, so they have to be taken apart before either is read.
+    float finish = mod(vFin, 8.0);
+    bool playable = vFin >= 8.0;
+
+    if (finish > 2.5) {
       // Seating. A deck of seats is thousands of separate mouldings, and the
       // one thing it never is, is a single flat colour.
       grain = 0.10;
-    } else if (vFin > 1.5) {
+    } else if (finish > 1.5) {
       // Glass, metal, ice, water: a real highlight, so a facade catches the
       // sun and a roof has a sheen along its length.
       gloss = 1.0;
       grain = 0.018;
-    } else if (vFin > 0.5) {
+    } else if (finish > 0.5) {
       // Mown turf. Groundsmen cut in bands and the nap of the grass throws the
       // light differently each way, which is why a pitch on television is
       // striped. Five-metre bands, plus a fine speckle so it is not a gradient.
@@ -149,6 +316,24 @@ const FRAG = /* glsl */`
       grain = 0.034;
     }
     base *= (1.0 - grain * 0.5) + hash21(floor(vWorld.xz * 0.55 + vWorld.y * 0.31)) * grain;
+
+    // Markings go on the top of a playing surface and nowhere else.
+    if (playable && N.y > 0.5 && uPitchCount > 0) {
+      for (int i = 0; i < 8; i++) {
+        if (i >= uPitchCount) break;
+        vec4 pit = uPitch[i];
+        vec2 h = pit.zw;
+        vec2 rel = vWorld.xz - pit.xy;
+        if (abs(rel.x) > h.x + 1.0 || abs(rel.y) > h.y + 1.0) continue;
+        // Pitches are laid out long-axis-first; markings are written that way
+        // too, so a pitch built the other way round is measured, not rotated.
+        float k = min(h.x / 52.5, h.y / 34.0);
+        float paint = pitchMarks(int(uPitchSport[i]), rel, h, max(k, 0.25));
+        // Worn white: paint sits on the grass rather than replacing it.
+        base = mix(base, mix(vec3(0.92, 0.93, 0.90), base, 0.12), paint);
+        break;
+      }
+    }
 
     // Shadow dims the direct sun only. Skylight still reaches a shaded wall,
     // which is why real shade is blue rather than black.
@@ -205,6 +390,9 @@ export function createVoxelMaterial(opts = {}) {
       uShadowMatrix: { value: new THREE.Matrix4() },
       uShadowTexel: { value: 1 / 1024 },
       uShadowAmt: { value: 0 },
+      uPitchCount: { value: 0 },
+      uPitch: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+      uPitchSport: { value: new Array(8).fill(0) },
       uHighlight: { value: new THREE.Color(0x39e08a) },
       uHighlightAmt: { value: 0 },
       uDim: { value: 1 },
@@ -371,6 +559,23 @@ export class WorldRenderer {
 
   setZoneDim(v) {
     for (const m of [this.matOpaque, this.matTransparent]) m.uniforms.uDim.value = v;
+  }
+
+  /**
+   * Tell the shader where the playing surfaces are, so it can paint their
+   * markings. Takes what the analyser already worked out rather than scanning
+   * the world again; eight is more pitches than fit on the largest plot.
+   */
+  setPitches(pitches) {
+    const n = Math.min(8, pitches.length);
+    for (const m of [this.matOpaque, this.matTransparent]) {
+      m.uniforms.uPitchCount.value = n;
+      for (let i = 0; i < n; i++) {
+        const p = pitches[i];
+        m.uniforms.uPitch.value[i].set(p.cx, p.cz, p.halfW, p.halfD);
+        m.uniforms.uPitchSport.value[i] = p.sport;
+      }
+    }
   }
 
   /** Point both voxel materials at the sun's depth buffer. */

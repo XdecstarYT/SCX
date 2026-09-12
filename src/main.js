@@ -9,6 +9,7 @@ import { CameraRig, CAMERA_MODES } from './input/cameras.js';
 import { InputController, bindJoystick } from './input/controls.js';
 import { Sky } from './world/sky.js';
 import { SunShadows } from './world/shadows.js';
+import { pitchRects } from './world/pitchMarks.js';
 import { LiveEventShow } from './world/liveEvent.js';
 import { Hud } from './ui/hud.js';
 import { BuildDock } from './ui/buildDock.js';
@@ -701,7 +702,12 @@ class App {
       if (n.kind === 'achievement' || n.kind === 'goal') audio.play('achievement');
     });
     bus.on('state', () => this.hud?.refresh());
-    bus.on('analysis', () => { this.refreshStatus(); this.tutorial?.refresh(); });
+    bus.on('analysis', () => {
+      this.refreshStatus();
+      this.tutorial?.refresh();
+      // Analysis can fire before the renderer exists, during start-up.
+      this.worldRenderer?.setPitches(pitchRects(this.game.analysis));
+    });
     bus.on('eventreport', (r) => this.playEvent(r));
     bus.on('randomevent', (d) => this.eventsUi.showRandomEvent(d));
     bus.on('landchange', (off) => {
