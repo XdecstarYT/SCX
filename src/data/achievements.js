@@ -23,4 +23,14 @@ export const ACHIEVEMENTS = [
   { id: 'land_max',      name: 'Mega Sports District', desc: 'Own the largest land tier.',                  check: (s) => (s.sites || []).some((x) => (x.landTier ?? 0) >= 3) },
   { id: 'second_city',   name: 'Second City',          desc: 'Buy land in another city.',                   check: (s) => (s.sites || []).length >= 2 },
   { id: 'empire',        name: 'Global Sports Empire', desc: 'Reach 90 venue reputation.',                  check: (s) => s.reputation.venue >= 90 },
+  // ------------------------------------------------------------- tenancies
+  { id: 'first_tenant', name: 'Somebody Lives Here', desc: 'Sign your first resident club.',
+    check: (s) => (s.league?.tenants || []).length >= 1 },
+  { id: 'landlord_3', name: 'Landlord', desc: 'Have three resident clubs at once.',
+    check: (s) => (s.league?.tenants || []).length >= 3 },
+  { id: 'title_won', name: 'Champions', desc: 'A resident club wins its division.',
+    check: (s) => ((s.league?.honours) || []).some((h) =>
+      (s.league.tenants || []).some((t) => t.clubId === h.championId)) },
+  { id: 'five_seasons', name: 'Five Seasons Deep', desc: 'Reach the fifth season.',
+    check: (s) => (s.league?.season || 1) >= 5 },
 ];

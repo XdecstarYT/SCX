@@ -348,8 +348,29 @@ export class Strategy {
     return affordable[0]?.id || null;
   }
 
+  /**
+   * Take a resident club when one is offered.
+   *
+   * A tenancy is the closest thing in the game to free money - the rent
+   * arrives up front and the fixtures arrive with it - so a player who has a
+   * ground good enough for a club and does not sign one is leaving a season's
+   * worth of matchdays on the table.
+   */
+  tenants() {
+    const g = this.game;
+    if (this.s.league.tenants.length >= this.s.venues.registered.length) return;
+    const offers = g.clubOffers();
+    if (!offers.length) return;
+    const r = g.signTenant(offers[0].club.id, offers[0].venue.key);
+    if (r?.ok) {
+      this.actions.tenants = (this.actions.tenants || 0) + 1;
+      this.log(`day ${this.s.day}: ${offers[0].club.name} moved in at ${offers[0].venue.name}`);
+    }
+  }
+
   people() {
     const g = this.game;
+    this.tenants();
     if (this.s.staff.length < 6 && this.spendable > 900_000) {
       const c = g.candidates(3)[0];
       if (c && g.hire(c.role.id, c.hire)?.ok) {

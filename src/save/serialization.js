@@ -1,4 +1,5 @@
 import { VoxelWorld, Chunk } from '../voxel/world.js';
+import { createLeagueState } from '../core/league.js';
 import { PropLayer } from '../voxel/props.js';
 import { SAVE_VERSION } from '../core/gameState.js';
 import { createHotbarState } from '../ui/hotbar.js';
@@ -173,6 +174,15 @@ export function migrate(save) {
   // it has already achieved on the next tick rather than being told it has
   // lost anything, which is why this starts empty rather than being inferred.
   s.goalsDone = Array.isArray(s.goalsDone) ? s.goalsDone : [];
+  // Leagues postdate the first saves. An older complex simply has no tenants
+  // yet and starts its first season on the day it is loaded.
+  if (!s.league || !s.league.standings) {
+    s.league = createLeagueState(s.seed ?? 1);
+    s.league.startedDay = s.day || 1;
+  }
+  s.league.tenants = s.league.tenants || [];
+  s.league.honours = s.league.honours || [];
+  s.league.results = s.league.results || [];
   s.legacyShown = !!s.legacyShown;
   s.construction = s.construction || [];
   // Projects predate multi-site building; anything without a site belongs to

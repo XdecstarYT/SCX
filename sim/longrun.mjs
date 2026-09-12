@@ -12,6 +12,7 @@ import { SimPlayer } from './player.mjs';
 import { Strategy, fmt } from './strategy.mjs';
 import { TIER_ORDER } from '../src/venues/ratings.js';
 import { monthlyFinance } from '../src/core/economy.js';
+import { endgameProgress } from '../src/data/endgame.js';
 
 /** Real money out per month, not the raw block weight. */
 function monthlyUpkeep(game) {
@@ -132,6 +133,9 @@ export function playOnce(seed, days = DAYS, opts = {}) {
       longestNoBid: strat.noBidDays,
       lastMonthProfit: months.length ? months[months.length - 1].net : 0,
       sportsHosted: (s.stats.sportsHosted || []).slice(),
+      // The goal list is the game's own definition of finished, so a run that
+      // says nothing about it is only measuring half of what it plays.
+      goals: endgameProgress(s),
     },
   };
 }
@@ -198,6 +202,11 @@ function printRun(run) {
     + `sites ${s.sites}   venues ${s.venues}   staff ${s.staff}   sponsors ${s.sponsors}   research ${s.research}`);
   console.log(`  built ${s.actions.builds}  land ${s.actions.land}  utils ${s.actions.upgrades}  `
     + `skipped ${s.skipped.cash} cash / ${s.skipped.space} space`);
+  const g = s.goals;
+  console.log(`  goals  ${g.complete}/${g.total} complete`
+    + (g.complete < g.total
+      ? `   short: ${g.goals.filter((x) => !x.complete).map((x) => `${x.name} (${x.detail})`).join(' · ')}`
+      : ''));
   console.log(`  tiers reached: ${reached.map((t) => `${t}@d${s.tierFirstSeen[t]}`).join(' ') || 'none'}`);
 
   // Cash and capacity curves, sampled.

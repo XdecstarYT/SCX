@@ -48,6 +48,24 @@ export const ENDGAME_GOALS = [
     },
   },
   {
+    id: 'landlord', name: 'A Home, Not A Venue', tier: 'operate',
+    desc: 'House a top-division club, and win the title with them.',
+    progress: (s) => {
+      const l = s.league || { tenants: [], honours: [] };
+      const top = l.tenants.some((t) => (l.clubs?.[t.clubId]?.level ?? 9) === 0);
+      const won = (l.honours || []).some((h) => h.level === 0
+        && l.tenants.some((t) => t.clubId === h.championId));
+      return (top ? 0.5 : 0) + (won ? 0.5 : 0);
+    },
+    detail: (s) => {
+      const l = s.league || { tenants: [], honours: [] };
+      const top = l.tenants.filter((t) => (l.clubs?.[t.clubId]?.level ?? 9) === 0).length;
+      const won = (l.honours || []).some((h) => h.level === 0
+        && l.tenants.some((t) => t.clubId === h.championId));
+      return `${top} top-division tenant${top === 1 ? '' : 's'} · ${won ? 'champions' : 'no title yet'}`;
+    },
+  },
+  {
     id: 'reputation', name: 'Untouchable Reputation', tier: 'operate',
     desc: 'Reach 100 venue reputation.',
     progress: (s) => s.reputation.venue / 100,

@@ -4,6 +4,7 @@ import { STAFF_CHANNELS, STAFF_ROLES } from '../data/staff.js';
 import { UTILITY_KEYS, capacityOf, upkeepOf, computeDemand, serviceFactor } from '../data/utilities.js';
 import { climateEffects } from '../data/cities.js';
 import { createHotbarState } from '../ui/hotbar.js';
+import { createLeagueState } from './league.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
 
@@ -49,6 +50,7 @@ export function createState(opts = {}) {
     rivals: createRivals(),
 
     venues: { registered: [] },   // [{ key, name, sport, registeredDay }]
+    league: createLeagueState(opts.seed ?? 1),
     modifiers: [],                // temporary effects from random events
     pendingRandomEvent: null,
     lastRandomEventDay: 0,

@@ -244,6 +244,12 @@ test('every endgame goal reads sanely and can actually be completed', async () =
     { key: 'e', siteId: 'site2' }, { key: 'f', siteId: 'site3' },
   ];
   for (const r of s.rivals) r.reputation = 20;
+  // A top-division club lives here, and has won the title under this roof.
+  s.league.tenants = [{ clubId: 'fc_meridian', venueKey: 'a', siteId: 'site1',
+    rent: 1, gateShare: 0.3, homeFixtures: 13, seasonsLeft: 3, fixtures: [] }];
+  s.league.clubs.fc_meridian.level = 0;
+  s.league.honours = [{ season: 1, sport: 'football', level: 0, championId: 'fc_meridian' }];
+  s.league.season = 6;
 
   const report = endgameProgress(s);
   const incomplete = report.goals.filter((g) => !g.complete);
@@ -271,6 +277,12 @@ test('every achievement can be earned', async () => {
     { id: 'site2', cityId: 'harbour', landTier: 0, utilities: {} }];
   s.venues.registered = [{ key: 'a', siteId: 'site1' }];
   s.sponsors = [{ id: 'x', naming: true }];
+  s.league.season = 6;
+  s.league.tenants = ['fc_meridian', 'bb_apex', 'rg_ironside'].map((clubId, i) => ({
+    clubId, venueKey: `v${i}`, siteId: 'site1', rent: 1, gateShare: 0.3,
+    homeFixtures: 13, seasonsLeft: 3, fixtures: [],
+  }));
+  s.league.honours = [{ season: 1, sport: 'football', level: 0, championId: 'fc_meridian' }];
 
   const unearned = ACHIEVEMENTS.filter((a) => !a.check(s));
   assert.deepEqual(unearned.map((a) => `${a.id}: ${a.desc}`), [],
@@ -347,6 +359,10 @@ test('finishing every goal ends the game with a legacy read off the save', async
     { key: 'site2:rugby:0:0', name: 'Two', sport: 'rugby', siteId: 'site2' },
     { key: 'site3:cricket:0:0', name: 'Three', sport: 'cricket', siteId: 'site3' },
   ];
+  s.league.tenants = [{ clubId: 'fc_meridian', venueKey: 'site1:football:0:0', siteId: 'site1',
+    rent: 1, gateShare: 0.3, homeFixtures: 13, seasonsLeft: 3, fixtures: [] }];
+  s.league.clubs.fc_meridian.level = 0;
+  s.league.honours = [{ season: 1, sport: 'football', level: 0, championId: 'fc_meridian' }];
   s.goalsDone = [];
   g.checkGoals();
 

@@ -18,6 +18,12 @@ import {
 } from './construction.js';
 import { PLAN_STRIDE } from '../voxel/structures.js';
 import { STAFF_ROLES, makeHire } from '../data/staff.js';
+import {
+  clubOffers, tenantSummary, table, ensureSeason, seasonDay, fixtureDays,
+  opponentFor, playMatch, recordResult, rolloverSeason, clubOf, leagueClubs,
+  SEASON_DAYS, DIVISIONS, LEAGUE_SPORTS,
+} from './league.js';
+import { fixtureEvent } from '../events/fixtures.js';
 import { endgameProgress } from '../data/endgame.js';
 import { SPONSORS, ALL_SPONSORS, availableSponsors, blockedSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
@@ -372,6 +378,7 @@ export class Game {
     this.refreshBoard();
     this.hostDueEvents();
     this.tickRivals();
+    this.tickLeague();
     this.maybeRandomEvent();
 
     // Insolvency: a real pinch, but never an instant loss.
@@ -1115,6 +1122,204 @@ export class Game {
       achievements: s.achievements.length,
       reputation: Math.round(s.reputation.venue),
     };
+  }
+
+  // ================================================================= LEAGUE
+  /**
+   * Clubs that would move into one of your grounds, and on what terms.
+   * A club only looks at venues of its own sport that can hold its support and
+   * are good enough for its division.
+   */
+  clubOffers() { return clubOffers(this.state, this.allRegisteredVenues()); }
+
+  /** Every tenancy, with its club's league position. */
+  tenants() {
+    return this.state.league.tenants
+      .map((t) => tenantSummary(this.state, t))
+      .filter(Boolean);
+  }
+
+  leagueTable(sport, level) { return table(this.state.league, sport, level); }
+
+  /**
+   * Sign a club as a resident. Rent is paid up front for the first season,
+   * which is the deal's risk: you are buying a fixture list before you have
+   * taken a penny at the gate.
+   */
+  signTenant(clubId, venueKey, seasons = 3) {
+    const s = this.state;
+    const offer = this.clubOffers().find((o) => o.club.id === clubId
+      && (!venueKey || o.venue.key === venueKey));
+    if (!offer) return { error: 'That club will not move to one of your grounds.' };
+    if (s.league.tenants.some((t) => t.venueKey === offer.venue.key)) {
+      return { error: `${offer.venue.name} already has a resident club.` };
+    }
+    const t = {
+      clubId, venueKey: offer.venue.key, siteId: offer.venue.siteId,
+      rent: offer.terms.rentPerSeason,
+      gateShare: offer.terms.gateShare,
+      homeFixtures: offer.terms.homeFixtures,
+      seasonsLeft: seasons, signedDay: s.day, fixtures: [],
+    };
+    s.league.tenants.push(t);
+    this.scheduleFixtures(t);
+    // The first season's rent lands now; after that it arrives each rollover.
+    this.record('venueFee', t.rent);
+    s.cash += t.rent;
+    applyReputation(s, { venue: 1.5, community: 2 });
+    this.notify('club', `${offer.club.name} have signed`,
+      `${offer.venue.name} is their home ground for ${seasons} season${seasons === 1 ? '' : 's'}. `
+      + `${t.homeFixtures} home fixtures a season.`);
+    this.checkAchievements();
+    this.bus.emit('state');
+    return { ok: true, tenant: t };
+  }
+
+  /** Let a club go early. The fixtures stop and so does the rent. */
+  releaseTenant(clubId) {
+    const s = this.state;
+    const i = s.league.tenants.findIndex((t) => t.clubId === clubId);
+    if (i < 0) return { error: 'They are not one of your tenants.' };
+    const club = clubOf(s.league, clubId);
+    const t = s.league.tenants[i];
+    // Breaking a contract costs a season's rent and some goodwill.
+    const penalty = Math.round(t.rent * 0.5);
+    s.cash -= penalty;
+    this.record('venueFee', -penalty);
+    s.league.tenants.splice(i, 1);
+    applyReputation(s, { venue: -2, community: -4 });
+    this.notify('club', `${club?.name || clubId} have left`,
+      `Breaking the tenancy cost ${Math.round(penalty / 1000)}K and some goodwill.`);
+    this.bus.emit('state');
+    return { ok: true };
+  }
+
+  /** Lay out one tenancy's home fixtures for the season that is running. */
+  scheduleFixtures(t) {
+    const league = this.state.league;
+    const club = clubOf(league, t.clubId);
+    if (!club) return;
+    const days = fixtureDays(league, t.clubId, t.homeFixtures);
+    t.fixtures = days.map((d, i) => {
+      const opp = opponentFor(league, club, i);
+      return {
+        day: league.startedDay + d,
+        opponentId: opp ? opp.id : null,
+        played: false,
+      };
+    }).filter((f) => f.opponentId && f.day > this.state.day);
+  }
+
+  /**
+   * Advance the league by a day: play out the division's own fixtures, and
+   * host any of the player's tenants that are at home today.
+   */
+  tickLeague() {
+    const s = this.state;
+    const league = s.league;
+    ensureSeason(league);
+
+    for (const t of league.tenants) {
+      const club = clubOf(league, t.clubId);
+      if (!club) continue;
+      for (const f of t.fixtures || []) {
+        if (f.played || f.day !== s.day) continue;
+        f.played = true;
+        this.hostFixture(t, club, clubOf(league, f.opponentId));
+      }
+    }
+
+    // The rest of the league plays too, or the table never moves. One round
+    // per week keeps the season's arithmetic close to the fixture lists.
+    if ((s.day - league.startedDay) % 7 === 0 && seasonDay(s) < 240) {
+      this.playLeagueRound();
+    }
+
+    if (seasonDay(s) >= SEASON_DAYS) this.endSeason();
+  }
+
+  /** One round of fixtures for every club the player is not hosting. */
+  playLeagueRound() {
+    const league = this.state.league;
+    const rng = makeRng(hashString(`${league.seed}:round:${league.season}:${this.state.day}`));
+    // A club the player is hosting today has already played; pairing it again
+    // in the same round would give it two results on one afternoon.
+    const busy = new Set();
+    for (const t of league.tenants) {
+      for (const f of t.fixtures || []) {
+        if (f.day === this.state.day) { busy.add(t.clubId); busy.add(f.opponentId); }
+      }
+    }
+    for (const sport of LEAGUE_SPORTS) {
+      for (const d of DIVISIONS) {
+        const clubs = rng.shuffle(leagueClubs(league, sport, d.level).filter((c) => !busy.has(c.id)));
+        for (let i = 0; i + 1 < clubs.length; i += 2) {
+          const home = clubs[i], away = clubs[i + 1];
+          const r = playMatch(league, home, away, `${this.state.day}:${home.id}`);
+          recordResult(league, sport, d.level, home.id, away.id, r.homeScore, r.awayScore);
+        }
+      }
+    }
+  }
+
+  /**
+   * A home fixture. It runs through exactly the same event simulation a bid
+   * event does - same crowd, same weather, same wear, same staff - so a club
+   * playing at a ground with no restrooms has the day a club would.
+   */
+  hostFixture(tenant, club, opponent) {
+    const s = this.state;
+    const venue = this.findVenue(tenant.venueKey);
+    if (!venue || !opponent) return;
+    const ev = fixtureEvent(s, club, opponent, venue);
+    const contract = { amount: 0, venueKey: venue.key, packages: [], terms: [], pricing: 'standard' };
+    const report = simulateEvent(ev, venue, s, contract);
+
+    // The club keeps its share of the gate; that is what a tenancy costs.
+    const share = Math.round(report.revenue.tickets * tenant.gateShare);
+    report.revenue.tickets -= share;
+    report.costs.revenueShare = (report.costs.revenueShare || 0) + share;
+    report.totalRevenue -= share;
+    report.totalCost += share;
+    report.profit -= share;
+    report.fixture = { clubId: club.id, opponentId: opponent.id };
+
+    this.applyEventReport(ev, report);
+
+    // The result, and the table.
+    const m = playMatch(s.league, club, opponent, `home:${s.day}:${club.id}`);
+    recordResult(s.league, club.sport, club.level, club.id, opponent.id, m.homeScore, m.awayScore);
+    s.league.results.unshift({
+      day: s.day, sport: club.sport, level: club.level,
+      home: club.name, away: opponent.name,
+      homeScore: m.homeScore, awayScore: m.awayScore,
+      ours: true, attendance: report.attendance,
+    });
+    if (s.league.results.length > 40) s.league.results.pop();
+  }
+
+  /** Season rollover: prizes, promotion, relegation, new fixture lists. */
+  endSeason() {
+    const s = this.state;
+    const report = rolloverSeason(s);
+    if (report.prize > 0) {
+      s.cash += report.prize;
+      this.record('venueFee', report.prize);
+    }
+    // Next season's rent, up front, for everyone still under contract.
+    for (const t of s.league.tenants) {
+      s.cash += t.rent;
+      this.record('venueFee', t.rent);
+      this.scheduleFixtures(t);
+    }
+    const ours = report.champions.filter((c) => s.league.tenants.some((t) => t.clubId === c.clubId));
+    this.notify('club', `Season ${report.season} is over`,
+      (ours.length ? `${ours[0].name} won their division. ` : '')
+      + (report.prize ? `Prize money and rent: ${Math.round(report.prize / 1000)}K. ` : '')
+      + (report.expired.length ? `${report.expired.join(', ')} are out of contract.` : ''));
+    this.bus.emit('season', report);
+    this.bus.emit('state');
+    return report;
   }
 
   notify(kind, title, body) {

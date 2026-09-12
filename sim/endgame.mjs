@@ -134,6 +134,28 @@ export function playToTheEnd(opts = {}) {
     }
   }
 
+  // --------------------------------------------------------------- a tenant
+  // "A Home, Not A Venue" wants a top-division club living here and winning
+  // the title under this roof. Everything else on the list can be bought or
+  // built; this one has to be played for.
+  for (let i = 0; i < 8; i++) {
+    const offers = game.clubOffers();
+    if (!offers.length) break;
+    const top = offers.find((o) => o.club.level === 0) || offers[0];
+    game.state.cash = 5e8;
+    if (game.signTenant(top.club.id, top.venue.key, 6)?.error) break;
+    log(`signed ${top.club.name} at ${top.venue.name}`);
+    if (top.club.level === 0) break;
+  }
+  // Play out the seasons the title needs.
+  for (let d = 0; d < (opts.seasons ?? 4) * 270; d++) {
+    if (endgameProgress(game.state).complete === endgameProgress(game.state).total) break;
+    game.state.cash = Math.max(game.state.cash, 5e8);
+    game.skipDay(1);
+  }
+  log(`league: season ${game.state.league.season}, `
+    + `${game.state.league.tenants.length} tenant(s), ${game.state.league.honours.length} honours`);
+
   // ------------------------------------------------------- the neighbourhood
   // "Part Of The Furniture" is the one goal that cannot be bought or built in
   // an afternoon: community standing drifts toward what the complex deserves,

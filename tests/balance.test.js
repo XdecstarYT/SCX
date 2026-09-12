@@ -219,12 +219,18 @@ test('the whole climb, local to world tier, can actually be played', { timeout: 
     assert.ok(s.tierFirstSeen[tier] !== undefined,
       `never hosted a ${tier} event in ${s.days} days (${where})`);
   }
-  // And in that order: a ladder you can skip rungs on is not a progression.
-  const order = ['local', 'regional', 'national', 'international', 'world'];
-  for (let i = 1; i < order.length; i++) {
-    assert.ok(s.tierFirstSeen[order[i]] >= s.tierFirstSeen[order[i - 1]],
-      `${order[i]} arrived before ${order[i - 1]}`);
+  // The lower rungs come in order, because reputation gates them and
+  // reputation only grows by hosting. The top two do not: once a complex is
+  // good enough for both, which of an international final and a world final
+  // it wins first is the organisers' choice, not a queue. Asserting an order
+  // there was testing an accident of one seed.
+  const climb = ['local', 'regional', 'national'];
+  for (let i = 1; i < climb.length; i++) {
+    assert.ok(s.tierFirstSeen[climb[i]] >= s.tierFirstSeen[climb[i - 1]],
+      `${climb[i]} arrived before ${climb[i - 1]}`);
   }
+  assert.ok(Math.min(s.tierFirstSeen.international, s.tierFirstSeen.world)
+    >= s.tierFirstSeen.national, 'a top-tier event was hosted before a national one');
   assert.ok(s.sites >= 2, 'never expanded into a second city');
   assert.ok(s.sportsHosted.includes('ceremony'),
     `never hosted the opening ceremony (hosted ${s.sportsHosted.join(', ')})`);

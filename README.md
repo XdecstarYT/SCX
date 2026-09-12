@@ -20,12 +20,12 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test              # 111 headless simulation tests
+npm test              # 119 headless simulation tests
 npm run test:balance  # plays whole seasons headlessly and checks the economy
 npm run sim           # a playthrough with charts (--days 720 --seeds 5)
 npm run sim:sports    # builds every sport and puts it to its own events
 npm run sim:land      # what each plot size is actually worth
-npm run sim:end       # plays a game to all thirteen long-term goals
+npm run sim:end       # plays a game to all fourteen long-term goals
 npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
@@ -128,6 +128,40 @@ loaded.
    Eventually you buy land in **another city** entirely. Each has its own land
    prices, audience size, weather and climate, and venues on every site
    compete for the same event board.
+
+## Resident clubs
+
+Every event on the board is a one-off: you bid, you host, they leave. A complex
+with no tenant is a conference centre with a pitch in it.
+
+A **tenancy** is the other half of the business. Sign a club and it moves in for
+several seasons, bringing a fixture list you did not have to win — thirteen home
+matches a year, or nine for cricket, eighteen for baseball. Rent is paid up
+front each season, which is the deal's risk: you buy the fixture list before you
+take a penny at the gate. In exchange the club keeps a share of it, 18% down in
+the Regional League and 40% at the top.
+
+A club only moves to a ground that suits it. A Premier Division side will not
+play in front of four thousand people; a regional club can neither fill nor
+afford a sixty-thousand-seat bowl. Both ends of that are checked, along with the
+venue rating, so the first tenant you can sign is a small club — and a better
+ground later brings a better one.
+
+Matchdays are not a separate economy bolted on beside the event one. A home
+fixture *is* an event: same crowd model, same weather, same wear on the pitch,
+same staff working it, same parking and concourse ratings deciding how the day
+goes. The only difference is where the demand comes from — a club brings its own
+support rather than an organiser's.
+
+Around that runs a **league**: three divisions per sport, a table that moves
+every week whether you are watching or not, per-sport scorelines (a football
+match turns on one goal, a cricket match on forty runs), and promotion and
+relegation at the end of each 270-day season. Your tenant's division decides
+next season's gate, so a club you signed in the second tier going up is worth
+real money. Champions bring prize money to their landlord.
+
+All of it lives in the save, never on the shared club table — a promotion in one
+game must not leak into another, which is exactly what a second tab is.
 
 ## Scale
 
@@ -345,16 +379,16 @@ of the fast suite; `npm run test:all` runs both.
 
 ## The ending, played
 
-Thirteen long-term goals are the closest thing this game has to an ending:
+Fourteen long-term goals are the closest thing this game has to an ending:
 a 90,000-seat ground, a rating of 95, four venues on one plot, six sports,
 three cities, a million spectators, $250M banked, the World Championship, the
-Opening Ceremony. They had never been played to. Each was known to *read*
-sanely — a test checks that — but nothing had ever driven one game to tick all
-thirteen, and a goal that cannot be finished is worse than no goal, because
+Opening Ceremony, and a top-division club winning the title under your roof.
+They had never been played to. Each was known to *read* sanely — a test checks that — but nothing had ever driven one game to tick all
+fourteen, and a goal that cannot be finished is worse than no goal, because
 the player spends real time on it.
 
-`npm run sim:end` does that now. It reaches 13/13 on day 542, and getting
-there found two bugs. Neither threw an error. Both meant something the player
+`npm run sim:end` does that now. It reaches 14/14, and getting there found two
+bugs. Neither threw an error. Both meant something the player
 had built counted for nothing, which is the worst kind: you pay for it, you
 can see it standing there, and the rating does not move.
 
@@ -365,7 +399,7 @@ can see it standing there, and the rating does not move.
 | Expanding made the neighbours angrier | Community standing mixed its scopes: one venue's parking shortfall multiplied by the *whole empire's* capacity, and noise from every city's attendance. Opening a well-parked ground in another city raised the traffic pressure on the one you already had, so "Part Of The Furniture" became unreachable for exactly the players who had earned it. Each complex is now judged on its own crowd, and the single standing figure drifts toward all of them weighted by size. |
 
 Finishing the list is now acknowledged. Each goal announces itself as it
-completes — they used to fill a progress bar in silence — and the thirteenth
+completes — they used to fill a progress bar in silence — and the last one
 opens a summary of what was actually built, read back off the save rather than
 tallied along the way: cities, venues, total capacity, the largest ground,
 events, spectators, profit, blocks placed. It is not a game over. The complex
@@ -440,7 +474,7 @@ are from software rendering and mean nothing; the call and triangle counts do.
 - **The two harnesses meet in the middle, not at the end.** `sim:end` proves
   every goal is *reachable*, granting the money to build; `sim:longrun` proves
   the economy *affords* a climb to the world tier by playing it. Nothing yet
-  plays one game, paying its own way, all the way to thirteen out of thirteen.
+  plays one game, paying its own way, all the way to fourteen out of fourteen.
   Both halves are demonstrated; the join is not.
 - **The non-football sports are proven, not tuned.** `npm run sim:sports`
   builds every one of the thirteen to championship size and shows it winning

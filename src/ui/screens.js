@@ -8,6 +8,7 @@ import { RESEARCH } from '../data/research.js';
 import { UTILITIES } from '../data/utilities.js';
 import { CITIES, city as cityDef } from '../data/cities.js';
 import { ENDGAME_GOALS, GOAL_GROUPS, endgameProgress } from '../data/endgame.js';
+import { seasonProgress, seasonDay, SEASON_DAYS, division } from '../core/league.js';
 import { MOODS } from '../core/community.js';
 import { BLOCK_BY_KEY } from '../data/blocks.js';
 import { zone as zoneDef } from '../data/zones.js';
@@ -17,6 +18,13 @@ import { zone as zoneDef } from '../data/zones.js';
  * to the HUD; there is no virtual DOM, and nothing here caches nodes across
  * opens, which keeps state bugs impossible by construction.
  */
+/** 1st, 2nd, 3rd: a league position reads wrong as a bare number. */
+function ordinal(n) {
+  const t = n % 100;
+  if (t >= 11 && t <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+}
+
 export class Screens {
   constructor(app) {
     this.app = app;
@@ -357,7 +365,7 @@ export class Screens {
 
   // ================================================================== MORE
   openMore(initial = 'Staff') {
-    const tabs = ['Empire', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
+    const tabs = ['Empire', 'Clubs', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
     let active = tabs.includes(initial) ? initial : 'Empire';
     const tabBar = el('div.tabs');
     const render = () => {
@@ -365,6 +373,7 @@ export class Screens {
         onclick: () => { active = t; render(); },
       }, t)));
       const body = active === 'Empire' ? this.empireBody(render)
+        : active === 'Clubs' ? this.clubsBody(render)
         : active === 'Staff' ? this.staffBody(render)
         : active === 'Sponsors' ? this.sponsorsBody(render)
         : active === 'Research' ? this.researchBody(render)
@@ -770,6 +779,99 @@ export class Screens {
 
       section('How to improve it', el('div.card', {},
         el('div.small.faint', { text: 'Parking and transport reduce traffic on residential streets. Training areas and fan zones are facilities the public can use. Local and regional events keep the complex part of the community rather than a place things happen to it.' }))));
+  }
+
+  // ================================================================= CLUBS
+  /**
+   * Resident clubs: who lives here, what it pays, and where they are in the
+   * table. An event is a day out; a tenancy is the year.
+   */
+  clubsBody(rerender) {
+    const g = this.app.game;
+    const s = this.state;
+    const tenants = g.tenants();
+    const offers = g.clubOffers();
+    const prog = seasonProgress(s);
+
+    const seasonCard = el('div.card.accent', {},
+      el('div.tiny.faint', { text: 'SEASON' }),
+      el('div.big.num', { text: String(s.league.season) }),
+      meter(prog * 100, 100, 'gold'),
+      el('div.small.faint', { style: { marginTop: '8px' },
+        text: `Day ${Math.max(0, seasonDay(s))} of ${SEASON_DAYS}. `
+          + (tenants.length
+            ? `${tenants.reduce((n, t) => n + t.remaining, 0)} home fixtures still to play.`
+            : 'No resident club. A tenancy brings a fixture list you do not have to bid for.') }));
+
+    const tenantCard = (t) => el('div.card.tight', {},
+      el('div.rowbetween', {},
+        el('div', {},
+          el('div.small', { text: t.club.name }),
+          el('div.tiny.faint', { text: `${t.division.name} · ${t.club.sport}` })),
+        pill(t.position ? `${ordinal(t.position)}` : '—', t.position === 1 ? 'ok' : '')),
+      el('div.tiny.faint', { style: { marginTop: '6px' },
+        text: `Rent ${fmtMoney(t.rent)} a season · they keep ${Math.round(t.gateShare * 100)}% of the gate`
+          + ` · ${t.seasonsLeft} season${t.seasonsLeft === 1 ? '' : 's'} left` }),
+      el('div.tiny.faint', { style: { marginTop: '3px' },
+        text: t.row
+          ? `Played ${t.row.p}, won ${t.row.w}, drawn ${t.row.d}, lost ${t.row.l} — ${t.row.pts} points`
+          : 'Season not started' }),
+      el('div.btnrow', { style: { marginTop: '8px' } },
+        el('button.btn.sm.danger', {
+          onclick: () => {
+            const r = g.releaseTenant(t.clubId);
+            if (r?.error) this.app.toast('warn', 'Cannot release', r.error);
+            rerender();
+          },
+        }, 'End tenancy')));
+
+    const offerCard = (o) => el('div.card.tight', {},
+      el('div.rowbetween', {},
+        el('div', {},
+          el('div.small', { text: o.club.name }),
+          el('div.tiny.faint', { text: `${division(o.club.level).name} · would play at ${o.venue.name}` })),
+        el('span.small.mono', { text: fmtMoney(o.terms.rentPerSeason) })),
+      el('div.tiny.faint', { style: { marginTop: '6px' },
+        text: `${o.terms.homeFixtures} home fixtures a season · they keep `
+          + `${Math.round(o.terms.gateShare * 100)}% of the gate · rent paid up front` }),
+      el('div.btnrow', { style: { marginTop: '8px' } },
+        el('button.btn.sm.primary', {
+          onclick: () => {
+            const r = g.signTenant(o.club.id, o.venue.key);
+            if (r?.error) this.app.toast('warn', 'Cannot sign', r.error);
+            rerender();
+          },
+        }, 'Sign for 3 seasons')));
+
+    // A table for every division the player has a club in.
+    const shown = new Set();
+    const tables = [];
+    for (const t of tenants) {
+      const k = `${t.club.sport}:${t.club.level}`;
+      if (shown.has(k)) continue;
+      shown.add(k);
+      const rows = g.leagueTable(t.club.sport, t.club.level);
+      tables.push(section(`${t.division.name} — ${t.club.sport}`,
+        el('div.card.tight', {}, ...rows.map((r, i) => el('div.rowbetween', {
+          style: { padding: '3px 0', opacity: r.clubId === t.clubId ? '1' : '.7' },
+        },
+          el('span.small', { text: `${i + 1}. ${r.club.name}` }),
+          el('span.small.mono', { text: `${r.p}  ${r.w}-${r.d}-${r.l}  ${r.pts}` }))))));
+    }
+
+    const results = (s.league.results || []).slice(0, 8);
+    return el('div', {},
+      seasonCard,
+      section('Resident clubs', tenants.length
+        ? el('div.stack', {}, ...tenants.map(tenantCard))
+        : emptyState('Nobody plays here yet',
+          'Register a venue that fits a club\u2019s division and they will come to you.')),
+      offers.length ? section('Looking for a ground', el('div.stack', {}, ...offers.slice(0, 6).map(offerCard))) : null,
+      ...tables,
+      results.length ? section('Recent results', el('div.card.tight', {},
+        ...results.map((r) => el('div.rowbetween', { style: { padding: '3px 0' } },
+          el('span.small', { text: `${r.home} ${r.homeScore}-${r.awayScore} ${r.away}` }),
+          el('span.tiny.faint', { text: r.ours ? `${r.attendance.toLocaleString()} in` : `day ${r.day}` }))))) : null);
   }
 
   // ================================================================= GOALS
