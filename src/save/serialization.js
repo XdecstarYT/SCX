@@ -169,6 +169,11 @@ export function migrate(save) {
   s.finance = { ledger: [], months: [], monthAccum: {}, lastMonth: 0, ...(s.finance || {}) };
   s.tutorial = { step: 0, dismissed: false, seen: {}, ...(s.tutorial || {}) };
   s.organiserHistory = s.organiserHistory || {};
+  // Goal tracking postdates the first saves. An older save re-earns whatever
+  // it has already achieved on the next tick rather than being told it has
+  // lost anything, which is why this starts empty rather than being inferred.
+  s.goalsDone = Array.isArray(s.goalsDone) ? s.goalsDone : [];
+  s.legacyShown = !!s.legacyShown;
   s.construction = s.construction || [];
   // Projects predate multi-site building; anything without a site belongs to
   // the site the save was written on.

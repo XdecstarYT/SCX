@@ -11,10 +11,20 @@ import { DAYS_PER_MONTH } from './constants.js';
 export function communityReport(state, analysis) {
   const complex = analysis?.complex || {};
   const venues = analysis?.venues || [];
-  const capacity = state.derived?.totalCapacity || 0;
   const zoneVox = complex.zoneVoxels || {};
 
-  const recent = (state.events.history || []).filter((r) => r.day > state.day - 90);
+  // Every term is scoped to this one complex, because that is what the people
+  // living around it experience. Mixing scopes - one venue's parking shortfall
+  // against the whole empire's capacity - meant opening a well-parked ground in
+  // another city raised the traffic pressure on this one, and "Part Of The
+  // Furniture" became unreachable for exactly the players who had earned it.
+  const capacity = venues.reduce((n, v) => n + (v.capacity?.total || 0), 0);
+  const siteId = analysis?.siteId || complex.siteId || null;
+  const mine = siteId
+    ? (r) => typeof r.venueKey === 'string' && r.venueKey.startsWith(`${siteId}:`)
+    : () => true;
+
+  const recent = (state.events.history || []).filter((r) => r.day > state.day - 90 && mine(r));
   const attendancePerMonth = recent.reduce((s, r) => s + r.attendance, 0) / 3;
 
   // ------------------------------------------------------------- positives
@@ -40,9 +50,18 @@ export function communityReport(state, analysis) {
 
   // ------------------------------------------------------------- negatives
   // Cars with nowhere to go end up on residential streets.
-  const parkingShortfall = venues.length
-    ? Math.max(0, 1 - (venues[0].ratings.measures.parking ?? 1))
-    : 0;
+  // Averaged over the complex's venues, weighted by the crowd each one draws,
+  // rather than read off whichever venue happened to be detected first.
+  let parkingShortfall = 0;
+  if (venues.length) {
+    let num = 0, den = 0;
+    for (const v of venues) {
+      const seats = Math.max(1, v.capacity?.total || 0);
+      num += Math.max(0, 1 - (v.ratings?.measures?.parking ?? 1)) * seats;
+      den += seats;
+    }
+    parkingShortfall = den ? num / den : 0;
+  }
   const trafficPressure = clamp(parkingShortfall * (capacity / 25000), 0, 1);
   const noise = clamp(attendancePerMonth / 90_000, 0, 1) * (venues.some((v) => v.indoor) ? 0.6 : 1);
   const congestion = clamp((1 - (complex.roadServiceRatio ?? 1)) * 1.2, 0, 1);
@@ -76,9 +95,24 @@ export function communityReport(state, analysis) {
  * Community standing drifts toward what the complex actually deserves rather
  * than jumping, so a single bad event day does not wreck years of goodwill.
  */
-export function driftCommunity(state, analysis) {
+export function driftCommunity(state, analysis, all = null) {
   const report = communityReport(state, analysis);
-  const gap = report.target - state.reputation.community;
+  // Standing is one number for an operator with complexes in several cities,
+  // so it drifts toward how all of those neighbourhoods feel, weighted by the
+  // size of the crowd each one lives next to. Without this it tracked whichever
+  // site the player happened to be standing on, and travelling moved it.
+  let target = report.target;
+  if (all && all.length > 1) {
+    let num = 0, den = 0;
+    for (const a of all) {
+      const seats = (a?.venues || []).reduce((n, v) => n + (v.capacity?.total || 0), 0);
+      if (seats <= 0) continue;
+      num += communityReport(state, a).target * seats;
+      den += seats;
+    }
+    if (den > 0) target = num / den;
+  }
+  const gap = target - state.reputation.community;
   state.reputation.community = clamp(
     state.reputation.community + gap * (1 / (DAYS_PER_MONTH * 1.5)), 0, 100);
   return report;

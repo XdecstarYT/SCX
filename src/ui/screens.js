@@ -781,7 +781,9 @@ export class Screens {
         el('div.big.num', { text: `${p.complete} / ${p.total}` }),
         meter(p.overall * 100, 100, 'gold'),
         el('div.small.faint', { style: { marginTop: '8px' },
-          text: 'None of these arrive by waiting. Each one needs something built, operated or won.' })),
+          text: p.complete === p.total
+            ? 'All of them. There is nothing left on this list, which only means the list has run out.'
+            : 'None of these arrive by waiting. Each one needs something built, operated or won.' })),
       ...GOAL_GROUPS.map((g) => section(g.name,
         el('div.stack', {}, ...p.goals.filter((x) => x.tier === g.key).map((goal) =>
           el('div.card.tight' + (goal.complete ? '.good' : ''), {},

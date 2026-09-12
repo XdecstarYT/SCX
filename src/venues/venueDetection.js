@@ -213,13 +213,26 @@ export function detectVenues(world, opts = {}) {
     return { venues: [], complex, orphan: orphanSummary(zoneInfo), stats };
   }
 
+  /**
+   * Which venue does this facility serve? The nearest one that can actually
+   * reach it.
+   *
+   * Only venues within reach are candidates. Picking the closest centre first
+   * and then testing that one venue's reach threw the facility away whenever a
+   * smaller venue happened to sit marginally nearer than the one it was built
+   * for: on a plot with a stadium and a small arena on it, a media centre one
+   * step closer to the arena than to the stadium - but outside the arena's own
+   * reach - counted for neither, and the stadium lost a rating it had paid for
+   * because something was built elsewhere on the site.
+   */
   const nearest = (cx, cz) => {
     let best = null, bestD = Infinity;
     for (const v of venues) {
       const d = Math.hypot(cx - v.centre.x, cz - v.centre.z);
+      if (d > v.reach) continue;
       if (d < bestD) { bestD = d; best = v; }
     }
-    return bestD <= best.reach ? best : null;
+    return best;
   };
 
   const assign = (zoneKey, fn) => {
@@ -436,14 +449,24 @@ function maxHeightNear(world, v, size) {
 function seatingRoofCoverage(world, zoneInfo, v, size) {
   const info = zoneInfo.get(zoneId('seating'));
   if (!info) return 0;
+  const seatZone = zoneId('seating');
   let sampled = 0, covered = 0;
   const r = v.reach;
   for (let x = Math.max(0, Math.floor(v.centre.x - r)); x < Math.min(size, v.centre.x + r); x += 2) {
     for (let z = Math.max(0, Math.floor(v.centre.z - r)); z < Math.min(size, v.centre.z + r); z += 2) {
       if (!info.foot[z * size + x]) continue;
-      const top = world.heightAt(x, z);
+      // Measure from the highest *seat* in the column, not the highest block.
+      // A canopy is itself the top of the column it covers, so starting at
+      // `heightAt` looked for a roof above the roof, found nothing, and
+      // reported roofed seating as open to the sky. Every stand read as
+      // uncovered, which is why roofing never moved comfort or appearance.
+      let seatY = -1;
+      for (let y = CHUNK_Y - 1; y >= 0; y--) {
+        if (world.getZone(x, y, z) === seatZone) { seatY = y; break; }
+      }
+      if (seatY < 0) continue;
       sampled++;
-      for (let y = top + 1; y < CHUNK_Y; y++) {
+      for (let y = seatY + 1; y < CHUNK_Y; y++) {
         if (world.isSolid(x, y, z)) { covered++; break; }
       }
     }

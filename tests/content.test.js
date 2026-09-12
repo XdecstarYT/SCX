@@ -276,3 +276,187 @@ test('every achievement can be earned', async () => {
   assert.deepEqual(unearned.map((a) => `${a.id}: ${a.desc}`), [],
     'a complex that has done everything still has unearned achievements');
 });
+
+// ------------------------------------------------------------- the ending
+//
+// Thirteen long-term goals are the closest thing this game has to an ending.
+// Until now they were only ever read: a progress bar moved and nothing told
+// you when one filled. A goal that takes hundreds of days and then says
+// nothing is not an ending.
+
+test('completing a goal is recorded and announced exactly once', async () => {
+  const { Game } = await import('../src/core/game.js');
+  const { createState } = await import('../src/core/gameState.js');
+  const g = new Game();
+  g.adopt(createState({ seed: 5, complexName: 'Riverside' }), new VoxelWorld(128));
+  const said = [];
+  g.notify = (kind, title) => { if (kind === 'goal') said.push(title); };
+
+  assert.deepEqual(g.state.goalsDone, [], 'a new game has completed nothing');
+  g.state.reputation.venue = 100;                 // Untouchable Reputation
+  g.checkGoals();
+  assert.ok(g.state.goalsDone.includes('reputation'), 'the finished goal was not recorded');
+  assert.equal(said.filter((t) => t === 'Untouchable Reputation').length, 1);
+
+  // Checking again says nothing more, and a goal does not un-complete.
+  g.checkGoals();
+  assert.equal(said.filter((t) => t === 'Untouchable Reputation').length, 1,
+    'the same goal was announced twice');
+  g.state.reputation.venue = 20;
+  g.checkGoals();
+  assert.ok(g.state.goalsDone.includes('reputation'),
+    'a goal that was completed should stay completed');
+});
+
+test('finishing every goal ends the game with a legacy read off the save', async () => {
+  const { Game } = await import('../src/core/game.js');
+  const { createState } = await import('../src/core/gameState.js');
+  const { ENDGAME_GOALS: GOALS } = await import('../src/data/endgame.js');
+  const g = new Game();
+  g.adopt(createState({ seed: 6, complexName: 'Meridian Park' }), new VoxelWorld(128));
+  g.notify = () => {};
+  let legacy = null;
+  let fired = 0;
+  g.bus.on('legacy', (l) => { legacy = l; fired++; });
+
+  // Short of the full set, nothing happens.
+  g.state.goalsDone = GOALS.slice(1).map((x) => x.id);
+  g.checkGoals();
+  assert.equal(fired, 0, 'the finale fired before every goal was complete');
+
+  // Complete them all outright.
+  const s = g.state;
+  s.stats.bestCapacity = 95_000;
+  s.stats.bestRating = 96;
+  s.stats.sportsHosted = ['football', 'rugby', 'cricket', 'tennis', 'ice', 'combat'];
+  s.stats.totalAttendance = 1_200_000;
+  s.stats.lifetimeProfit = 300_000_000;
+  s.stats.tiersHosted = ['local', 'world'];
+  s.stats.ceremonyHosted = true;
+  s.stats.bidsWon = 42;
+  s.stats.blocksPlaced = 812_345;
+  s.stats.eventsHosted = 61;
+  s.reputation = { venue: 100, fans: 95, athletes: 90, organiser: 90, community: 92 };
+  for (const r of g.state.rivals) r.reputation = 50;
+  s.sites = ['site1', 'site2', 'site3'].map((id, i) => ({
+    id, name: id, cityId: ['meridian', 'kestrel_bay', 'ardenne'][i],
+    landTier: 3, boughtDay: 1, utilities: {},
+  }));
+  s.venues.registered = [
+    ...Array.from({ length: 4 }, (_, i) => ({ key: `site1:football:${i}:0`, name: `Ground ${i}`, sport: 'football', siteId: 'site1' })),
+    { key: 'site2:rugby:0:0', name: 'Two', sport: 'rugby', siteId: 'site2' },
+    { key: 'site3:cricket:0:0', name: 'Three', sport: 'cricket', siteId: 'site3' },
+  ];
+  s.goalsDone = [];
+  g.checkGoals();
+
+  assert.equal(fired, 1, 'the finale did not fire on the last goal');
+  assert.equal(g.state.goalsDone.length, GOALS.length, 'not every goal was recorded');
+  assert.ok(legacy, 'no legacy summary was produced');
+  assert.equal(legacy.complexName, 'Meridian Park');
+  assert.equal(legacy.cities, 3, 'the legacy miscounted cities');
+  assert.equal(legacy.events, 61);
+  assert.equal(legacy.blocks, 812_345);
+  assert.equal(legacy.attendance, 1_200_000);
+
+  // And it is shown once, not on every tick for the rest of the game.
+  g.checkGoals();
+  assert.equal(fired, 1, 'the finale fired again after being shown');
+});
+
+test('a save from before goal tracking loads without losing anything', async () => {
+  const { migrate } = await import('../src/save/serialization.js');
+  const save = { state: { day: 40, achievements: ['first_event'] } };
+  const s = migrate(save).state ?? migrate(save);
+  const st = s.state || s;
+  assert.deepEqual(st.goalsDone, [], 'goal tracking should start empty on an old save');
+  assert.equal(st.legacyShown, false);
+  assert.deepEqual(st.achievements, ['first_event'], 'the old save lost its achievements');
+});
+
+// ------------------------------------------------- two bugs the ending found
+//
+// Neither of these showed up as an error. Both simply meant something the
+// player built counted for nothing, which is the worst kind: you pay for it,
+// you can see it standing there, and the rating does not move.
+
+test('a roof over the stands counts as cover', () => {
+  const G = GROUND_Y;
+  const build = (roofY) => {
+    const w = new VoxelWorld(96);
+    w.generateTerrain();
+    for (let x = 30; x < 84; x++) {
+      for (let z = 30; z < 65; z++) w.setBlock(x, G - 1, z, blockId('turf'), zoneId('pitch_football'));
+    }
+    for (let x = 26; x < 88; x++) {
+      for (const z of [26, 27, 67, 68]) w.setBlock(x, G, z, blockId('seat'), zoneId('seating'));
+    }
+    if (roofY) {
+      for (let x = 26; x < 88; x++) {
+        for (const z of [26, 27, 67, 68]) w.setBlock(x, roofY, z, blockId('roof_stadium'));
+      }
+    }
+    return detectVenues(w, { complexName: 'R' }).venues[0];
+  };
+
+  assert.equal(build(0).seatRoofCoverage, 0, 'open stands should not read as covered');
+  // Coverage used to be measured upward from the top of the column, so a
+  // canopy - which is itself the top of the column - looked for a roof above
+  // the roof, found nothing, and reported every covered seat as open air.
+  assert.equal(build(GROUND_Y + 6).seatRoofCoverage, 1, 'a canopy over the stands is cover');
+  assert.equal(build(GROUND_Y + 1).seatRoofCoverage, 1, 'a low canopy is cover too');
+  // And it has to actually move the rating, or roofing is decoration.
+  assert.ok(build(GROUND_Y + 6).ratings.comfort > build(0).ratings.comfort,
+    'roofing the stands did not improve spectator comfort');
+});
+
+test('a facility counts for the venue that reaches it, not the one that is nearest', () => {
+  // A media centre built for a stadium, standing a step closer to the small
+  // arena next door but outside that arena's reach, used to count for neither:
+  // the nearest venue was chosen first and only then tested for reach. Putting
+  // a second ground on your plot silently cost the first one its rating.
+  const G = GROUND_Y;
+  const stadium = (w) => {
+    for (let x = 60; x < 114; x++) {
+      for (let z = 40; z < 75; z++) w.setBlock(x, G - 1, z, blockId('turf'), zoneId('pitch_football'));
+    }
+    for (let x = 54; x < 120; x++) {
+      for (let z = 32; z < 40; z++) w.setBlock(x, G, z, blockId('seat'), zoneId('seating'));
+    }
+  };
+  // Out at the edge of the site: 81 voxels from the stadium centre, well
+  // inside its reach, and 56 from the court's - which is outside the court's.
+  const media = (w) => {
+    for (let x = 2; x < 12; x++) {
+      for (let z = 66; z < 76; z++) w.setBlock(x, G - 1, z, blockId('tile'), zoneId('media'));
+    }
+  };
+
+  const alone = new VoxelWorld(160);
+  alone.generateTerrain();
+  stadium(alone);
+  media(alone);
+  const before = detectVenues(alone, { complexName: 'A' }).venues
+    .find((v) => v.sport === 'football');
+  assert.ok(before.facilities.media > 0, 'the stadium never had its own media centre');
+
+  // Now drop a small court right next to that media centre.
+  const shared = new VoxelWorld(160);
+  shared.generateTerrain();
+  stadium(shared);
+  media(shared);
+  for (let x = 30; x < 45; x++) {
+    for (let z = 20; z < 28; z++) shared.setBlock(x, G - 1, z, blockId('hardwood'), zoneId('court_basketball'));
+  }
+  const court = detectVenues(shared, { complexName: 'A' }).venues
+    .find((v) => v.sport === 'basketball');
+  assert.ok(court, 'the probe did not produce a second venue');
+  const d = Math.hypot(7 - court.centre.x, 71 - court.centre.z);
+  assert.ok(d > court.reach,
+    `the probe is not testing the right case: the media centre is ${d.toFixed(0)} away `
+    + `and the court reaches ${court.reach.toFixed(0)}`);
+  const after = detectVenues(shared, { complexName: 'A' }).venues
+    .find((v) => v.sport === 'football');
+  assert.equal(after.facilities.media, before.facilities.media,
+    'building a court nearby took the stadium\'s media centre away from it');
+});

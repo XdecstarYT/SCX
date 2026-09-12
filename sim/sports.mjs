@@ -32,6 +32,32 @@ export function buildFor(sz, opts = {}) {
   const game = new Game();
   game.newGame({ complexName: `${sz.name} Complex`, seed: opts.seed ?? 11 });
   game.notify = () => {};
+  buildComplex(game, sz, opts);
+  game.state.cash = opts.cash ?? 60_000_000;
+  game.state.reputation.venue = opts.rep ?? 90;
+  game.state.reputation.organiser = opts.rep ?? 90;
+  game.markWorldDirty();
+  game.analyze(true);
+  const v = game.analysis.venues.find((x) => x.sport === sz.sport) || game.primaryVenue;
+  if (v) game.registerVenue(v.key, `${sz.name} Arena`);
+  game.analyze(true);
+  return { game, venue: game.allVenues().find((x) => x.sport === sz.sport) || null };
+}
+
+/**
+ * Lay a championship complex into whichever site the game is standing on.
+ *
+ * Split out of `buildFor` so the endgame harness can put one of these on each
+ * of several sites in the same game. Everything here goes straight into the
+ * world: this is a fixture generator, not a player, and it says nothing about
+ * whether a human could afford to build it.
+ *
+ * @param opts.roof    cover the outer rings, for the comfort and appearance
+ *                     that the very top of the rating scale needs
+ * @param opts.screens big screens, which appearance counts up to three of
+ * @param opts.seats   override the seat target (the goals want one 90,000 bowl)
+ */
+export function buildComplex(game, sz, opts = {}) {
   const G = GROUND_Y;
   const B = blockId, Z = zoneId;
 
@@ -39,7 +65,7 @@ export function buildFor(sz, opts = {}) {
   const biggest = EVENT_TEMPLATES
     .filter((t) => t.sport === sz.sport)
     .reduce((m, t) => Math.max(m, (t.req.find((r) => r.key === 'capacity') || { min: 0 }).min), 0);
-  const targetSeats = Math.max(3_000, Math.round(biggest * 1.25));
+  const targetSeats = opts.seats || Math.max(3_000, Math.round(biggest * 1.25));
 
   // Enough rings to hold that, and enough land to hold the rings plus the
   // facilities and parking that have to sit within the venue's reach.
@@ -52,9 +78,12 @@ export function buildFor(sz, opts = {}) {
     if (rings % 6 !== 0) seats += perim * SEATS_PER_VOXEL;
   }
   const wantedSize = Math.max(ipw, ipd) + 2 * (rings + 34);
-  const tierIndex = Math.max(0, LAND_TIERS.findIndex((t) => t.size >= wantedSize));
-  const tier = tierIndex < 0 ? LAND_TIERS.length - 1 : tierIndex;
-  game.state.sites[0].landTier = tier;
+  const tierIndex = LAND_TIERS.findIndex((t) => t.size >= wantedSize);
+  const want = opts.landTier ?? (tierIndex < 0 ? LAND_TIERS.length - 1 : tierIndex);
+  // Never shrink a plot that is already bigger: a second complex on a site
+  // must not undo the land the first one needed.
+  const tier = Math.max(want, game.site.landTier || 0);
+  game.site.landTier = tier;
   game.world.expandTo(LAND_TIERS[tier].size);
 
   const w = game.world;
@@ -63,7 +92,10 @@ export function buildFor(sz, opts = {}) {
   // ------------------------------------------------------------ the surface
   const ideal = sz.regulation.ideal || sz.regulation;
   const pw = Math.max(ideal.w, ideal.d), pd = Math.min(ideal.w, ideal.d);
-  const px0 = Math.floor((size - pw) / 2), pz0 = Math.floor((size - pd) / 2);
+  // Centred on the plot unless the caller places it, which is how several
+  // complexes fit on one site instead of being built on top of each other.
+  const px0 = opts.at ? Math.round(opts.at.x - pw / 2) : Math.floor((size - pw) / 2);
+  const pz0 = opts.at ? Math.round(opts.at.z - pd / 2) : Math.floor((size - pd) / 2);
   const surface = B(sz.surfaces[0]);
   for (let z = pz0; z < pz0 + pd; z++) {
     for (let x = px0; x < px0 + pw; x++) w.setBlock(x, G - 1, z, surface, sz.id);
@@ -143,7 +175,11 @@ export function buildFor(sz, opts = {}) {
   // what the multi-level garage exists for.
   const cars = Math.ceil(targetSeats / 1.2);
   let parked = 0;
-  const sq = 20, levels = 6;
+  // Stacked as high as the world allows. A 90,000-seat ground needs tens of
+  // thousands of spaces and a six-deck garage does not get close, which left
+  // the biggest venues permanently short and their neighbours permanently
+  // cross about the traffic.
+  const sq = 20, levels = 15;
   for (let z0 = 2; z0 + sq < size - 2 && parked < cars; z0 += sq + 2) {
     for (let x0 = 2; x0 + sq < size - 2 && parked < cars; x0 += sq + 2) {
       let ok = true;
@@ -171,7 +207,10 @@ export function buildFor(sz, opts = {}) {
   for (let i = 0; i < 6; i++) patch(20, 10, 'transit', 'pavement');
   for (let i = 0; i < 4; i++) patch(16, 8, 'parking_bus', 'bus_lane');
   for (let i = 0; i < 3; i++) patch(16, 8, 'parking_taxi', 'park_taxi');
-  for (let i = 0; i < 6; i++) patch(30, 4, 'road_main', 'road_main');
+  // Roads have to feed the parking or none of it is usable: the service ratio
+  // wants roughly a quarter of a lane voxel per car, weighted by road type.
+  const mainRoads = Math.max(6, Math.ceil((cars * 0.25) / (30 * 4 * 2.4)) + 2);
+  for (let i = 0; i < mainRoads; i++) patch(30, 4, 'road_main', 'road_main');
   for (let i = 0; i < 2; i++) patch(24, 4, 'road_emergency', 'road_emerg');
   for (let i = 0; i < 2; i++) patch(24, 4, 'road_bus', 'bus_lane');
 
@@ -214,6 +253,36 @@ export function buildFor(sz, opts = {}) {
     }
   }
 
+  // A canopy over the outer rings, and big screens. Neither matters until the
+  // very top of the rating scale, where comfort and appearance are what is
+  // left to win: an uncovered bowl cannot pass 90 however good the rest is.
+  if (opts.roof) {
+    const top = G + Math.floor((rings - 1) * 0.8);
+    const y = Math.min(61, top + 3);
+    const canopy = B('roof_stadium');
+    for (let k = 0; k < 14; k++) {
+      const r = rings + 1 - k;
+      if (r < 2) break;
+      const x0 = px0 - r, x1 = px0 + pw - 1 + r;
+      const z0 = pz0 - r, z1 = pz0 + pd - 1 + r;
+      const panel = (x, z) => {
+        if (x < 2 || z < 2 || x >= size - 2 || z >= size - 2) return;
+        w.setBlock(x, y, z, canopy);
+        if (k === 0) for (let yy = top + 1; yy < y; yy++) w.setBlock(x, yy, z, B('steel'));
+      };
+      for (let x = x0; x <= x1; x++) { panel(x, z0); panel(x, z1); }
+      for (let z = z0 + 1; z < z1; z++) { panel(x0, z); panel(x1, z); }
+    }
+  }
+  for (let i = 0; i < (opts.screens || 0); i++) {
+    const ang = (i / Math.max(1, opts.screens)) * Math.PI * 2;
+    const sx = Math.round(cx + Math.cos(ang) * (bowlOut - 1));
+    const sz2 = Math.round(cz + Math.sin(ang) * (bowlOut - 1));
+    for (let dx = 0; dx < 14; dx++) {
+      for (let dy = 0; dy < 8; dy++) w.setBlock(sx + dx, G + 16 + dy, sz2, B('screen'));
+    }
+  }
+
   // Utilities up to whatever the complex draws.
   for (const key of ['power', 'water', 'sewer', 'data', 'climate']) {
     for (let i = 0; i < 4; i++) {
@@ -221,15 +290,7 @@ export function buildFor(sz, opts = {}) {
       if (game.upgradeUtility(key)?.error) break;
     }
   }
-  game.state.cash = opts.cash ?? 60_000_000;
-  game.state.reputation.venue = opts.rep ?? 90;
-  game.state.reputation.organiser = opts.rep ?? 90;
-  game.markWorldDirty();
-  game.analyze(true);
-  const v = game.analysis.venues.find((x) => x.sport === sz.sport) || game.primaryVenue;
-  if (v) game.registerVenue(v.key, `${sz.name} Arena`);
-  game.analyze(true);
-  return { game, venue: game.allVenues().find((x) => x.sport === sz.sport) || null };
+  return { rings, seats, size };
 }
 
 /** Try every event of a sport against a venue built for it. */

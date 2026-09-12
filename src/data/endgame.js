@@ -24,9 +24,12 @@ export const ENDGAME_GOALS = [
     desc: 'Own the largest plot and operate four registered venues on it.',
     // Land moved onto sites when the game gained more than one city; reading
     // it off the top-level state made this goal read NaN and never complete.
+    // "On it" is counted on the biggest plot rather than across the whole
+    // empire, because that is what the description promises: four venues
+    // spread over four cities is the goal below this one.
     progress: (s) => Math.min(1, (maxLandTier(s) / 3) * 0.5
-      + Math.min(1, s.venues.registered.length / 4) * 0.5),
-    detail: (s) => `plot tier ${maxLandTier(s) + 1}/4 · ${s.venues.registered.length}/4 venues`,
+      + Math.min(1, venuesOnBiggestPlot(s) / 4) * 0.5),
+    detail: (s) => `plot tier ${maxLandTier(s) + 1}/4 · ${venuesOnBiggestPlot(s)}/4 venues on it`,
   },
   {
     id: 'every_sport', name: 'Every Sport Under One Roof', tier: 'build',
@@ -104,6 +107,22 @@ export const ENDGAME_GOALS = [
 /** The best plot the player owns anywhere. */
 function maxLandTier(s) {
   return Math.max(0, ...(s.sites || []).map((site) => site.landTier ?? 0));
+}
+
+/**
+ * The most registered venues standing together on one largest-tier plot.
+ * Counted per site rather than across the empire, because "on it" is what the
+ * goal promises - four venues in four cities is the goal below this one.
+ */
+function venuesOnBiggestPlot(s) {
+  const best = maxLandTier(s);
+  let most = 0;
+  for (const site of s.sites || []) {
+    if ((site.landTier ?? 0) !== best) continue;
+    const n = (s.venues?.registered || []).filter((r) => (r.siteId || 'site1') === site.id).length;
+    if (n > most) most = n;
+  }
+  return most;
 }
 
 export const GOAL_GROUPS = [

@@ -18,6 +18,7 @@ import {
 } from './construction.js';
 import { PLAN_STRIDE } from '../voxel/structures.js';
 import { STAFF_ROLES, makeHire } from '../data/staff.js';
+import { endgameProgress } from '../data/endgame.js';
 import { SPONSORS, ALL_SPONSORS, availableSponsors, blockedSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
 import { UTILITIES, UTILITY_KEYS, nextTier } from '../data/utilities.js';
@@ -335,7 +336,7 @@ export class Game {
     s.loans = s.loans.filter((l) => l.balance > 1);
 
     // The neighbourhood forms its own view, gradually.
-    driftCommunity(s, this.analysis);
+    driftCommunity(s, this.analysis, [...this.analyses.values()]);
     s.recentConstruction = (s.recentConstruction || 0) * 0.93;
 
     // Weather works on an open pitch. Groundstaff and a climate that suits the
@@ -432,6 +433,9 @@ export class Game {
 
     // Where a venue is changes who turns up and how they get there.
     const cityInfo = cityDef(site.cityId);
+    // The analysis knows which site it describes, so anything reading it can
+    // scope itself to the same complex - community standing in particular.
+    a.siteId = site.id;
     for (const v of a.venues) {
       v.siteId = site.id;
       v.siteName = site.name;
@@ -1064,6 +1068,53 @@ export class Game {
         this.notify('achievement', a.name, a.desc);
       }
     }
+    this.checkGoals();
+  }
+
+  /**
+   * Long-term goals, which until now were only ever *read*: the screen showed
+   * a progress bar and nothing ever told you when one filled. A goal that
+   * takes four hundred days to finish and then says nothing is not an ending.
+   */
+  checkGoals() {
+    const s = this.state;
+    s.goalsDone = s.goalsDone || [];
+    const p = endgameProgress(s);
+    for (const g of p.goals) {
+      if (!g.complete || s.goalsDone.includes(g.id)) continue;
+      s.goalsDone.push(g.id);
+      this.notify('goal', g.name, g.desc);
+    }
+    if (!s.legacyShown && p.complete === p.total && p.total > 0) {
+      s.legacyShown = true;
+      this.bus.emit('legacy', this.legacy());
+    }
+  }
+
+  /**
+   * What the player actually built, for the finale. Everything here is read
+   * back off the save rather than tallied along the way, so it is true even
+   * for a game that was finished across several sittings.
+   */
+  legacy() {
+    const s = this.state;
+    const venues = this.allRegisteredVenues();
+    const best = venues.reduce((a, v) => (!a || v.capacity.total > a.capacity.total ? v : a), null);
+    return {
+      day: s.day,
+      years: Math.floor(s.day / 360),
+      complexName: s.complexName,
+      cities: new Set(s.sites.map((x) => x.cityId)).size,
+      venues: venues.length,
+      bestVenue: best ? { name: best.name, capacity: best.capacity.total, rating: best.ratings.overall } : null,
+      capacity: venues.reduce((n, v) => n + v.capacity.total, 0),
+      events: s.stats.eventsHosted,
+      attendance: s.stats.totalAttendance,
+      profit: s.stats.lifetimeProfit,
+      blocks: s.stats.blocksPlaced,
+      achievements: s.achievements.length,
+      reputation: Math.round(s.reputation.venue),
+    };
   }
 
   notify(kind, title, body) {

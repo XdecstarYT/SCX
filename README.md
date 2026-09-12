@@ -20,11 +20,12 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test              # 101 headless simulation tests
+npm test              # 106 headless simulation tests
 npm run test:balance  # plays whole seasons headlessly and checks the economy
 npm run sim           # a playthrough with charts (--days 720 --seeds 5)
 npm run sim:sports    # builds every sport and puts it to its own events
 npm run sim:land      # what each plot size is actually worth
+npm run sim:end       # plays a game to all thirteen long-term goals
 npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
@@ -342,6 +343,34 @@ tight assertions here would break on every balance tweak and teach us nothing.
 It takes about four minutes, so it is `npm run test:balance` rather than part
 of the fast suite; `npm run test:all` runs both.
 
+## The ending, played
+
+Thirteen long-term goals are the closest thing this game has to an ending:
+a 90,000-seat ground, a rating of 95, four venues on one plot, six sports,
+three cities, a million spectators, $250M banked, the World Championship, the
+Opening Ceremony. They had never been played to. Each was known to *read*
+sanely — a test checks that — but nothing had ever driven one game to tick all
+thirteen, and a goal that cannot be finished is worse than no goal, because
+the player spends real time on it.
+
+`npm run sim:end` does that now. It reaches 13/13 on day 542, and getting
+there found two bugs. Neither threw an error. Both meant something the player
+had built counted for nothing, which is the worst kind: you pay for it, you
+can see it standing there, and the rating does not move.
+
+| What was wrong | Why it mattered |
+| --- | --- |
+| Roofed seating read as open to the sky | Cover was measured upward from the top of each column — and a canopy *is* the top of the column it covers, so the check looked for a roof above the roof and found nothing. Seat roof coverage was always zero, which meant the entire roofing category had no effect on the comfort and appearance it is supposed to drive. A rating of 95 was unreachable for anyone. |
+| Building a second ground cost the first one its rating | A facility went to the nearest venue *centre*, and was then thrown away if that venue could not reach it — instead of falling back to one that could. A media centre one step closer to the new arena than to the stadium it was built for counted for neither. Putting a second venue on your plot silently stripped the first. |
+| Expanding made the neighbours angrier | Community standing mixed its scopes: one venue's parking shortfall multiplied by the *whole empire's* capacity, and noise from every city's attendance. Opening a well-parked ground in another city raised the traffic pressure on the one you already had, so "Part Of The Furniture" became unreachable for exactly the players who had earned it. Each complex is now judged on its own crowd, and the single standing figure drifts toward all of them weighted by size. |
+
+Finishing the list is now acknowledged. Each goal announces itself as it
+completes — they used to fill a progress bar in silence — and the thirteenth
+opens a summary of what was actually built, read back off the save rather than
+tallied along the way: cities, venues, total capacity, the largest ground,
+events, spectators, profit, blocks placed. It is not a game over. The complex
+is still there, and the last line says so.
+
 ## Performance, measured
 
 `npm run e2e` ends with a stress build: the largest plot, a 46-ring bowl, a
@@ -362,10 +391,11 @@ are from software rendering and mean nothing; the call and triangle counts do.
 
 ## What is deliberately not here yet
 
-- **A third city has not been played to.** Two complexes are played end to end;
-  the game offers more cities than that, and nothing has driven one. The second
-  is what the runaway-wealth check needed, so a third is a question of interest
-  rather than of solvency.
+- **The two harnesses meet in the middle, not at the end.** `sim:end` proves
+  every goal is *reachable*, granting the money to build; `sim:longrun` proves
+  the economy *affords* a climb to the world tier by playing it. Nothing yet
+  plays one game, paying its own way, all the way to thirteen out of thirteen.
+  Both halves are demonstrated; the join is not.
 - **The non-football sports are proven, not tuned.** `npm run sim:sports`
   builds every one of the thirteen to championship size and shows it winning
   and hosting at every tier it offers, which is why the dead ends above were

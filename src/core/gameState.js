@@ -57,6 +57,10 @@ export function createState(opts = {}) {
     weatherUntilDay: 4,
 
     achievements: [],
+    // Long-term goals that have been completed, and whether the finale for
+    // finishing all of them has been shown.
+    goalsDone: [],
+    legacyShown: false,
     hotbar: createHotbarState(),
     tutorial: { step: 0, dismissed: false, seen: {} },
 

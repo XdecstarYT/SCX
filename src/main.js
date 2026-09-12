@@ -279,6 +279,41 @@ class App {
   }
 
   /** Ask before a demolition that would be painful to undo by hand. */
+  /**
+   * The finale: every long-term goal complete.
+   *
+   * Not a game over - the complex is still there and still yours - but the
+   * thirteen goals are the closest thing this game has to an ending, and
+   * finishing all of them had until now produced no acknowledgement at all.
+   * It reads back what was actually built rather than congratulating in the
+   * abstract.
+   */
+  showLegacy(l) {
+    const row = (k, v) => el('div.rowbetween', { style: { padding: '3px 0' } },
+      el('span.small.faint', { text: k }), el('span.small.mono', { text: v }));
+    audio.play('achievement');
+    this.hud.openModal(el('div', {},
+      el('div.tiny.faint', { text: 'EVERY LONG-TERM GOAL COMPLETE' }),
+      el('h2', { text: l.complexName }),
+      el('p.small.faint', { style: { margin: '8px 0 14px' },
+        text: `Thirteen out of thirteen, in ${l.years > 0 ? `${l.years} year${l.years === 1 ? '' : 's'} and ` : ''}`
+          + `${l.day % 360} days. There is nothing left on the list - which only means the`
+          + ' list has run out, not the plot. Keep building.' }),
+      el('div.card.tight', {},
+        row('Cities', String(l.cities)),
+        row('Registered venues', String(l.venues)),
+        row('Total capacity', l.capacity.toLocaleString()),
+        l.bestVenue ? row('Largest ground',
+          `${l.bestVenue.name} · ${l.bestVenue.capacity.toLocaleString()} · rating ${l.bestVenue.rating}`) : null,
+        row('Events hosted', String(l.events)),
+        row('Through the gates', l.attendance.toLocaleString()),
+        row('Lifetime profit', fmtMoney(l.profit)),
+        row('Blocks placed', l.blocks.toLocaleString()),
+        row('Reputation', `${l.reputation} / 100`)),
+      el('div.btnrow', { style: { marginTop: '14px' } },
+        el('button.btn.primary', { onclick: () => this.hud.closeModal() }, 'Keep building'))));
+  }
+
   askConfirm(c) {
     this.hud.openModal(el('div', {},
       el('h2', { text: c.title }),
@@ -612,9 +647,10 @@ class App {
   wireBus() {
     const bus = this.game.bus;
     bus.on('notify', (n) => {
-      const kind = n.kind === 'achievement' ? 'achievement' : n.kind === 'bid' ? 'bid' : 'info';
-      this.toast(kind, n.title, n.body);
-      if (n.kind === 'achievement') audio.play('achievement');
+      const kind = n.kind === 'achievement' || n.kind === 'goal' ? 'achievement'
+        : n.kind === 'bid' ? 'bid' : 'info';
+      this.toast(kind, n.kind === 'goal' ? `Goal complete: ${n.title}` : n.title, n.body);
+      if (n.kind === 'achievement' || n.kind === 'goal') audio.play('achievement');
     });
     bus.on('state', () => this.hud?.refresh());
     bus.on('analysis', () => { this.refreshStatus(); this.tutorial?.refresh(); });
@@ -626,6 +662,7 @@ class App {
       this.worldRenderer.rebuildAll();
       this.worldRenderer.flush();
     });
+    bus.on('legacy', (l) => this.showLegacy(l));
     bus.on('sitechange', () => { this.tutorial?.refresh(); });
     bus.on('day', () => {
       if (this.game.state.settings.autosave && this.game.state.day !== this.lastSaveDay) {
