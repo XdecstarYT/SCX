@@ -256,3 +256,194 @@ test('a grandstand built through the controller goes up over days', async () => 
   g.analyze(true);
   assert.ok((g.world.blockCounts.get(blockId('seat')) || 0) > 100, 'the seats are really there');
 });
+
+// ---------------------------------------------------------------- the tools
+//
+// Every build tool carries a one-line hint that the player reads and trusts.
+// This sweep holds each one to what its own hint promises, because a tool that
+// quietly does something else is a bug the player blames themselves for.
+
+test('every build tool does what its own hint says it does', async () => {
+  const { TOOLS, toolCells, applyEdit, priceEdit, copyRegion, rotateClipboard }
+    = await import('../src/voxel/buildTools.js');
+  const w = new VoxelWorld(64);
+  w.generateTerrain();
+  const G = GROUND_Y;
+  const conc = blockId('concrete');
+  const at = (x, y, z) => ({ x, y, z });
+  const cellsOf = (tool, a, b, opts) => toolCells(tool, w, a, b, opts);
+  const countOf = (cells) => cells.length / 3;
+  const covered = new Set();
+
+  // single: one block, where you tapped.
+  {
+    const c = cellsOf('single', at(4, G, 4));
+    assert.equal(countOf(c), 1);
+    assert.deepEqual(c, [4, G, 4]);
+    covered.add('single');
+  }
+
+  // line: start to end, and nothing off it.
+  {
+    const c = cellsOf('line', at(4, G, 4), at(9, G, 4));
+    assert.equal(countOf(c), 6, 'a six-long line should be six blocks');
+    for (let i = 0; i < c.length; i += 3) assert.equal(c[i + 2], 4, 'the line strayed off its axis');
+    covered.add('line');
+  }
+
+  // wall: the line, extruded up by the wall height.
+  {
+    const h = 4;
+    const c = cellsOf('wall', at(4, G, 4), at(9, G, 4), { wallHeight: h });
+    assert.equal(countOf(c), 6 * h, 'a wall is its footprint times its height');
+    const tops = new Set();
+    for (let i = 0; i < c.length; i += 3) tops.add(c[i + 1]);
+    assert.equal(tops.size, h, `wall rose through ${tops.size} levels, expected ${h}`);
+    covered.add('wall');
+  }
+
+  // floor: flat, one level, whichever corner you started from.
+  {
+    const c = cellsOf('floor', at(4, G, 4), at(8, G + 5, 7));
+    assert.equal(countOf(c), 5 * 4, 'a 5x4 slab is 20 blocks');
+    for (let i = 0; i < c.length; i += 3) assert.equal(c[i + 1], G, 'the floor was not flat');
+    covered.add('floor');
+  }
+
+  // box: solid, corner to corner.
+  {
+    const c = cellsOf('box', at(4, G, 4), at(6, G + 2, 6));
+    assert.equal(countOf(c), 27, 'a 3x3x3 box is 27 blocks');
+    covered.add('box');
+  }
+
+  // hollow: a shell, and genuinely hollow inside.
+  {
+    const c = cellsOf('hollow', at(10, G, 10), at(14, G, 14), { wallHeight: 4 });
+    const set = new Set();
+    for (let i = 0; i < c.length; i += 3) set.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+    assert.ok(set.has(`10,${G},10`), 'the room has no corner');
+    assert.ok(set.has(`12,${G},12`), 'the room has no floor');
+    assert.ok(set.has(`12,${G + 4},12`), 'the room has no ceiling');
+    assert.ok(!set.has(`12,${G + 2},12`), 'the room is solid, not a room');
+    covered.add('hollow');
+  }
+
+  // fill: flood the enclosed air, and stop at the walls.
+  {
+    // A closed box of concrete with air inside it.
+    const shell = cellsOf('hollow', at(20, G, 20), at(26, G, 26), { wallHeight: 4 });
+    applyEdit(w, shell, 'build', conc);
+    const c = cellsOf('fill', at(23, G + 2, 23));
+    assert.ok(countOf(c) > 0, 'fill found nothing to fill');
+    for (let i = 0; i < c.length; i += 3) {
+      assert.ok(c[i] > 20 && c[i] < 26 && c[i + 2] > 20 && c[i + 2] < 26,
+        `fill leaked out of the room at ${c[i]},${c[i + 1]},${c[i + 2]}`);
+    }
+    covered.add('fill');
+  }
+
+  // replace: swaps only the material you first tapped, and leaves the rest.
+  {
+    const brick = blockId('brick');
+    applyEdit(w, cellsOf('box', at(30, G, 30), at(33, G, 33)), 'build', conc);
+    applyEdit(w, cellsOf('box', at(32, G, 30), at(33, G, 33)), 'build', brick);
+    const region = cellsOf('replace', at(30, G, 30), at(33, G, 33));
+    const price = priceEdit(w, region, 'build', blockId('steel'), { replaceTarget: conc });
+    assert.equal(price.placed, 8, `replace touched ${price.placed} blocks, expected the 8 concrete ones`);
+    applyEdit(w, region, 'build', blockId('steel'), { replaceTarget: conc });
+    assert.equal(w.getBlock(30, G, 30), blockId('steel'), 'concrete was not replaced');
+    assert.equal(w.getBlock(33, G, 30), brick, 'brick was replaced and should not have been');
+    covered.add('replace');
+  }
+
+  // copy and paste: the same structure, somewhere else, with its materials.
+  {
+    const src = { x: 30, y: G, z: 30 }, dst = { x: 33, y: G, z: 33 };
+    const clip = copyRegion(w, src, dst);
+    assert.equal(clip.count, 16, `copied ${clip.count} cells, expected 16`);
+    const target = at(40, G, 40);
+    const cells = cellsOf('paste', target, null, { clipboard: clip });
+    applyEdit(w, cells, 'paste', null, { clipboard: clip });
+    assert.equal(w.getBlock(40, G, 40), w.getBlock(30, G, 30), 'paste lost the first block');
+    assert.equal(w.getBlock(43, G, 40), w.getBlock(33, G, 30), 'paste lost the materials across the region');
+    covered.add('copy');
+    covered.add('paste');
+
+    // Rotating the clipboard turns the structure, and keeps every block of it.
+    const turned = rotateClipboard(clip);
+    assert.equal(turned.count, clip.count, 'rotation lost blocks');
+    assert.equal(turned.size.x, clip.size.z, 'rotation did not swap the footprint');
+    assert.equal(turned.size.z, clip.size.x);
+    // Four quarter-turns is where you started.
+    let back = clip;
+    for (let i = 0; i < 4; i++) back = rotateClipboard(back);
+    assert.deepEqual(back.size, clip.size, 'four quarter-turns did not come back round');
+  }
+
+  // prefab and the procedural structures have their own tests above; terrain
+  // tools have theirs. What matters here is that nothing ships untested.
+  const tested = new Set([...covered, 'prefab', 'grandstand', 'garage', 'retaining',
+    'raise', 'lower', 'flatten', 'ramp']);
+  const untested = TOOLS.filter((t) => !tested.has(t.key)).map((t) => t.key);
+  assert.deepEqual(untested, [], `tools with no test at all: ${untested.join(', ')}`);
+});
+
+test('a doorway is a way in, not a decoration', () => {
+  // Doors zone themselves as entrance, and the analyser counts each separate
+  // run of entrance zone as a gate. Cutting doors into a facade is therefore a
+  // real decision about crowd flow rather than a cosmetic one.
+  const build = (doors) => {
+    const w = worldWithPitch();
+    const G = GROUND_Y;
+    for (let x = 38; x < 96; x++) {
+      for (let z = 42; z < 46; z++) w.setBlock(x, G, z, blockId('seat'), zoneId('seating'));
+    }
+    for (let x = 44; x < 90; x++) {
+      for (let y = G; y < G + 3; y++) w.setBlock(x, y, 38, blockId('facade_c'));
+    }
+    for (const x of doors) {
+      for (let y = G; y < G + 2; y++) {
+        w.setBlock(x, y, 38, blockId('door'));
+        w.setBlock(x + 1, y, 38, blockId('door'));
+      }
+    }
+    return w;
+  };
+
+  const shut = detectVenues(build([]), { complexName: 'T' }).venues[0];
+  assert.equal(shut.facilities.entranceGates, 0, 'a blank wall is not a way in');
+
+  const open = detectVenues(build([50, 60, 70, 80]), { complexName: 'T' }).venues[0];
+  assert.equal(open.facilities.entranceGates, 4,
+    `four doorways in a wall should read as four gates, got ${open.facilities.entranceGates}`);
+  assert.equal(open.capacity.total, shut.capacity.total, 'doors should not change capacity');
+
+  // And you can actually walk through one.
+  const w = build([50]);
+  assert.equal(w.isSolid(50, GROUND_Y, 38), false, 'the doorway is solid; nobody is getting in');
+  assert.equal(w.isSolid(52, GROUND_Y, 38), true, 'the wall beside it should still be solid');
+});
+
+test('every material in the palette can be bought, placed and taken back out', async () => {
+  const { BLOCK_BY_ID } = await import('../src/data/blocks.js');
+  const { priceEdit, applyEdit } = await import('../src/voxel/buildTools.js');
+  const { History } = await import('../src/voxel/history.js');
+  const w = new VoxelWorld(32);
+  const history = new History(w);
+  w.generateTerrain();
+  const G = GROUND_Y;
+  let x = 1, z = 1;
+  for (const b of BLOCK_BY_ID.slice(1)) {        // index 0 is air
+    const cells = [x, G, z];
+    const price = priceEdit(w, cells, 'build', b.id);
+    assert.equal(price.blocked, 0, `${b.key} could not be placed on open ground`);
+    assert.ok(price.cost > 0, `${b.key} costs nothing to build`);
+    history.push(applyEdit(w, cells, 'build', b.id));
+    assert.equal(w.getBlock(x, G, z), b.id, `${b.key} did not go down`);
+    // Everything is reversible, including the blocks added most recently.
+    history.undo();
+    assert.notEqual(w.getBlock(x, G, z), b.id, `${b.key} survived an undo`);
+    if (++x > 28) { x = 1; z += 1; }
+  }
+});

@@ -306,6 +306,103 @@ if (overlay === 0) throw new Error('zone overlay produced no meshes');
 await page.screenshot({ path: `${SHOTS}/H-02-zones.png` });
 console.log(`  ✓ zone overlay drew ${overlay} chunk meshes`);
 
+// ------------------------------------------- every category, and a clubhouse
+// The palette is how a player finds anything at all, so each category tab has
+// to open and have something in it.
+await page.evaluate(() => { window.__sct.controller.setMode('build'); });
+await openPalette();
+const cats = await page.locator('.sheet-body .catrow button').allInnerTexts();
+const perCat = [];
+for (const name of cats) {
+  await pickCategory(name);
+  const n = await page.locator('.sheet-body .palette-item').count();
+  if (!n) throw new Error(`the "${name}" palette tab is empty`);
+  perCat.push(`${name} ${n}`);
+}
+console.log(`  ✓ palette tabs: ${perCat.join(', ')}`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(250);
+
+// Build a clubhouse elevation out of the newest materials, by hand, from the
+// palette: two runs of timber wall with a doorway through the gap between
+// them, a window course above, and a fence along the front.
+console.log('  building a clubhouse from the newest materials...');
+// An untouched corner of the plot, well clear of everything built above.
+const CH = { x: 104, z: 110 };
+const clear = await page.evaluate(([x0, z0]) => {
+  const w = window.__sct.game.world;
+  for (let z = z0 - 4; z <= z0 + 4; z++) {
+    for (let x = x0 - 2; x <= x0 + 22; x++) if (w.heightAt(x, z) > 7) return `${x},${z}`;
+  }
+  return null;
+}, [CH.x, CH.z]);
+if (clear) throw new Error(`the clubhouse site is not empty ground: something stands at ${clear}`);
+await frame(CH.x + 5, CH.z, 80);
+await pickMode('BUILD');
+
+await pickTool('Wall');
+await pickCategory('Structure');
+await pickSwatch('Timber Frame');
+await tap(CH.x, GY, CH.z); await tap(CH.x + 5, GY, CH.z);
+await tap(CH.x + 7, GY, CH.z); await tap(CH.x + 10, GY, CH.z);
+const timber = await count('timber');
+if (timber !== 30) throw new Error(`expected two 3-high wall runs (30 blocks), got ${timber}`);
+
+// The gap between the runs is open to the sky, so the doorway goes straight
+// in: tap the ground, then tap the block that lands there.
+await pickTool('Block');
+await pickCategory('Exterior');
+const entranceBefore = await page.evaluate(() => {
+  const w = window.__sct.game.world;
+  return w.zoneCounts.get(window.__sct.dev.zoneId('entrance')) || 0;
+});
+await pickSwatch('Doorway');
+await tap(CH.x + 6, GY, CH.z);
+await tap(CH.x + 6, GY + 1, CH.z);
+if (await count('door') !== 2) throw new Error(`expected a 2-high doorway, got ${await count('door')}`);
+
+// A window course on top of each wall run.
+await pickSwatch('Window');
+await tap(CH.x + 2, GY + 3, CH.z);
+await tap(CH.x + 8, GY + 3, CH.z);
+if (await count('window') !== 2) throw new Error(`expected 2 windows, got ${await count('window')}`);
+
+await pickTool('Line');
+await pickCategory('Decor');
+await pickSwatch('Perimeter Fence');
+await tap(CH.x - 2, GY, CH.z - 3); await tap(CH.x + 12, GY, CH.z - 3);
+const fence = await count('fence');
+if (fence !== 15) throw new Error(`expected a 15-block fence run, got ${fence}`);
+
+const fitted = await page.evaluate((c) => {
+  const w = window.__sct.game.world, id = window.__sct.dev.blockId;
+  const is = (x, y, z, k) => w.getBlock(x, y, z) === id(k);
+  const { x, z } = c;
+  return {
+    wall: is(x, 8, z, 'timber') && is(x + 5, 10, z, 'timber'),
+    door: is(x + 6, 8, z, 'door') && is(x + 6, 9, z, 'door'),
+    win: is(x + 2, 11, z, 'window') && is(x + 8, 11, z, 'window'),
+    // A doorway is a hole you can walk through; the timber beside it is not.
+    walkThrough: !w.isSolid(x + 6, 8, z) && w.isSolid(x + 5, 8, z),
+  };
+}, CH);
+if (!fitted.wall) throw new Error('the timber wall runs are not where they were tapped');
+if (!fitted.door) throw new Error('the doorway is not in the gap between them');
+if (!fitted.win) throw new Error('the windows did not land on top of the walls');
+if (!fitted.walkThrough) throw new Error('the doorway is solid; nobody is getting in');
+console.log(`  \u2713 ${timber} timber, a 2-high walk-through doorway, 2 windows, ${fence} fence blocks`);
+
+// And the doorway reads as a way in rather than as decoration: it zones itself
+// as an entrance, which is what the analyser counts gates from.
+const entranceAfter = await page.evaluate(() => {
+  const w = window.__sct.game.world;
+  return w.zoneCounts.get(window.__sct.dev.zoneId('entrance')) || 0;
+});
+const added = entranceAfter - entranceBefore;
+if (added !== 2) throw new Error(`the 2-block doorway added ${added} voxels of entrance zone, expected 2`);
+console.log('  \u2713 the doorway zoned itself as an entrance without being painted');
+await page.screenshot({ path: `${SHOTS}/H-03-clubhouse.png` });
+
 if (errors.length) { console.error('CONSOLE ERRORS:', errors); throw new Error(`${errors.length} console errors`); }
 console.log('\nHAND-BUILD OK');
 await browser.close();

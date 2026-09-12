@@ -20,7 +20,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test              # 92 headless simulation tests
+npm test              # 101 headless simulation tests
 npm run test:balance  # plays whole seasons headlessly and checks the economy
 npm run sim           # a playthrough with charts (--days 720 --seeds 5)
 npm run sim:sports    # builds every sport and puts it to its own events
@@ -44,6 +44,11 @@ loaded.
    line, wall, floor, rectangle, room, flood-fill, replace, copy and paste.
    Undo/redo throughout. Planning mode lets you design an entire stand and see
    the price before committing a penny.
+
+   Seventy materials across eight categories — structure, exterior, surfaces,
+   roads and parking, seating, roofing, decor and terrain — twelve of them
+   behind research. Every one is priced, placeable and reversible, and a test
+   sweeps the whole palette to keep it that way.
 
    Three **procedural structures** handle the parts that are pure repetition:
    *Stand* works out which way the pitch is and lays a raked seating tier with
@@ -128,6 +133,19 @@ loaded.
 **1 block = 2 metres.** A regulation football pitch is 53 × 34 blocks, which is
 one drag of the Floor tool. This keeps hand-building a stadium practical while
 still giving enough resolution for stands, concourses and rooms.
+
+### The registries are a file format
+
+A block, zone or equipment type's numeric id is its index in its registry
+array, and the world is saved as raw ids. That makes `BLOCKS`, `ZONES` and
+`PROPS` a file format rather than three lists: insert a row in the middle and
+every id after it shifts by one, so every existing save quietly reinterprets
+its seating as roofing. Nothing catches that at runtime — the save loads, it is
+just wrong.
+
+New content goes on the end of its array. `tests/systems.test.js` holds a
+manifest of every id that has shipped and fails if one moves, which is how that
+rule gets enforced rather than remembered.
 
 ## Architecture
 
@@ -219,6 +237,12 @@ to license.
 | Community | jobs, visitors, facilities, traffic, noise, branding | standing drifts toward what you have earned |
 | Rivals | their reinvestment vs yours | they outbid you and say so |
 | Weather | the city's own climate table | worn pitches, slowed building sites, thinner crowds |
+
+Some materials are not decoration. A **Doorway** is a hole you can walk
+through, and it zones itself as an entrance; the analyser counts each separate
+run of entrance zone as a gate, and gates are most of what crowd flow and
+safety are scored on. Cutting four doors into a facade is a decision about
+crowd flow, not a cosmetic one.
 
 ## Deliberate design calls
 

@@ -429,3 +429,83 @@ test('a save without a hotbar gets one on load', async () => {
   assert.equal(partial.state.hotbar.zones.length, 9);
   assert.equal(partial.state.hotbar.active, 0);
 });
+
+// ------------------------------------------------------- the save format
+//
+// A block, zone or prop's numeric id is its index in its registry array, and
+// the world is saved as raw ids. That makes these three arrays a file format,
+// not just a list: insert a row in the middle and every id after it shifts by
+// one, so every existing save silently reinterprets its seating as roofing.
+// Nothing catches that at runtime - the save loads, it is just wrong.
+//
+// New content goes on the end of its array. These manifests are the record of
+// what has shipped; extend them, never reorder them.
+
+const BLOCK_IDS = [
+  'grass', 'dirt', 'sand', 'water', 'tree', 'hedge', 'concrete',
+  'reinforced', 'steel', 'beam', 'stone', 'brick', 'metal', 'glass',
+  'facade_c', 'facade_m', 'facade_b', 'facade_s', 'floor_conc', 'tile',
+  'hardwood', 'rubber', 'turf', 'turf_synth', 'clay', 'track', 'ice',
+  'pool', 'infield', 'stage', 'esports', 'asphalt', 'pavement', 'road',
+  'road_main', 'road_line', 'road_service', 'road_vip', 'road_emerg',
+  'bus_lane', 'path', 'park_staff', 'park_taxi', 'park_vip', 'seat',
+  'seat_alt', 'seat_box', 'seat_vip', 'terrace', 'stair', 'roof_conc',
+  'roof_metal', 'roof_glass', 'roof_stadium', 'roof_retract', 'team_a',
+  'team_b', 'team_c', 'advert', 'screen', 'banner', 'flag', 'floodlight',
+  'railing', 'bench', 'planter', 'timber', 'window', 'door', 'fence',
+];
+
+const ZONE_IDS = [
+  'pitch_football', 'pitch_soccer', 'pitch_rugby', 'pitch_cricket',
+  'pitch_afl', 'court_basketball', 'court_tennis', 'track_athletics',
+  'pool_swimming', 'rink_ice', 'ring_combat', 'field_baseball',
+  'arena_esports', 'stage_event', 'seating', 'seating_vip', 'luxury_box',
+  'seating_standing', 'concourse', 'stairs', 'entrance', 'exit', 'fanzone',
+  'restroom', 'concession', 'restaurant', 'retail', 'hospitality',
+  'locker', 'medical', 'media', 'broadcast', 'office', 'security',
+  'storage', 'staff', 'training', 'parking', 'parking_vip', 'parking_bus',
+  'road', 'road_main', 'road_service', 'road_vip', 'road_emergency',
+  'road_bus', 'parking_staff', 'parking_taxi', 'transit',
+];
+
+const PROP_IDS = [
+  'goal_soccer', 'goal_afl', 'goal_rugby', 'corner_flag',
+  'hoop_basketball', 'net_volley', 'net_tennis', 'stumps_cricket',
+  'sightscreen', 'starting_block', 'lane_rope', 'lane_marker',
+  'hurdle_set', 'dugout', 'coach_box', 'scoreboard_sm', 'scoreboard_lg',
+  'bench_crowd', 'goal_practice',
+];
+
+test('block, zone and prop ids never move, because saves are written in them', async () => {
+  const blocks = await import('../src/data/blocks.js');
+  const zones = await import('../src/data/zones.js');
+  const props = await import('../src/data/props.js');
+
+  const check = (name, manifest, rows, idOf) => {
+    // Everything that has shipped keeps the id it shipped with.
+    for (let i = 0; i < manifest.length; i++) {
+      const key = manifest[i];
+      assert.equal(rows[i]?.key, key,
+        `${name} id ${idOf(i)} was "${key}" and is now "${rows[i]?.key}". `
+        + 'Inserting or reordering a row here rewrites every existing save. '
+        + 'Add new entries to the end of the array instead.');
+    }
+    // Anything added since is on the end, where it belongs.
+    assert.ok(rows.length >= manifest.length,
+      `${name} lost ${manifest.length - rows.length} entr(y/ies); removing one shifts ids too`);
+    const added = rows.slice(manifest.length).map((r) => r.key);
+    if (added.length) {
+      assert.ok(true, `${name} gained ${added.join(', ')} on the end`);
+    }
+  };
+
+  // Block id 0 is air, so the array index is one less than the id.
+  check('block', BLOCK_IDS, blocks.BLOCKS, (i) => i + 1);
+  check('zone', ZONE_IDS, zones.ZONES, (i) => i + 1);
+  check('prop', PROP_IDS, props.PROPS, (i) => i + 1);
+
+  // And the manifests agree with the lookup the game actually uses.
+  assert.equal(blocks.blockId('concrete'), BLOCK_IDS.indexOf('concrete') + 1);
+  assert.equal(zones.zoneId('seating'), ZONE_IDS.indexOf('seating') + 1);
+  assert.equal(props.propId('goal_soccer'), PROP_IDS.indexOf('goal_soccer') + 1);
+});

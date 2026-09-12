@@ -105,6 +105,22 @@ export const BLOCKS = [
   { key: 'railing',    name: 'Railing',          category: 'decor', color: 0xc2c8ce, cost: 80,  maintenance: 1.1, solid: true, support: 2, appearance: 2, safety: 1 },
   { key: 'bench',      name: 'Bench',            category: 'decor', color: 0x8a6a44, cost: 95,  maintenance: 1.0, solid: true, support: 2, appearance: 2 },
   { key: 'planter',    name: 'Planter',          category: 'decor', color: 0x4d7a4a, cost: 120, maintenance: 2.4, solid: true, support: 2, appearance: 3 },
+
+  // --------------------------------------------------------------------------
+  // Added after release. A block's id is its index in this array and the world
+  // is saved as raw ids, so new blocks go on the end: inserting one in the
+  // middle renumbers every block after it and turns the seating in every
+  // existing save into roofing. The hotbar groups by `category`, not by
+  // position here, so appending costs nothing in the UI.
+  // --------------------------------------------------------------------------
+  { key: 'timber',     name: 'Timber Frame',     category: 'structure', color: 0xa9793f, cost: 34,  maintenance: 1.6, solid: true, support: 5, appearance: 1 },
+  { key: 'window',     name: 'Window',           category: 'exterior', color: 0xbfe0ef, cost: 190, maintenance: 2.6, solid: true, transparent: true, opacity: 0.34, support: 3, appearance: 3 },
+  // A doorway is a hole you can walk through, so it does not block movement,
+  // and it zones itself as an entrance: the analyser counts each separate run
+  // of entrance zone as a gate, and gates are most of what crowd flow and
+  // safety are scored on. Cutting doors into a facade is a real decision.
+  { key: 'door',       name: 'Doorway',          category: 'exterior', color: 0x6f4c30, cost: 240, maintenance: 2.2, solid: false, transparent: true, opacity: 0.9, support: 2, appearance: 2, autoZone: 'entrance' },
+  { key: 'fence',      name: 'Perimeter Fence',  category: 'decor', color: 0x707880, cost: 46,  maintenance: 0.8, solid: true, support: 1, appearance: 1, safety: 1 },
 ];
 
 // --------------------------------------------------------------------------
