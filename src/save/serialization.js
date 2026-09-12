@@ -183,6 +183,8 @@ export function migrate(save) {
   s.league.tenants = s.league.tenants || [];
   s.league.honours = s.league.honours || [];
   s.league.results = s.league.results || [];
+  s.scenario = s.scenario || null;
+  s.landLocked = !!s.landLocked;
   s.legacyShown = !!s.legacyShown;
   s.construction = s.construction || [];
   // Projects predate multi-site building; anything without a site belongs to

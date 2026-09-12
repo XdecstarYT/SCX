@@ -1,4 +1,5 @@
 import { el, fill, clear } from './dom.js';
+import { scenarioLabel } from '../core/scenario.js';
 import { fmtMoney, fmtNum } from '../core/economy.js';
 
 const NAV = [
@@ -61,6 +62,13 @@ export class Hud {
       onclick: () => this.onSpeed?.('skip'),
     }, '⏭');
 
+    // On a scenario run, the brief and the clock are the most important thing
+    // on the screen, so they live in the top bar rather than three taps away.
+    this.scenarioChip = el('button.chip', {
+      'aria-label': 'Scenario objectives', title: 'Scenario objectives',
+      style: { display: 'none' },
+      onclick: () => this.onScenario?.(),
+    });
     this.buildChip = el('button.chip', {
       'aria-label': 'Construction in progress', title: 'Construction in progress',
       style: { display: 'none' },
@@ -69,7 +77,8 @@ export class Hud {
 
     this.topbar = el('div.topbar', {},
       this.cashStat, this.repStat, this.capStat, this.dayStat,
-      el('div.clockbox', {}, this.buildChip, this.weatherChip, this.pauseChip, this.speedChip, this.skipChip));
+      el('div.clockbox', {}, this.scenarioChip, this.buildChip, this.weatherChip,
+        this.pauseChip, this.speedChip, this.skipChip));
 
     // ---------------------------------------------------------- side rails
     this.cameraRail = el('div.railcol');
@@ -176,6 +185,16 @@ export class Hud {
       this.buildChip.title = `${projects.length} project${projects.length > 1 ? 's' : ''} under construction`;
     } else {
       this.buildChip.style.display = 'none';
+    }
+
+    const label = scenarioLabel(s);
+    if (label) {
+      this.scenarioChip.style.display = '';
+      this.scenarioChip.textContent = label;
+      this.scenarioChip.classList.toggle('warn', !!s.scenario?.finished && s.scenario.outcome !== 'won');
+      this.scenarioChip.classList.toggle('good', s.scenario?.outcome === 'won');
+    } else {
+      this.scenarioChip.style.display = 'none';
     }
 
     const openBids = s.events.board.filter((e) => e.status === 'open').length;

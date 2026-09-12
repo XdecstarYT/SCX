@@ -670,3 +670,16 @@ input[type='range']::-moz-range-thumb { width: 22px; height: 22px; border-radius
   .joy { width: 96px; height: 96px; }
   .joy .knob { width: 42px; height: 42px; margin: -21px 0 0 -21px; }
 }
+
+/* Scenario cards on the splash picker. A whole brief has to be readable at a
+   glance, so these are taller and softer than an ordinary button. */
+.scen {
+  display: block; width: 100%; text-align: left;
+  padding: 11px 13px; margin: 0;
+  background: var(--navy-700); border: 1px solid var(--line); border-radius: var(--r);
+  color: var(--text); cursor: pointer;
+}
+.scen:hover, .scen:focus-visible { border-color: var(--blue); background: var(--navy-600); }
+.scen.done { border-color: var(--green); }
+.chip.good { color: var(--green); border-color: var(--green); }
+.chip.warn { color: var(--gold); border-color: var(--gold); }

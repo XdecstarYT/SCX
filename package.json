@@ -8,13 +8,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host",
-    "test": "node --test tests/loop.test.js tests/systems.test.js tests/structures.test.js tests/negotiation.test.js tests/content.test.js tests/league.test.js tests/empire.test.js tests/equipment.test.js",
+    "test": "node --test tests/loop.test.js tests/systems.test.js tests/structures.test.js tests/negotiation.test.js tests/content.test.js tests/league.test.js tests/scenario.test.js tests/empire.test.js tests/equipment.test.js",
     "test:balance": "node --test tests/balance.test.js",
     "test:all": "npm test && npm run test:balance",
     "sim": "node sim/longrun.mjs",
     "sim:land": "node sim/landcurve.mjs",
     "sim:sports": "node sim/sports.mjs",
-    "e2e": "node e2e/playthrough.mjs && node e2e/firstperson.mjs && node e2e/handbuild.mjs && node e2e/equipment.mjs && node e2e/screens.mjs && node e2e/layouts.mjs && node e2e/clubs.mjs && node e2e/perf.mjs",
+    "e2e": "node e2e/playthrough.mjs && node e2e/firstperson.mjs && node e2e/handbuild.mjs && node e2e/equipment.mjs && node e2e/screens.mjs && node e2e/layouts.mjs && node e2e/clubs.mjs && node e2e/scenarios.mjs && node e2e/perf.mjs",
     "sim:end": "node sim/endgame.mjs"
   },
   "dependencies": {

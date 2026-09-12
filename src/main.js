@@ -7,6 +7,8 @@ import { WorldRenderer } from './voxel/renderer.js';
 import { BuildController } from './voxel/buildController.js';
 import { CameraRig, CAMERA_MODES } from './input/cameras.js';
 import { InputController, bindJoystick } from './input/controls.js';
+import { SCENARIOS } from './data/scenarios.js';
+import { loadScenarioRecords, recordScenario } from './save/scenarioRecords.js';
 import { Sky } from './world/sky.js';
 import { SunShadows } from './world/shadows.js';
 import { pitchRects } from './world/pitchMarks.js';
@@ -20,7 +22,7 @@ import { Effects } from './world/effects.js';
 import { Screens } from './ui/screens.js';
 import { EventsUi } from './ui/eventsUi.js';
 import { Tutorial } from './ui/tutorial.js';
-import { el, fill, emptyState, pill } from './ui/dom.js';
+import { el, fill, emptyState, pill, meter } from './ui/dom.js';
 import { saveManager } from './save/saveManager.js';
 import { fmtMoney, fmtNum } from './core/economy.js';
 import { audio } from './core/audio.js';
@@ -64,6 +66,7 @@ class App {
     this.root.append(this.fpsNode);
 
     this.hud.onSheetClose = () => { if (this.tab !== 'build') this.setTab('build'); };
+    this.hud.onScenario = () => this.showScenario();
     this.wireBus();
     document.getElementById('loading')?.classList.add('hidden');
 
@@ -115,10 +118,98 @@ class App {
         el('button.btn.full' + (hasSave ? '' : '.primary'), {
           onclick: () => { splash.remove(); this.newGame(nameInput.value.trim() || 'Riverside'); },
         }, hasSave ? 'Start a new complex' : 'Start building'),
+        el('button.btn.full', { onclick: () => this.showScenarioPicker(splash) }, 'Take on a scenario'),
         el('button.btn.full', { onclick: () => this.importSave(true) }, 'Import a save file')),
       el('p.legal', { text: 'All teams, leagues, organisers, sponsors, athletes and events in this game are fictional.' }));
+    splash.dataset.hasSave = hasSave ? '1' : '';
     this.root.append(splash);
     this.splash = splash;
+  }
+
+  /**
+   * The scenario list. A sandbox run starts from an empty field every time;
+   * these are somebody else's problems, each with its own clock, and they are
+   * where most of the game's replay lives.
+   */
+  showScenarioPicker(splash) {
+    const done = loadScenarioRecords();
+    const card = (def) => {
+      const best = done[def.id];
+      return el('button.scen' + (best ? '.done' : ''), {
+        onclick: () => {
+          splash?.remove();
+          this.splash?.remove();
+          this.startScenario(def.id);
+        },
+      },
+        el('div.rowbetween', {},
+          el('div.small', { text: def.name }),
+          el('span.tiny.faint', { text: '\u2605'.repeat(def.difficulty) })),
+        el('div.tiny.faint', { style: { marginTop: '4px' }, text: def.blurb }),
+        el('div.tiny.faint', { style: { marginTop: '6px' },
+          text: `${def.years} year${def.years === 1 ? '' : 's'} · $${(def.cash / 1e6)}M to start`
+            + (best ? ` · best: ${best.toUpperCase()}` : '') }));
+    };
+    // The picker replaces the splash rather than opening over it: the splash
+    // is a full-screen overlay, so a sheet behind it is unclickable, and a
+    // front door with two layers is a front door with a bug in it.
+    const host = splash || this.splash;
+    const page = el('div.splash', {},
+      el('div', {}, el('h1', { text: 'SCENARIOS' })),
+      el('p.tag', { text: 'Each one starts you somewhere different, with a brief and a '
+        + 'deadline. Running out of time is not the end \u2014 the complex stays yours.' }),
+      el('div.acts', {}, ...SCENARIOS.map(card),
+        el('button.btn.full', {
+          onclick: () => { page.remove(); this.showSplash(!!host?.dataset.hasSave); },
+        }, 'Back')));
+    if (host) { page.dataset.hasSave = host.dataset.hasSave || ''; host.remove(); }
+    this.root.append(page);
+    this.splash = page;
+  }
+
+  startScenario(id) {
+    const r = this.game.startScenario(id);
+    if (r?.error) { this.toast('warn', 'Could not start', r.error); return; }
+    this.hud.closeSheet();
+    this.afterWorldReady(true);
+    const def = r.def;
+    this.hud.openModal(el('div', {},
+      el('div.tiny.faint', { text: 'SCENARIO' }),
+      el('h2', { text: def.name }),
+      el('p.small.faint', { style: { margin: '8px 0 14px' }, text: def.brief }),
+      el('div.card.tight', {}, ...def.objectives.map((o) =>
+        el('div.small', { style: { padding: '3px 0' }, text: `\u2022 ${o.desc}` }))),
+      el('div.small.faint', { style: { marginTop: '10px' },
+        text: `${def.years} year${def.years === 1 ? '' : 's'}. Finish early for a better rank.` }),
+      el('div.btnrow', { style: { marginTop: '14px' } },
+        el('button.btn.primary', { onclick: () => this.hud.closeModal() }, 'Begin'))));
+  }
+
+  /** The brief, the clock and how far along each objective is. */
+  showScenario() {
+    const p = this.game.scenario();
+    if (!p) return;
+    const body = el('div', {},
+      el('div.card.accent', {},
+        el('div.tiny.faint', { text: p.run.finished ? 'FINISHED' : 'SCENARIO' }),
+        el('div.big.num', { text: `${p.complete} / ${p.total}` }),
+        meter(p.overall * 100, 100, p.run.outcome === 'won' ? 'g' : 'gold'),
+        el('div.small.faint', { style: { marginTop: '8px' },
+          text: p.run.finished
+            ? (p.run.outcome === 'won'
+              ? `Complete in ${(p.daysUsed / 360).toFixed(1)} years — ${p.run.rank.toUpperCase()}.`
+              : 'The deadline passed. The complex is still yours.')
+            : `${p.daysLeft} days left of ${p.def.years * 360}.` })),
+      el('p.small.faint', { style: { margin: '0 0 12px' }, text: p.def.brief }),
+      el('div.stack', {}, ...p.objectives.map((o) =>
+        el('div.card.tight' + (o.complete ? '.good' : ''), {},
+          el('div.rowbetween', {},
+            el('div.small', { text: o.desc }),
+            o.complete ? pill('Done', 'ok')
+              : el('span.small.mono', { text: `${Math.round(o.value * 100)}%` })),
+          el('div', { style: { marginTop: '7px' } }, meter(o.value * 100, 100, o.complete ? 'g' : '')),
+          o.detail ? el('div.tiny.faint', { style: { marginTop: '5px' }, text: o.detail }) : null))));
+    this.hud.openSheet(p.def.name, body);
   }
 
   newGame(name) {
@@ -718,6 +809,11 @@ class App {
       this.worldRenderer.flush();
     });
     bus.on('legacy', (l) => this.showLegacy(l));
+    bus.on('scenario', (ev) => {
+      if (ev?.kind === 'won') { recordScenario(ev.def.id, ev.rank); this.showScenario(); }
+      else if (ev?.kind === 'timeout') this.showScenario();
+      this.hud.refresh();
+    });
     bus.on('sitechange', () => { this.tutorial?.refresh(); });
     bus.on('day', () => {
       if (this.game.state.settings.autosave && this.game.state.day !== this.lastSaveDay) {

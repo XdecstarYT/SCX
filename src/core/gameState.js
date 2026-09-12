@@ -51,6 +51,10 @@ export function createState(opts = {}) {
 
     venues: { registered: [] },   // [{ key, name, sport, registeredDay }]
     league: createLeagueState(opts.seed ?? 1),
+    // Set when the game was started from an authored scenario rather than as
+    // a sandbox. Null is the sandbox, which is still the default.
+    scenario: null,
+    landLocked: false,
     modifiers: [],                // temporary effects from random events
     pendingRandomEvent: null,
     lastRandomEventDay: 0,

@@ -20,7 +20,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
-npm test              # 119 headless simulation tests
+npm test              # 128 headless simulation tests
 npm run test:balance  # plays whole seasons headlessly and checks the economy
 npm run sim           # a playthrough with charts (--days 720 --seeds 5)
 npm run sim:sports    # builds every sport and puts it to its own events
@@ -128,6 +128,32 @@ loaded.
    Eventually you buy land in **another city** entirely. Each has its own land
    prices, audience size, weather and climate, and venues on every site
    compete for the same event board.
+
+## Scenarios
+
+The sandbox is one long run from an empty field. A **scenario** is somebody
+else's problem, handed to you with a brief and a clock.
+
+| | | |
+| --- | --- | --- |
+| **First Season** | ★ | A field, a loan and eighteen months. Get a ground up and get the locals through the gate. |
+| **The White Elephant** | ★★★ | Inherit 45,000 seats at a rating of 18 — no restrooms, no concessions, no car park — and $14M of debt against it. |
+| **The Landlord** | ★★★ | Forget tournaments. House three clubs, keep them, and win something with one. |
+| **Winter City** | ★★★ | A freezing northern site where outdoor crowds never come. Build indoors. |
+| **No Room To Move** | ★★★★ | The smallest plot in the game, and you may not buy another inch. Build upward. |
+| **Derby Day** | ★★★★ | A rival operator already has the city, and starts a third stronger than usual. Take it. |
+| **The Games Bid** | ★★★★★ | Six years to build something the whole planet will watch. |
+
+Nothing about the rules changes. Every objective reads the same state the rest
+of the game does, so a scenario cannot be scored on a number the player is not
+shown, and the starting positions are built out of the same blocks, prefabs and
+structure generators the player has. Finish inside the deadline for bronze,
+inside 80% of it for silver, 60% for gold.
+
+Running out of time is **not** a game over. The complex is still yours and the
+sandbox carries on — you simply did not do it in the time, and the scorecard
+says so. Medals are kept per player rather than per save, so importing someone
+else's complex cannot hand you their gold.
 
 ## Resident clubs
 

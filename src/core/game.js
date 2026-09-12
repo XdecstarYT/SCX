@@ -10,7 +10,7 @@ import { evaluateBid, resolveBid, PRICING_TIERS } from '../events/bidding.js';
 import { Negotiation, ROUNDS_BY_TIER } from '../events/negotiation.js';
 import { simulateEvent } from '../events/eventSimulation.js';
 import { bestVenueFor, checkRequirements } from '../events/eventRequirements.js';
-import { applyDailyFinance, monthlyFinance, LEDGER_CATEGORIES } from './economy.js';
+import { applyDailyFinance, monthlyFinance, LEDGER_CATEGORIES, takeLoan } from './economy.js';
 import { driftCommunity, communityReport } from './community.js';
 import {
   createProject, tickConstruction, rushProject, cancelProject,
@@ -24,6 +24,9 @@ import {
   SEASON_DAYS, DIVISIONS, LEAGUE_SPORTS,
 } from './league.js';
 import { fixtureEvent } from '../events/fixtures.js';
+import {
+  createScenarioState, scenarioProgress, tickScenario, SCENARIO_BY_ID,
+} from './scenario.js';
 import { endgameProgress } from '../data/endgame.js';
 import { SPONSORS, ALL_SPONSORS, availableSponsors, blockedSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
@@ -379,6 +382,7 @@ export class Game {
     this.hostDueEvents();
     this.tickRivals();
     this.tickLeague();
+    this.tickScenario();
     this.maybeRandomEvent();
 
     // Insolvency: a real pinch, but never an instant loss.
@@ -981,6 +985,8 @@ export class Game {
     const site = this.site;
     const { next } = landInfo(s, site);
     if (!next) return { error: 'You already own the largest plot here.' };
+    // Some sites are hemmed in: whatever you want has to fit on what you have.
+    if (s.landLocked) return { error: 'There is no more land to buy on this site.' };
     // Land costs what the local market charges.
     const cost = Math.round(next.cost * cityDef(site.cityId).landCost);
     if (s.cash < cost) return { error: `You need ${Math.round(cost / 1e6)}M to expand here.` };
@@ -1122,6 +1128,80 @@ export class Game {
       achievements: s.achievements.length,
       reputation: Math.round(s.reputation.venue),
     };
+  }
+
+  // =============================================================== SCENARIO
+  /**
+   * Start an authored scenario: somebody else's starting position, a list of
+   * objectives and a clock. It is the same game underneath - the world is a
+   * normal world, the economy is the normal economy - so anything the player
+   * learns here transfers straight to the sandbox.
+   */
+  startScenario(id, opts = {}) {
+    const def = SCENARIO_BY_ID.get(id);
+    if (!def) return { error: 'No such scenario.' };
+
+    this.newGame({
+      complexName: opts.complexName || def.name,
+      seed: opts.seed ?? 1,
+      cash: def.cash,
+    });
+    const s = this.state;
+    s.scenario = createScenarioState(def);
+
+    // The site: its city, its plot, and whatever is standing on it.
+    const site = s.sites[0];
+    if (def.cityId) site.cityId = def.cityId;
+    if (def.landTier) {
+      site.landTier = def.landTier;
+      this.world.expandTo(LAND_TIERS[def.landTier].size);
+    }
+    if (def.noLand) s.landLocked = true;
+    Object.assign(s.reputation, def.reputation || {});
+    if (def.debt) takeLoan(s, def.debt, 8);
+    if (def.rivalBoost) {
+      for (const r of s.rivals) {
+        r.reputation = Math.min(100, r.reputation * def.rivalBoost);
+        r.funds = Math.round(r.funds * def.rivalBoost);
+      }
+    }
+
+    const ctx = { register: false };
+    try { def.build?.(this.world, ctx); } catch (e) { console.error('scenario build failed', e); }
+    this.markWorldDirty();
+    this.analyze(true);
+    // A ground somebody else built is already a ground: it does not need the
+    // player to discover it before it counts.
+    if (ctx.register) {
+      for (const v of this.analysis.venues) {
+        if (v.tier !== 'none') this.registerVenue(v.key, v.suggestedName);
+      }
+      this.analyze(true);
+    }
+    this.bus.emit('scenario', { kind: 'start', def });
+    this.bus.emit('state');
+    return { ok: true, def };
+  }
+
+  scenario() { return scenarioProgress(this.state); }
+
+  /** Objectives, the clock, and the one day either of them resolves. */
+  tickScenario() {
+    const ev = tickScenario(this.state);
+    if (!ev) return;
+    if (ev.kind === 'objective') {
+      this.notify('goal', `Objective complete: ${ev.objective.desc}`,
+        `${ev.left} left on the brief.`);
+    } else if (ev.kind === 'won') {
+      this.notify('achievement', `${ev.def.name} — ${ev.rank.toUpperCase()}`,
+        `Everything on the brief, in ${Math.round(ev.days / 360 * 10) / 10} years. `
+        + 'The complex is yours; keep building.');
+    } else if (ev.kind === 'timeout') {
+      this.notify('warn', `${ev.def.name} — out of time`,
+        `${ev.complete} of ${ev.total} objectives. The complex is still yours.`);
+    }
+    this.bus.emit('scenario', ev);
+    this.bus.emit('state');
   }
 
   // ================================================================= LEAGUE
