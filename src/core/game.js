@@ -14,6 +14,7 @@ import {
 import { COMPETITION_BY_ID } from '../data/competitions.js';
 import { evaluateBid, resolveBid, PRICING_TIERS } from '../events/bidding.js';
 import { Negotiation, ROUNDS_BY_TIER } from '../events/negotiation.js';
+import { autoMatchday, MatchdaySession } from './matchday.js';
 import { simulateEvent } from '../events/eventSimulation.js';
 import { bestVenueFor, checkRequirements } from '../events/eventRequirements.js';
 import { applyDailyFinance, monthlyFinance, LEDGER_CATEGORIES, takeLoan } from './economy.js';
@@ -979,10 +980,114 @@ export class Game {
     for (const ev of due) {
       const venue = this.findVenue(ev.bid.venueKey) || this.primaryVenue;
       if (!venue) { ev.status = 'cancelled'; continue; }
-      const report = simulateEvent(ev, venue, s, ev.bid);
+      // The biggest event on the board is worth being present for. If the
+      // player has asked to run their own matchdays and this one qualifies,
+      // the day is held open and they take the calls; otherwise the relevant
+      // department heads take them, which is what they are paid for.
+      if (this.shouldOpenMatchday(ev, venue)) {
+        this.openMatchday(ev, venue);
+        continue;
+      }
+      const report = simulateEvent(ev, venue, s, ev.bid, autoMatchday(ev, venue, s));
       this.applyEventReport(ev, report);
     }
-    s.events.scheduled = s.events.scheduled.filter((e) => e.eventDay > s.day);
+    s.events.scheduled = s.events.scheduled.filter(
+      (e) => e.eventDay > s.day || e.status === 'live');
+  }
+
+  // ============================================================== MATCHDAY
+  /**
+   * Whether to stop the clock and hand this day to the player.
+   *
+   * Never for a league fixture or a competition match - a club playing every
+   * other weekend would turn the game into a queue of forms - and never when
+   * something is already live. The setting is the player's; the default is to
+   * run the days that were bid for and won.
+   */
+  shouldOpenMatchday(ev, venue) {
+    const s = this.state;
+    if (!s.settings?.liveMatchday) return false;
+    if (this.matchday) return false;
+    if (ev.kind === 'fixture' || ev.kind === 'competition-match') return false;
+    const TIER_RANK = { local: 0, regional: 1, national: 2, international: 3, world: 4 };
+    return (TIER_RANK[ev.tier] ?? 0) >= (s.settings.matchdayFrom ?? 0) && !!venue;
+  }
+
+  /** Hold the day open. The clock stops until it is resolved. */
+  openMatchday(ev, venue) {
+    const s = this.state;
+    ev.status = 'live';
+    this.matchday = new MatchdaySession(ev, venue, s, ev.bid);
+    this._pausedForMatchday = s.paused;
+    s.paused = true;
+    // A day with nothing to decide is not a day; resolve it and move on.
+    if (this.matchday.done) return this.closeMatchday();
+    this.notify('event', `${ev.name} is under way`,
+      `${venue.name}. You are running this one yourself.`);
+    this.bus.emit('matchday', this.matchdayView());
+    this.bus.emit('state');
+    return this.matchday;
+  }
+
+  /** Everything the matchday screen needs, and nothing it does not. */
+  matchdayView() {
+    const md = this.matchday;
+    if (!md) return null;
+    return {
+      event: {
+        name: md.ev.name, tier: md.ev.tier, organiser: md.ev.organiser,
+        sport: md.ev.sport, days: md.ev.days,
+      },
+      venue: { name: md.venue.name || md.venue.type, capacity: md.venue.capacity.total },
+      phase: md.phase ? { name: md.phase.name, desc: md.phase.desc } : null,
+      call: md.call,
+      progress: md.progress,
+      summary: md.summary(),
+      history: md.history,
+      risks: md.risks.filter((r) => !r.good)
+        .map((r) => ({ key: r.key, chance: r.chance, text: r.text,
+          guarded: md.ops.guard[r.key] || 0 }))
+        .sort((a, b) => b.chance * (1 - b.guarded) - a.chance * (1 - a.guarded)),
+      done: md.done,
+    };
+  }
+
+  /** Take a call. */
+  matchdayChoose(optionIndex) {
+    if (!this.matchday) return { error: 'No matchday is running.' };
+    const r = this.matchday.choose(optionIndex);
+    if (r.error) return r;
+    if (this.matchday.done) return this.closeMatchday();
+    this.bus.emit('matchday', this.matchdayView());
+    this.bus.emit('state');
+    return { ok: true, view: this.matchdayView() };
+  }
+
+  /** Hand one call, or the rest of the day, to the staff. */
+  matchdayDelegate(rest = false) {
+    if (!this.matchday) return { error: 'No matchday is running.' };
+    if (rest) { this.matchday.delegateRest(); return this.closeMatchday(); }
+    const r = this.matchday.delegate();
+    if (r.error) return r;
+    if (this.matchday.done) return this.closeMatchday();
+    this.bus.emit('matchday', this.matchdayView());
+    this.bus.emit('state');
+    return { ok: true, view: this.matchdayView() };
+  }
+
+  /** Run the simulation with the day the player actually had. */
+  closeMatchday() {
+    const md = this.matchday;
+    if (!md) return { error: 'No matchday is running.' };
+    const ops = md.finish();
+    const report = simulateEvent(md.ev, md.venue, this.state, md.contract, ops);
+    this.matchday = null;
+    this.state.paused = this._pausedForMatchday ?? false;
+    this.applyEventReport(md.ev, report);
+    this.state.events.scheduled = this.state.events.scheduled.filter((e) => e.uid !== md.ev.uid);
+    this.bus.emit('matchdaydone', report);
+    this.bus.emit('state');
+    return { ok: true, report };
   }
 
   applyEventReport(ev, report) {

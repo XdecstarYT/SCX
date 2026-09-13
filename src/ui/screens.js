@@ -1098,6 +1098,21 @@ export class Screens {
             el('button.btn.sm', { onclick: () => this.app.importSave() }, 'Import')),
           el('button.btn.sm.danger.full', { style: { marginTop: '8px' }, onclick: () => this.app.confirmReset() }, 'Start a new complex'))),
 
+      section('Event days',
+        el('div.card', {},
+          toggleRow('Run your own matchdays',
+            'Stop the clock on event day and take the calls yourself, instead of letting your staff take them.',
+            s.settings.liveMatchday, (v) => set('liveMatchday', v)),
+          s.settings.liveMatchday ? choiceRow('From tier',
+            'The smallest event worth stopping the clock for.',
+            [['0', 'Every event'], ['1', 'Regional+'], ['2', 'National+'],
+              ['3', 'International+'], ['4', 'World only']],
+            String(s.settings.matchdayFrom ?? 2),
+            (v) => set('matchdayFrom', Number(v))) : null,
+          el('div.tiny.faint', { style: { marginTop: '8px' },
+            text: 'League fixtures and competition matches always run themselves - a resident '
+              + 'club plays every other weekend, and nobody wants to take eight calls for it.' }))),
+
       section('Display & motion',
         el('div.card', {},
           toggleRow('Reduced motion', 'Disable animated counters and transitions', s.settings.reducedMotion, (v) => { set('reducedMotion', v); }),

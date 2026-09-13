@@ -91,6 +91,12 @@ export function createState(opts = {}) {
       sound: true, music: false, reducedMotion: false, highContrast: false,
       largeText: false, sensitivity: 1, invertY: false, showFps: false,
       autosave: true, handedness: 'right', shadows: 'auto',
+      // Run your own event days. Off by default: a player who has never seen
+      // one should meet it as a choice rather than as an interruption.
+      liveMatchday: false,
+      // The lowest tier worth stopping the clock for. 0 is every bid event,
+      // 2 is national and up, which is where most people settle.
+      matchdayFrom: 2,
     },
   };
 }

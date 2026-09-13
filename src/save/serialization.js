@@ -191,6 +191,11 @@ export function migrate(save) {
   s.hosting.history = s.hosting.history || [];
   s.hosting.records = s.hosting.records || {};
   s.hosting.declined = s.hosting.declined || [];
+  // Matchday settings postdate the first saves. An older complex keeps
+  // resolving its days the way it always has until the player says otherwise.
+  s.settings = s.settings || {};
+  if (s.settings.liveMatchday === undefined) s.settings.liveMatchday = false;
+  if (s.settings.matchdayFrom === undefined) s.settings.matchdayFrom = 2;
   s.scenario = s.scenario || null;
   s.landLocked = !!s.landLocked;
   s.legacyShown = !!s.legacyShown;

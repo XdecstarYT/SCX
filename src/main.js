@@ -20,6 +20,7 @@ import { HeldBlock } from './world/viewmodel.js';
 import { PropRenderer } from './world/propRenderer.js';
 import { Effects } from './world/effects.js';
 import { Screens } from './ui/screens.js';
+import { MatchdayScreen } from './ui/matchdayUi.js';
 import { EventsUi } from './ui/eventsUi.js';
 import { Tutorial } from './ui/tutorial.js';
 import { el, fill, emptyState, pill, meter } from './ui/dom.js';
@@ -60,6 +61,7 @@ class App {
     this.initThree();
     this.hud = new Hud(this.root, this.game);
     this.screens = new Screens(this);
+    this.matchdayScreen = new MatchdayScreen(this);
     this.eventsUi = new EventsUi(this);
     this.tutorial = new Tutorial(this);
     this.hud.tutorialHost.append(this.tutorial.node);
@@ -808,6 +810,9 @@ class App {
       this.worldRenderer?.setPitches(pitchRects(this.game.analysis));
     });
     bus.on('eventreport', (r) => this.playEvent(r));
+    // An event day the player is running themselves takes over the screen.
+    bus.on('matchday', (view) => this.matchdayScreen.show(view));
+    bus.on('matchdaydone', () => this.matchdayScreen.hide());
     bus.on('randomevent', (d) => this.eventsUi.showRandomEvent(d));
     bus.on('landchange', (off) => {
       // New land wraps the old plot, so the complex moved. Follow it.

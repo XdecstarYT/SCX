@@ -683,3 +683,52 @@ input[type='range']::-moz-range-thumb { width: 22px; height: 22px; border-radius
 .scen.done { border-color: var(--green); }
 .chip.good { color: var(--green); border-color: var(--green); }
 .chip.warn { color: var(--gold); border-color: var(--gold); }
+
+/* ------------------------------------------------------------- matchday
+ *
+ * Full-screen, because on an event day the world behind it is finished and
+ * the day is the thing. Three bands that stack on a phone and sit side by
+ * side on anything wider.
+ */
+.matchday {
+  position: fixed; inset: 0; z-index: 60;
+  background: linear-gradient(180deg, var(--navy-900), var(--navy-800) 40%, #0a1220);
+  overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.matchday.hidden { display: none; }
+.md-wrap {
+  max-width: 780px; margin: 0 auto;
+  padding: max(18px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 14px;
+}
+.md-head {
+  background: var(--navy-700); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 14px 16px;
+}
+.md-call {
+  background: var(--navy-600); border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg); padding: 16px; box-shadow: var(--shadow);
+}
+/* Every option is a full-width target: this screen is played with a thumb. */
+.md-opt { width: 100%; text-align: left; min-height: 58px; }
+.md-opt:active { transform: scale(0.995); }
+.md-foot {
+  background: var(--navy-700); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 14px 16px;
+}
+.md-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px; }
+.md-stat {
+  background: var(--navy-800); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 8px 10px;
+}
+.md-stat.good .mono { color: var(--green); }
+.md-stat.bad .mono { color: var(--red); }
+.md-risk {
+  background: var(--navy-800); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 7px 9px;
+}
+.md-risk .meter { margin-top: 5px; }
+@media (min-width: 820px) {
+  .md-wrap { max-width: 1000px; }
+}
