@@ -37,11 +37,19 @@ export function generateEvent(state, seedSalt = 0) {
   const hosted = hostableSports(state);
 
   // Weight toward the player's current level: reachable events are common,
-  // stretch events are rare but visible.
+  // stretch events are rare but visible, and events the complex has long
+  // outgrown thin out rather than staying as common as the rest.
+  //
+  // Treating every tier at or below the player's as equally likely looked
+  // harmless while there were fewer templates, but it means a world-class
+  // ground is offered the same flood of club nights as a starter plot - and
+  // with two world templates against sixty-odd others, the ceremony the
+  // endgame is named after could go unoffered for years.
   const weighted = [];
+  const TIER_WEIGHT = { 0: 6, '-1': 4, '-2': 2 };
   for (const t of pool) {
     const gap = TIER_ORDER.indexOf(t.tier) - TIER_ORDER.indexOf(currentTier(state.reputation.venue));
-    const tierW = gap <= 0 ? 6 : gap === 1 ? 2 : 1;
+    const tierW = gap > 0 ? (gap === 1 ? 2 : 1) : (TIER_WEIGHT[gap] ?? 1);
     // A quarter of the board stays outside what you have built: that is the
     // visible argument for adding a second sport.
     const sportW = hosted.size === 0 || hosted.has(t.sport) ? 4 : 1;

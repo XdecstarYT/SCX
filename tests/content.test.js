@@ -476,3 +476,47 @@ test('a facility counts for the venue that reaches it, not the one that is neare
   assert.equal(after.facilities.media, before.facilities.media,
     'building a court nearby took the stadium\'s media centre away from it');
 });
+
+test('a world-class complex is offered world-class events, not more club nights', async () => {
+  // The board weights toward the tier the player is at. Treating every tier
+  // at or below that as equally likely looked harmless while there were fewer
+  // templates: it means the two world-tier events compete with sixty-odd
+  // others, so the ceremony the endgame is named after can go unoffered for
+  // years on a ground that outgrew everything else long ago.
+  const { generateEvent } = await import('../src/events/eventGenerator.js');
+  const state = {
+    seed: 7, day: 1,
+    reputation: { venue: 100 },
+    venues: { registered: [{ sport: 'football' }] },
+  };
+
+  const tally = {};
+  let total = 0;
+  for (let day = 1; day <= 1200; day++) {
+    state.day = day;
+    for (let k = 0; k < 3; k++) {
+      const ev = generateEvent(state, k);
+      if (!ev) continue;
+      tally[ev.tier] = (tally[ev.tier] || 0) + 1;
+      total++;
+    }
+  }
+
+  const share = (t) => (tally[t] || 0) / total;
+  assert.ok(share('world') > 0.1,
+    `at maximum reputation only ${(share('world') * 100).toFixed(1)}% of offers are world tier`);
+  assert.ok(share('world') + share('international') > share('local') + share('regional'),
+    'a complex that has outgrown the lower tiers is still mostly offered them');
+
+  // And the bottom of the ladder still works: a beginner sees local events and
+  // exactly one tier of stretch above them, not the whole catalogue.
+  const novice = { seed: 7, day: 1, reputation: { venue: 0 }, venues: { registered: [] } };
+  const seen = new Set();
+  for (let day = 1; day <= 400; day++) {
+    novice.day = day;
+    const ev = generateEvent(novice, 0);
+    if (ev) seen.add(ev.tier);
+  }
+  assert.deepEqual([...seen].sort(), ['local', 'regional'],
+    `a brand new complex was offered ${[...seen].join(', ')}`);
+});

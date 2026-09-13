@@ -490,6 +490,16 @@ export const EVENT_TEMPLATES = [
     community: 5,
   },
   {
+    id: 'beach_national', name: 'National Beach Championships', sport: 'beach', tier: 'national',
+    organiser: 'Coastal Sport Collective', popularity: 0.58, base: 40, fee: 340_000,
+    bid: [52_000, 400_000], days: 4, risk: 0.24, prestige: 13, audience: 'national',
+    req: [req.field('beach'), req.cap(7_500), req.rating(56), req.rep(38),
+          req.m('concession', 0.6, 'Food and beverage'),
+          req.m('broadcast', 0.4, 'Broadcast centre')],
+    blurb: 'A temporary stadium court, four days of it, and a crowd that stays for the music.',
+    community: 4,
+  },
+  {
     id: 'netball_league', name: 'Netball League Night', sport: 'netball', tier: 'local',
     organiser: 'Metro Netball League', popularity: 0.29, base: 13, fee: 9_000,
     bid: [900, 11_500], days: 1, risk: 0.09, prestige: 2, audience: 'local',
@@ -528,6 +538,14 @@ export const EVENT_TEMPLATES = [
     req: [req.field('handball'), req.cap(3_800), req.rating(44), req.m('medical', 0.45, 'Medical')],
     blurb: 'Two days of it. Bring the physios.',
     community: 3,
+  },
+  {
+    id: 'handball_national', name: 'National Handball Final', sport: 'handball', tier: 'national',
+    organiser: 'Handball Regional Board', popularity: 0.6, base: 43, fee: 400_000,
+    bid: [60_000, 470_000], days: 2, risk: 0.22, prestige: 14, audience: 'national',
+    req: [req.field('handball'), req.cap(8_000), req.rating(58), req.rep(40),
+          req.m('broadcast', 0.5, 'Broadcast centre'), req.m('medical', 0.6, 'Medical')],
+    blurb: 'Sixty minutes, two clubs, and an arena that has waited all season for it.',
   },
   {
     id: 'track_meet', name: 'Track League Meet', sport: 'cycling', tier: 'local',
@@ -577,6 +595,15 @@ export const EVENT_TEMPLATES = [
     req: [req.field('skate'), req.cap(3_000), req.rating(42), req.m('medical', 0.5, 'Medical')],
     blurb: 'A tour stop with a real prize purse, and a crowd that films everything.',
     community: 6,
+  },
+  {
+    id: 'skate_national', name: 'National Skate Championships', sport: 'skate', tier: 'national',
+    organiser: 'Concrete Culture', popularity: 0.62, base: 39, fee: 330_000,
+    bid: [50_000, 390_000], days: 3, risk: 0.24, prestige: 13, audience: 'national',
+    req: [req.field('skate'), req.cap(7_500), req.rating(55), req.rep(36),
+          req.m('broadcast', 0.45, 'Broadcast centre'), req.m('medical', 0.6, 'Medical')],
+    blurb: 'Park and street over three days, judged live, and half the crowd is filming it.',
+    community: 5,
   },
   {
     id: 'climb_open', name: 'Bouldering Open', sport: 'climbing', tier: 'local',
