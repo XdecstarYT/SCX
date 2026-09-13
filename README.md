@@ -104,11 +104,14 @@ loaded.
    complex built before the fittings existed keeps every rating it had.
 3. **Zone.** The hotbar holds zones too, so painting what an area is *for* is
    the same motion as building it — walk along a stand holding "seating" and
-   paint it in. Areas can be: pitch, seating, concourse, entrance,
-   emergency exit, locker room, medical, media, broadcast, restrooms,
-   concessions, retail, hospitality, security, parking, roads. Placing an
-   unambiguous surface (turf, hardwood, ice, asphalt…) auto-zones it; you can
-   always repaint by hand, and a hand-painted zone is never clobbered.
+   paint it in. Sixty-six zones cover playing surfaces for twenty sports and
+   everything around them: seating, concourse, entrance, emergency exit,
+   locker room, physio, medical, media, broadcast, press room, players'
+   tunnel, box office, creche, restrooms, concessions, retail, hospitality,
+   security, plant, waste, parking, roads, transit, cycle routes and bike
+   parking. Placing an unambiguous surface (turf, hardwood, ice, asphalt…)
+   auto-zones it; you can always repaint by hand, and a hand-painted zone is
+   never clobbered.
 4. **Recognition.** The analyser scans the world, finds connected components
    per zone, fits the largest rectangle inside each sport surface to check it
    against regulation dimensions (oval sports are measured by their length and
@@ -362,7 +365,7 @@ reinvests and expands using the same `Game` methods the UI calls, for hundreds
 of in-game days. It exists because "the economy feels about right" is not a
 claim anyone should ship.
 
-Running it found nine things that were wrong, all of which are now fixed:
+Running it found ten things that were wrong, all of which are now fixed:
 
 | What it found | Why it mattered |
 | --- | --- |
@@ -374,14 +377,18 @@ Running it found nine things that were wrong, all of which are now fixed:
 | Five sports had venues but no events | Rugby, cricket, swimming, ice and soccer shipped zones, blocks, equipment and venue types with nothing ever scheduled on them. You could build a cricket ground, register it, and discover the dead end only after paying for it. Every sport now has a local → regional → national ladder, and soccer is a second name for football rather than a separate sport with nowhere to go. |
 | A venue's "reach" was measured from the playing surface alone | A basketball floor is 30m across; a 16,000-seat arena around it is 120m across. Its own concourses, media centre and restrooms fell outside the venue and counted for nothing, so small-floor sports could never pass a national requirement. Reach now follows the stands. |
 | Requirements could read "have 50%, need 50%" and still fail | The comparison used raw values and the display rounded them. It now compares at the precision the player is shown. |
+| The board buried the top of the ladder | Every tier at or below the player's counted the same, so a 222,000-seat ground with maximum reputation was shown the same flood of club nights as a starter plot. With two world-tier templates against sixty-odd others, it played on for 630 days without ever being offered the opening ceremony the endgame is named after. Tiers a complex has outgrown now thin out as they recede, exactly as tiers above it already did. |
 | The Mega Sports District goal could never complete | It read `state.landTier`, which moved onto sites when the game gained more than one city. Its progress had read NaN ever since. A test now sweeps every goal and every achievement for this. |
 
 It also caught three prefabs — the stadium entrance, the food court and the
 performance centre — shipping with roofs that the game's own structural
 inspector flagged, which caused event-day incidents. They have columns now, and
-a test holds every prefab to the game's own rule.
+a test holds every prefab to the game's own rule. A second sweep caught two
+more handing out materials that were still behind research: the food court's
+glass roof and the main grandstand's stadium canopy. Prefabs are now gated on
+the project their materials need, and say which one.
 
-`npm run sim:sports` is the other half: it builds every one of the thirteen
+`npm run sim:sports` is the other half: it builds every one of the twenty
 sports to championship size, fits it out, buys it the land it needs, and puts
 it to every event that sport offers. That is what turned up the dead ends
 above, and it is a test now — a sport cannot ship with a venue type and nothing
@@ -515,7 +522,7 @@ are from software rendering and mean nothing; the call and triangle counts do.
   plays one game, paying its own way, all the way to fourteen out of fourteen.
   Both halves are demonstrated; the join is not.
 - **The non-football sports are proven, not tuned.** `npm run sim:sports`
-  builds every one of the thirteen to championship size and shows it winning
+  builds every one of the twenty to championship size and shows it winning
   and hosting at every tier it offers, which is why the dead ends above were
   found. What it does not show is whether their economics are *interesting* —
   whether a cricket ground is a different business from a football stadium
