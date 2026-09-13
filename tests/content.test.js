@@ -250,6 +250,15 @@ test('every endgame goal reads sanely and can actually be completed', async () =
   s.league.clubs.fc_meridian.level = 0;
   s.league.honours = [{ season: 1, sport: 'football', level: 0, championId: 'fc_meridian' }];
   s.league.season = 6;
+  // Three competitions staged here, one of them at world tier.
+  s.hosting.history = [
+    { compId: 'athletics_worlds', id: 'athletics_worlds:2028', name: '2028 World Athletics Championships',
+      year: 2028, sport: 'athletics', attendance: 410_000, matches: 7, champion: 'Meridia' },
+    { compId: 'grand_final', id: 'grand_final:2029', name: '2029 Premiership Grand Final',
+      year: 2029, sport: 'afl', attendance: 52_000, matches: 1, champion: 'Southern Kites' },
+    { compId: 'urn_series', id: 'urn_series:2030', name: '2030 The Meridian Urn',
+      year: 2030, sport: 'cricket', attendance: 160_000, matches: 5, champion: 'Meridia' },
+  ];
 
   const report = endgameProgress(s);
   const incomplete = report.goals.filter((g) => !g.complete);
@@ -283,6 +292,10 @@ test('every achievement can be earned', async () => {
     homeFixtures: 13, seasonsLeft: 3, fixtures: [],
   }));
   s.league.honours = [{ season: 1, sport: 'football', level: 0, championId: 'fc_meridian' }];
+  s.hosting.history = Array.from({ length: 5 }, (_, i) => ({
+    compId: 'athletics_worlds', id: `c${i}`, name: `Staging ${i}`, year: 2028 + i,
+    matches: 7, attendance: 400_000, bestCrowd: 88_000, champion: 'Meridia',
+  }));
 
   const unearned = ACHIEVEMENTS.filter((a) => !a.check(s));
   assert.deepEqual(unearned.map((a) => `${a.id}: ${a.desc}`), [],
@@ -363,6 +376,15 @@ test('finishing every goal ends the game with a legacy read off the save', async
     rent: 1, gateShare: 0.3, homeFixtures: 13, seasonsLeft: 3, fixtures: [] }];
   s.league.clubs.fc_meridian.level = 0;
   s.league.honours = [{ season: 1, sport: 'football', level: 0, championId: 'fc_meridian' }];
+  // Three competitions staged here, one of them at world tier.
+  s.hosting.history = [
+    { compId: 'athletics_worlds', id: 'athletics_worlds:2028', name: '2028 World Athletics Championships',
+      year: 2028, sport: 'athletics', attendance: 410_000, matches: 7, champion: 'Meridia' },
+    { compId: 'grand_final', id: 'grand_final:2029', name: '2029 Premiership Grand Final',
+      year: 2029, sport: 'afl', attendance: 52_000, matches: 1, champion: 'Southern Kites' },
+    { compId: 'urn_series', id: 'urn_series:2030', name: '2030 The Meridian Urn',
+      year: 2030, sport: 'cricket', attendance: 160_000, matches: 5, champion: 'Meridia' },
+  ];
   s.goalsDone = [];
   g.checkGoals();
 

@@ -5,6 +5,7 @@ import { UTILITY_KEYS, capacityOf, upkeepOf, computeDemand, serviceFactor } from
 import { climateEffects } from '../data/cities.js';
 import { createHotbarState } from '../ui/hotbar.js';
 import { createLeagueState } from './league.js';
+import { createHostingState } from './hosting.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
 
@@ -51,6 +52,9 @@ export function createState(opts = {}) {
 
     venues: { registered: [] },   // [{ key, name, sport, registeredDay }]
     league: createLeagueState(opts.seed ?? 1),
+    // Hosting rights: the named competitions this complex has staged, is
+    // staging, and could still bid for.
+    hosting: createHostingState(),
     // Set when the game was started from an authored scenario rather than as
     // a sandbox. Null is the sandbox, which is still the default.
     scenario: null,

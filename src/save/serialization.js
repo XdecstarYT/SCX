@@ -1,5 +1,6 @@
 import { VoxelWorld, Chunk } from '../voxel/world.js';
 import { createLeagueState } from '../core/league.js';
+import { createHostingState } from '../core/hosting.js';
 import { PropLayer } from '../voxel/props.js';
 import { SAVE_VERSION } from '../core/gameState.js';
 import { createHotbarState } from '../ui/hotbar.js';
@@ -183,6 +184,13 @@ export function migrate(save) {
   s.league.tenants = s.league.tenants || [];
   s.league.honours = s.league.honours || [];
   s.league.results = s.league.results || [];
+  // Hosting rights postdate leagues. An older complex has simply never staged
+  // anything: its honours board starts empty rather than being invented, and
+  // the offers it can see are computed from the calendar on the next tick.
+  if (!s.hosting || !Array.isArray(s.hosting.active)) s.hosting = createHostingState();
+  s.hosting.history = s.hosting.history || [];
+  s.hosting.records = s.hosting.records || {};
+  s.hosting.declined = s.hosting.declined || [];
   s.scenario = s.scenario || null;
   s.landLocked = !!s.landLocked;
   s.legacyShown = !!s.legacyShown;

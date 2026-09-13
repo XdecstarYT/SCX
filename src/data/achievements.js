@@ -33,4 +33,13 @@ export const ACHIEVEMENTS = [
       (s.league.tenants || []).some((t) => t.clubId === h.championId)) },
   { id: 'five_seasons', name: 'Five Seasons Deep', desc: 'Reach the fifth season.',
     check: (s) => (s.league?.season || 1) >= 5 },
+  // ---------------------------------------------------------------- hosting
+  { id: 'first_rights', name: 'On The Board', desc: 'Stage a named competition.',
+    check: (s) => (s.hosting?.history || []).length >= 1 },
+  { id: 'series_host', name: 'A Whole Summer', desc: 'Stage a competition of four matches or more.',
+    check: (s) => (s.hosting?.history || []).some((h) => h.matches >= 4) },
+  { id: 'full_house', name: 'Ninety Thousand', desc: 'Draw a crowd of 60,000 to a single staged match.',
+    check: (s) => (s.hosting?.history || []).some((h) => (h.bestCrowd || 0) >= 60_000) },
+  { id: 'regular_host', name: 'The Usual Venue', desc: 'Stage five competitions.',
+    check: (s) => (s.hosting?.history || []).length >= 5 },
 ];

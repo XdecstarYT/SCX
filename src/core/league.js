@@ -122,11 +122,29 @@ export function opponentFor(league, club, index) {
 const SCORING = {
   football:   { mean: 1.35, low: true },
   ice:        { mean: 3.0,  low: true },
-  baseball:   { mean: 4.3,  low: true },
+  baseball:   { mean: 4.3,  low: true, noDraw: true },
   rugby:      { mean: 23,  swing: 9,  noise: 7 },
-  basketball: { mean: 92,  swing: 11, noise: 9 },
+  basketball: { mean: 92,  swing: 11, noise: 9, noDraw: true },
   afl:        { mean: 84,  swing: 18, noise: 14 },
   cricket:    { mean: 245, swing: 48, noise: 38 },
+
+  // Competitions are contested on surfaces no league in this game uses, and
+  // every one of them was falling back to the football model. A tennis final
+  // that finished 2-2 is not a close match, it is a bug with a scoreline: some
+  // of these sports cannot be drawn at all, and the ones scored in sets do not
+  // reach two figures.
+  tennis:     { mean: 2.1,  low: true, noDraw: true },
+  volleyball: { mean: 2.1,  low: true, noDraw: true },
+  beach:      { mean: 1.4,  low: true, noDraw: true },
+  esports:    { mean: 2.1,  low: true, noDraw: true },
+  combat:     { mean: 0.7,  low: true, noDraw: true },
+  handball:   { mean: 28,  swing: 6,  noise: 5 },
+  netball:    { mean: 52,  swing: 9,  noise: 7, noDraw: true },
+  athletics:  { mean: 46,  swing: 14, noise: 11, noDraw: true },
+  swimming:   { mean: 38,  swing: 12, noise: 9,  noDraw: true },
+  cycling:    { mean: 32,  swing: 10, noise: 8,  noDraw: true },
+  skate:      { mean: 86,  swing: 8,  noise: 6,  noDraw: true },
+  climbing:   { mean: 74,  swing: 10, noise: 8,  noDraw: true },
 };
 
 /** Knuth's method: the right shape for goals, where nil-nil is possible. */
@@ -147,14 +165,21 @@ export function playMatch(league, home, away, tag) {
   const spread = Math.max(-0.7, Math.min(0.7, h - a));
   const sc = SCORING[home.sport] || SCORING.football;
 
+  let hs, as;
   if (sc.low) {
     // Low-scoring: sample the goals themselves, so a 1-0 and a 4-3 both happen.
-    const hs = poisson(rng, sc.mean * (1 + spread * 0.9) + 0.25);
-    const as = poisson(rng, sc.mean * (1 - spread * 0.9));
-    return { homeScore: hs, awayScore: as };
+    hs = poisson(rng, sc.mean * (1 + spread * 0.9) + 0.25);
+    as = poisson(rng, sc.mean * (1 - spread * 0.9));
+  } else {
+    hs = Math.max(0, Math.round(sc.mean + spread * sc.swing + rng.range(-sc.noise, sc.noise)));
+    as = Math.max(0, Math.round(sc.mean - spread * sc.swing + rng.range(-sc.noise, sc.noise)));
   }
-  const hs = Math.max(0, Math.round(sc.mean + spread * sc.swing + rng.range(-sc.noise, sc.noise)));
-  const as = Math.max(0, Math.round(sc.mean - spread * sc.swing + rng.range(-sc.noise, sc.noise)));
+  // Some sports play on until somebody wins. Nudging the stronger side is
+  // wrong - a decider is the one moment form matters least - so it goes to
+  // whoever the deciding point falls to.
+  if (hs === as && sc.noDraw) {
+    if (rng.chance(0.5 + spread * 0.25)) hs++; else as++;
+  }
   return { homeScore: hs, awayScore: as };
 }
 

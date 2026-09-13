@@ -134,6 +134,30 @@ export function playToTheEnd(opts = {}) {
     }
   }
 
+  // ------------------------------------------------------- hosting rights
+  // "The Ground They Name" wants three named competitions staged here, one of
+  // them world tier. Unlike everything above it, a competition cannot be
+  // pushed onto the board: rights are awarded on the calendar, so the only way
+  // to take one is to be ready in the year it comes round and wait for it.
+  let taken = 0;
+  for (let d = 0; d < (opts.hostingDays ?? 2600); d++) {
+    const st = endgameProgress(game.state);
+    if (st.complete === st.total) break;
+    game.state.cash = Math.max(game.state.cash, 8e8);
+
+    for (const offer of game.competitionOffers()) {
+      const v = game.bestVenueForCompetition(offer);
+      if (!v) continue;
+      const bid = { amount: offer.bidRange[1], venueKey: v.key, packages: [], terms: [], pricing: 'standard' };
+      const r = game.bidForCompetition(offer.uid, bid);
+      if (r?.hosting) taken++;
+    }
+    game.skipDay(1);
+    if ((game.state.hosting?.history || []).length >= 3
+      && endgameProgress(game.state).goals.find((g) => g.id === 'host_nation')?.complete) break;
+  }
+  log(`hosting: ${taken} rights won, ${(game.state.hosting?.history || []).length} staged`);
+
   // --------------------------------------------------------------- a tenant
   // "A Home, Not A Venue" wants a top-division club living here and winning
   // the title under this roof. Everything else on the list can be bought or

@@ -5,7 +5,12 @@ import { createState, attachDerived, applyReputation, landInfo, activeSite, util
 import { CITIES, city as cityDef, climateEffects } from '../data/cities.js';
 import { SECONDS_PER_DAY, DAYS_PER_MONTH, LAND_TIERS, GROUND_Y } from './constants.js';
 import { detectVenues, rescoreVenues } from '../venues/venueDetection.js';
-import { generateEvent, boardCapacity, resetEventIds } from '../events/eventGenerator.js';
+import { generateEvent, boardCapacity, resetEventIds, hostableSports } from '../events/eventGenerator.js';
+import {
+  createHostingState, competitionOffers, awardHosting, hostingsDue, resolvePairing,
+  recordMatch, completeHosting, standingLine, championOf, honours as honoursBoard,
+} from './hosting.js';
+import { COMPETITION_BY_ID } from '../data/competitions.js';
 import { evaluateBid, resolveBid, PRICING_TIERS } from '../events/bidding.js';
 import { Negotiation, ROUNDS_BY_TIER } from '../events/negotiation.js';
 import { simulateEvent } from '../events/eventSimulation.js';
@@ -23,7 +28,8 @@ import {
   opponentFor, playMatch, recordResult, rolloverSeason, clubOf, leagueClubs,
   SEASON_DAYS, DIVISIONS, LEAGUE_SPORTS,
 } from './league.js';
-import { fixtureEvent } from '../events/fixtures.js';
+import { fixtureEvent, competitionFixture } from '../events/fixtures.js';
+import { side as nationSide } from '../data/nations.js';
 import {
   createScenarioState, scenarioProgress, tickScenario, SCENARIO_BY_ID,
 } from './scenario.js';
@@ -382,6 +388,7 @@ export class Game {
     this.hostDueEvents();
     this.tickRivals();
     this.tickLeague();
+    this.tickHosting();
     this.tickScenario();
     this.maybeRandomEvent();
 
@@ -574,6 +581,226 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- events
+  /**
+   * Hosting rights currently open to bid for. They are generated fresh from
+   * the calendar rather than stored, so a save never carries a stale offer and
+   * the same year always offers the same competitions.
+   */
+  competitionOffers() {
+    const s = this.state;
+    if (!s.hosting) s.hosting = createHostingState();
+    return competitionOffers(s, hostableSports(s));
+  }
+
+  /** Everything currently on this complex's calendar as a staged competition. */
+  hostings() {
+    const s = this.state;
+    if (!s.hosting) s.hosting = createHostingState();
+    return s.hosting.active.map((h) => ({
+      ...h,
+      comp: COMPETITION_BY_ID.get(h.compId),
+      standing: standingLine(h),
+      remaining: h.matches.filter((m) => !m.played).length,
+      next: h.matches.find((m) => !m.played) || null,
+    }));
+  }
+
+  honours() {
+    const s = this.state;
+    if (!s.hosting) s.hosting = createHostingState();
+    return {
+      groups: honoursBoard(s),
+      history: s.hosting.history,
+      records: s.hosting.records,
+    };
+  }
+
+  /**
+   * The best registered venue to stage a given competition at: the one with
+   * the right surface and the most room. A ceremony is staged in an athletics
+   * stadium, which is the one case where sport and surface differ.
+   */
+  bestVenueForCompetition(offer) {
+    const want = offer.sport === 'ceremony' ? 'athletics' : offer.sport;
+    return this.allVenues()
+      .filter((v) => v.registered && v.sport === want)
+      .sort((a, b) => b.capacity.total - a.capacity.total)[0] || null;
+  }
+
+  /**
+   * What a hosting bid would look like, without placing it. Same evaluation
+   * the bid itself runs, so the number the player is shown is the number the
+   * decision is actually made on.
+   */
+  previewCompetitionBid(uid, bid) {
+    const offer = this.competitionOffers().find((o) => o.uid === uid);
+    if (!offer) return null;
+    const venue = this.findVenue(bid.venueKey);
+    if (!venue) return { offer, venue: null, check: null };
+    const evaluation = evaluateBid(offer, venue, this.state, bid);
+    return { offer, venue, evaluation, check: evaluation.check, clash: this.hostingClash(offer, venue) };
+  }
+
+  /**
+   * Bid for the rights to stage a competition. It runs through exactly the
+   * same evaluation as an event bid - requirements, rivals, organiser
+   * confidence - because from the player's side it is the same decision made
+   * about a bigger thing.
+   */
+  bidForCompetition(uid, bid) {
+    const s = this.state;
+    if (!s.hosting) s.hosting = createHostingState();
+    const offer = this.competitionOffers().find((o) => o.uid === uid);
+    if (!offer) return { error: 'Those rights are no longer open.' };
+    const venue = this.findVenue(bid.venueKey);
+    if (!venue) return { error: 'Select a registered venue first.' };
+    if (!venue.registered) return { error: 'That venue is not registered yet.' };
+    if (venue.sport !== offer.sport && !(offer.sport === 'ceremony' && venue.sport === 'athletics')) {
+      return { error: `${venue.name} does not have a surface for this.` };
+    }
+
+    const evaluation = evaluateBid(offer, venue, s, bid);
+    if (!evaluation.check.ok) return { error: 'Your venue does not meet the requirements yet.' };
+    if (bid.amount > s.cash) return { error: 'You cannot cover this bid.' };
+    // A schedule that would collide with one you already hold is a schedule
+    // you cannot staff, and the game should say so before taking the money.
+    const clash = this.hostingClash(offer, venue);
+    if (clash) return { error: clash };
+
+    s.stats.bidsPlaced++;
+    const outcome = resolveBid(offer, evaluation, bid);
+    if (!outcome.won) {
+      s.stats.bidsLost++;
+      s.hosting.declined.push(`${offer.compId}:${offer.year}`);
+      applyReputation(s, { organiser: -0.5 });
+      this.notify('bid', 'Rights lost', outcome.winner
+        ? `${outcome.winner.name} won the rights to the ${offer.name}.`
+        : `The ${offer.organiser} awarded the ${offer.name} elsewhere.`);
+      this.bus.emit('state');
+      return { ok: true, outcome, evaluation, ev: offer, venue };
+    }
+
+    const hosting = awardHosting(s, offer, venue, bid.amount);
+    if (!hosting) return { error: 'That competition has no field to contest it.' };
+    s.cash -= bid.amount;
+    this.record('eventCosts', -bid.amount);
+    s.stats.bidsWon++;
+    s.organiserHistory[offer.organiser] = (s.organiserHistory[offer.organiser] || 0) + 1;
+    s.hosting.active.push(hosting);
+    applyReputation(s, { organiser: 4, venue: 1.5 });
+    this.notify('club', 'Hosting rights won',
+      `${venue.name} will stage the ${offer.name}: ${hosting.matches.length} `
+      + `match${hosting.matches.length > 1 ? 'es' : ''} from day ${hosting.matches[0].day}.`);
+    this.checkAchievements();
+    this.bus.emit('hosting', hosting);
+    this.bus.emit('state');
+    return { ok: true, outcome, evaluation, ev: offer, venue, hosting };
+  }
+
+  /** Whether a schedule would land on top of one this venue already holds. */
+  hostingClash(offer, venue) {
+    const comp = COMPETITION_BY_ID.get(offer.compId);
+    if (!comp) return null;
+    const span = comp.matches * Math.max(1, comp.spacing || 1) * (comp.matchDays || 1);
+    const from = offer.eventDay, to = offer.eventDay + span;
+    for (const h of this.state.hosting.active) {
+      if (h.venueKey !== venue.key) continue;
+      const last = h.matches[h.matches.length - 1];
+      if (from <= last.day && to >= h.matches[0].day) {
+        return `${venue.name} is already staging the ${h.name} over those dates.`;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Run the calendar: play any competition match due today, keep the running
+   * scoreline, and close out a competition when its last match is done.
+   */
+  tickHosting() {
+    const s = this.state;
+    if (!s.hosting) s.hosting = createHostingState();
+    for (const { hosting, match } of hostingsDue(s, s.day)) {
+      this.hostCompetitionMatch(hosting, match);
+    }
+    for (const h of [...s.hosting.active]) {
+      if (h.matches.some((m) => !m.played)) continue;
+      const entry = completeHosting(s, h);
+      s.hosting.active = s.hosting.active.filter((x) => x.id !== h.id);
+      const comp = COMPETITION_BY_ID.get(h.compId);
+      applyReputation(s, { venue: comp ? comp.prestige / 4 : 4, organiser: 3, fans: 2 });
+      this.notify('club', `${h.name} complete`,
+        entry.shared
+          ? `${entry.scoreline}. ${(comp?.trophy || 'The trophy')} is shared. `
+            + `${entry.attendance.toLocaleString()} through the gates.`
+          : `${entry.champion} lifted ${comp?.trophy || 'the trophy'} at ${h.venueName}. `
+            + `${entry.attendance.toLocaleString()} through the gates.`);
+      this.checkAchievements();
+      this.bus.emit('hostingcomplete', entry);
+    }
+  }
+
+  /**
+   * One match of a staged competition. It is an event: the same crowd model,
+   * the same weather, the same wear, the same staff. What is different is that
+   * the result goes on a scoreline rather than into a league table.
+   */
+  hostCompetitionMatch(hosting, match) {
+    const s = this.state;
+    const comp = COMPETITION_BY_ID.get(hosting.compId);
+    const venue = this.findVenue(hosting.venueKey);
+    if (!comp || !venue) {
+      // The venue that won the rights no longer exists. The competition goes
+      // elsewhere, and the player is told rather than left wondering.
+      match.played = true;
+      match.forfeit = true;
+      this.notify('warn', `${hosting.name} moved`,
+        `${hosting.venueName} could not stage ${match.label}; the rights were withdrawn.`);
+      applyReputation(s, { organiser: -6, venue: -3 });
+      return;
+    }
+    resolvePairing(hosting, match);
+    const home = this.sideOf(hosting, match.homeId);
+    const away = this.sideOf(hosting, match.awayId);
+    const ev = competitionFixture(s, comp, hosting, match, home, away);
+    const contract = { amount: 0, venueKey: venue.key, packages: [], terms: [], pricing: 'standard' };
+    const report = simulateEvent(ev, venue, s, contract);
+    report.competition = { hostingId: hosting.id, label: match.label, name: hosting.name };
+    this.applyEventReport(ev, report);
+
+    hosting.totalRevenue += report.totalRevenue;
+    hosting.totalProfit += report.profit;
+
+    // A ceremony is staged, not won. Everything else is played out.
+    const m = hosting.contested === false
+      ? { homeScore: 0, awayScore: 0 }
+      : playMatch(s.league, home, away, `comp:${hosting.id}:${match.index}`);
+    recordMatch(hosting, match, m.homeScore, m.awayScore, report.attendance);
+    if (hosting.contested !== false) {
+      s.league.results.unshift({
+        day: s.day, sport: comp.sport, level: null,
+        home: home.name, away: away.name,
+        homeScore: m.homeScore, awayScore: m.awayScore,
+        ours: true, attendance: report.attendance,
+        competition: `${hosting.name} \u00B7 ${match.label}`,
+      });
+      if (s.league.results.length > 40) s.league.results.pop();
+    }
+    this.bus.emit('hostingmatch', { hosting, match, report });
+  }
+
+  /** A contesting side, whether it is a nation or one of the league's clubs. */
+  sideOf(hosting, id) {
+    const listed = hosting.sides.find((x) => x.id === id);
+    if (listed?.isClub) {
+      const c = clubOf(this.state.league, id);
+      if (c) return c;
+    }
+    const nation = nationSide(id, hosting.sport);
+    if (nation) return nation;
+    return { id, name: listed?.name || 'TBC', sport: hosting.sport, strength: 0.6, support: 0.6 };
+  }
+
   refreshBoard(initial = false) {
     const s = this.state;
     const cap = boardCapacity(s);

@@ -1,3 +1,4 @@
+import { COMPETITIONS } from './competitions.js';
 /**
  * Long-horizon objectives.
  *
@@ -6,6 +7,10 @@
  * a venue for every sport, a genuinely world-class rating, hosting the
  * ceremony everyone watches.
  */
+/** Competitions the game counts as the very top of the ladder. */
+const WORLD_COMPS = new Set(
+  COMPETITIONS.filter((c) => c.tier === 'world').map((c) => c.id));
+
 export const ENDGAME_GOALS = [
   {
     id: 'largest', name: 'The Largest Stadium', tier: 'build',
@@ -118,6 +123,21 @@ export const ENDGAME_GOALS = [
     detail: (s) => {
       const top = s.rivals.slice().sort((a, b) => b.reputation - a.reputation)[0];
       return top ? `you ${Math.round(s.reputation.venue)} · ${top.name} ${Math.round(top.reputation)}` : '-';
+    },
+  },
+  {
+    id: 'host_nation', name: 'The Ground They Name', tier: 'compete',
+    desc: 'Stage three named competitions, one of them a world-tier one.',
+    progress: (s) => {
+      const h = s.hosting?.history || [];
+      const world = h.some((x) => WORLD_COMPS.has(x.compId));
+      return Math.min(1, (Math.min(3, h.length) / 3) * 0.7 + (world ? 0.3 : 0));
+    },
+    detail: (s) => {
+      const h = s.hosting?.history || [];
+      const world = h.filter((x) => WORLD_COMPS.has(x.compId)).length;
+      if (!h.length) return 'nothing staged here yet';
+      return `${h.length} staged \u00b7 ${world ? `${world} at world tier` : 'none at world tier'}`;
     },
   },
 ];

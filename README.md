@@ -25,7 +25,8 @@ npm run test:balance  # plays whole seasons headlessly and checks the economy
 npm run sim           # a playthrough with charts (--days 720 --seeds 5)
 npm run sim:sports    # builds every sport and puts it to its own events
 npm run sim:land      # what each plot size is actually worth
-npm run sim:end       # plays a game to all fourteen long-term goals
+npm run sim:end       # plays a game to all fifteen long-term goals
+npm run sim:hosting   # bids for and stages every named competition
 npm run e2e        # Playwright: drives the real UI (needs `npm run preview` running)
 ```
 
@@ -204,6 +205,62 @@ real money. Champions bring prize money to their landlord.
 All of it lives in the save, never on the shared club table — a promotion in one
 game must not leak into another, which is exactly what a second tab is.
 
+## Hosting rights
+
+The event board is a market in single afternoons. A tenancy is one club, every
+other weekend, for years. The third thing is what grounds are actually famous
+for: the right to stage a **named competition in a named year**. The game runs
+on a calendar — it starts in 2026 — so what you win is not "the Grand Final", it
+is the 2028 Grand Final, and a board in the concourse says so forever.
+
+Eighteen competitions, in three shapes:
+
+- **Showpieces.** One afternoon, one trophy. The Premiership Grand Final, the
+  Nations Cup Final, an undisputed title night, and — every fourth year — the
+  Continental Games Opening Ceremony, which nobody wins.
+- **Series.** The same two sides, repeatedly, with a running scoreline and a
+  trophy at the end. Five Tests for the Meridian Urn across a summer, four
+  Saturdays of Autumn Tests, a best-of-five finals series on neutral boards.
+- **Tournaments.** A field that plays down to a final: group matches, semis,
+  and a final that actually decides who lifts it. The Continental Cup over
+  eight matches, the World Athletics Championships over seven evenings, the
+  Court Masters over seven days.
+
+Why it is a different decision from bidding for an event:
+
+- **You pay for the rights, up front**, rather than being paid a fee to turn
+  up. The money comes back over weeks, through the gate, and only if you can
+  fill the place match after match.
+- **It occupies the calendar.** A five-Test series is fifty days of the ground
+  being unavailable, and the pitch wears through every one of them. You cannot
+  take two competitions that overlap; the game refuses before it takes the
+  money rather than after.
+- **It cannot be repeated at will.** Each competition comes round on its own
+  cycle — annual, every two years, every four — so missing the year you were
+  ready for it costs you the year. Rights are awarded about five months ahead,
+  which means the first staging you can bid for is the first one whose window
+  has not already closed.
+
+Every match runs through the same event simulation as everything else: the same
+crowd model, the same weather, the same staff, the same wear. Four Tests are
+four real event days, not one lump sum. A tournament's closing matches are not
+drawn in advance — the semi-finals and the final are filled in from who has
+actually won, so the trophy goes to somebody who won their way to it.
+
+Competitions between nations are contested by twelve fictional representative
+sides, each better at some sports than others. Competitions between clubs are
+contested by the league's own — which means the Grand Final staged at your
+ground can be contested by the club that already plays there.
+
+What it leaves behind is the point. Every completed staging goes on an
+**honours board** with its year, its champion, its scoreline and its crowd, and
+the **records** it set — largest crowd, largest aggregate, most profitable
+staging — stay there after the stand that set them is gone.
+
+`npm run sim:hosting` builds a venue for every competition in the catalogue,
+bids for the rights, and runs the whole schedule to the trophy. It is how the
+drawn tennis final below was found.
+
 ## Scale
 
 **1 block = 2 metres.** A regulation football pitch is 53 × 34 blocks, which is
@@ -377,6 +434,8 @@ Running it found ten things that were wrong, all of which are now fixed:
 | Five sports had venues but no events | Rugby, cricket, swimming, ice and soccer shipped zones, blocks, equipment and venue types with nothing ever scheduled on them. You could build a cricket ground, register it, and discover the dead end only after paying for it. Every sport now has a local → regional → national ladder, and soccer is a second name for football rather than a separate sport with nowhere to go. |
 | A venue's "reach" was measured from the playing surface alone | A basketball floor is 30m across; a 16,000-seat arena around it is 120m across. Its own concourses, media centre and restrooms fell outside the venue and counted for nothing, so small-floor sports could never pass a national requirement. Reach now follows the stands. |
 | Requirements could read "have 50%, need 50%" and still fail | The comparison used raw values and the display rounded them. It now compares at the precision the player is shown. |
+| Every competition sport fell back to the football scoring model | A Court Masters tennis final finished 2-2 and the trophy was recorded as shared. Tennis, swimming, athletics, cycling, esports, netball and the rest had no scoring model of their own, so all of them were scored as low-scoring football, and the ones that cannot be drawn at all were being drawn. Each has its own model now, and a sport that plays on until somebody wins does. |
+| An opening ceremony was scored like a match | The Continental Games Opening Ceremony reported "Ardenne 1 - Ironhold 0". A ceremony is staged, not won; it is marked uncontested, quoted by its crowd, and recorded without a champion. |
 | The board buried the top of the ladder | Every tier at or below the player's counted the same, so a 222,000-seat ground with maximum reputation was shown the same flood of club nights as a starter plot. With two world-tier templates against sixty-odd others, it played on for 630 days without ever being offered the opening ceremony the endgame is named after. Tiers a complex has outgrown now thin out as they recede, exactly as tiers above it already did. |
 | The Mega Sports District goal could never complete | It read `state.landTier`, which moved onto sites when the game gained more than one city. Its progress had read NaN ever since. A test now sweeps every goal and every achievement for this. |
 
@@ -424,15 +483,16 @@ of the fast suite; `npm run test:all` runs both.
 
 ## The ending, played
 
-Fourteen long-term goals are the closest thing this game has to an ending:
+Fifteen long-term goals are the closest thing this game has to an ending:
 a 90,000-seat ground, a rating of 95, four venues on one plot, six sports,
 three cities, a million spectators, $250M banked, the World Championship, the
-Opening Ceremony, and a top-division club winning the title under your roof.
+Opening Ceremony, three named competitions staged, and a top-division club
+winning the title under your roof.
 They had never been played to. Each was known to *read* sanely — a test checks that — but nothing had ever driven one game to tick all
-fourteen, and a goal that cannot be finished is worse than no goal, because
+fifteen, and a goal that cannot be finished is worse than no goal, because
 the player spends real time on it.
 
-`npm run sim:end` does that now. It reaches 14/14, and getting there found two
+`npm run sim:end` does that now. It reaches 15/15, and getting there found two
 bugs. Neither threw an error. Both meant something the player
 had built counted for nothing, which is the worst kind: you pay for it, you
 can see it standing there, and the rating does not move.
@@ -519,7 +579,7 @@ are from software rendering and mean nothing; the call and triangle counts do.
 - **The two harnesses meet in the middle, not at the end.** `sim:end` proves
   every goal is *reachable*, granting the money to build; `sim:longrun` proves
   the economy *affords* a climb to the world tier by playing it. Nothing yet
-  plays one game, paying its own way, all the way to fourteen out of fourteen.
+  plays one game, paying its own way, all the way to fifteen out of fifteen.
   Both halves are demonstrated; the join is not.
 - **The non-football sports are proven, not tuned.** `npm run sim:sports`
   builds every one of the twenty to championship size and shows it winning

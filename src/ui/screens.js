@@ -1,4 +1,4 @@
-import { el, fill, section, ratingCell, meter, pill, toggleRow, sliderRow, choiceRow, issueRow, emptyState, animateNumber } from './dom.js';
+import { el, fill, section, ratingCell, meter, pill, toggleRow, sliderRow, choiceRow, issueRow, requirementRow, emptyState, animateNumber } from './dom.js';
 import { fmtMoney, fmtNum, monthlyFinance, LEDGER_CATEGORIES, takeLoan, loanCapacity, repayLoan, MAINTENANCE_RATE } from '../core/economy.js';
 import { TIER_LABEL } from '../venues/ratings.js';
 import { PROVIDES_LABEL } from '../data/props.js';
@@ -9,6 +9,8 @@ import { UTILITIES } from '../data/utilities.js';
 import { CITIES, city as cityDef } from '../data/cities.js';
 import { ENDGAME_GOALS, GOAL_GROUPS, endgameProgress } from '../data/endgame.js';
 import { seasonProgress, seasonDay, SEASON_DAYS, division } from '../core/league.js';
+import { COMPETITION_BY_ID } from '../data/competitions.js';
+import { gameYear } from '../core/constants.js';
 import { MOODS } from '../core/community.js';
 import { BLOCK_BY_KEY } from '../data/blocks.js';
 import { zone as zoneDef } from '../data/zones.js';
@@ -365,7 +367,7 @@ export class Screens {
 
   // ================================================================== MORE
   openMore(initial = 'Staff') {
-    const tabs = ['Empire', 'Clubs', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
+    const tabs = ['Empire', 'Clubs', 'Hosting', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
     let active = tabs.includes(initial) ? initial : 'Empire';
     const tabBar = el('div.tabs');
     const render = () => {
@@ -374,6 +376,7 @@ export class Screens {
       }, t)));
       const body = active === 'Empire' ? this.empireBody(render)
         : active === 'Clubs' ? this.clubsBody(render)
+        : active === 'Hosting' ? this.hostingBody(render)
         : active === 'Staff' ? this.staffBody(render)
         : active === 'Sponsors' ? this.sponsorsBody(render)
         : active === 'Research' ? this.researchBody(render)
@@ -872,6 +875,156 @@ export class Screens {
         ...results.map((r) => el('div.rowbetween', { style: { padding: '3px 0' } },
           el('span.small', { text: `${r.home} ${r.homeScore}-${r.awayScore} ${r.away}` }),
           el('span.tiny.faint', { text: r.ours ? `${r.attendance.toLocaleString()} in` : `day ${r.day}` }))))) : null);
+  }
+
+  // =============================================================== HOSTING
+  /**
+   * Hosting rights: what this complex is bidding to stage, what it is staging
+   * right now, and what it has already staged.
+   *
+   * The honours board is the point of the screen. Everything else in the game
+   * is a number that moves; this is the one place the complex has a history.
+   */
+  hostingBody(rerender) {
+    const g = this.app.game;
+    const s = this.state;
+    const offers = g.competitionOffers();
+    const active = g.hostings();
+    const { history, records } = g.honours();
+    const year = gameYear(s.day);
+
+    const staged = history.length;
+    const headline = el('div.card.accent', {},
+      el('div.tiny.faint', { text: 'THE HONOURS BOARD' }),
+      el('div.big.num', { text: String(staged) }),
+      el('div.small.faint', { style: { marginTop: '6px' },
+        text: staged
+          ? `${staged} competition${staged === 1 ? '' : 's'} staged here. `
+            + (active.length ? `${active.length} on the calendar now.` : 'Nothing on the calendar.')
+          : `It is ${year}. Nothing has been staged here yet — a competition is the one thing `
+            + 'a ground is remembered for after the crowd has gone home.' }));
+
+    // --------------------------------------------------------- on the calendar
+    const matchRow = (h, m) => el('div.rowbetween', { style: { padding: '3px 0', opacity: m.played ? '.65' : '1' } },
+      el('span.small', { text: `${m.label}${m.decided && h.contested !== false
+        ? ` · ${h.sides.find((x) => x.id === m.homeId)?.name || 'TBC'} v ${h.sides.find((x) => x.id === m.awayId)?.name || 'TBC'}`
+        : ''}` }),
+      el('span.tiny.mono' + (m.played ? '' : '.faint'), {
+        text: m.played
+          ? (h.contested === false ? `${(m.attendance || 0).toLocaleString()} in`
+            : `${m.homeScore}-${m.awayScore} · ${(m.attendance || 0).toLocaleString()} in`)
+          : `day ${m.day}` }));
+
+    const activeCard = (h) => el('div.card.tight.accent', {},
+      el('div.rowbetween', {},
+        el('div', {},
+          el('div.small', { text: h.name }),
+          el('div.tiny.faint', { text: `${h.venueName} · ${h.comp?.format || ''} · for ${h.trophy}` })),
+        pill(h.remaining ? `${h.remaining} to play` : 'Complete', h.remaining ? '' : 'ok')),
+      el('div.tiny', { style: { marginTop: '6px' }, text: h.standing }),
+      el('div.card.tight', { style: { marginTop: '8px' } }, ...h.matches.map((m) => matchRow(h, m))),
+      el('div.tiny.faint', { style: { marginTop: '6px' },
+        text: `Rights cost ${fmtMoney(h.rightsPaid)} · ${fmtNum(h.totalAttendance)} through the gates so far` }));
+
+    // ------------------------------------------------------------ open rights
+    const offerCard = (o) => {
+      const comp = COMPETITION_BY_ID.get(o.compId);
+      const venue = g.bestVenueForCompetition(o);
+      const bid = { amount: o.bidRange[1], venueKey: venue?.key, packages: [], terms: [], pricing: 'standard' };
+      const preview = venue ? g.previewCompetitionBid(o.uid, bid) : null;
+      const check = preview?.check;
+      const win = Math.round((preview?.evaluation?.winChance || 0) * 100);
+      const daysLeft = o.bidDeadline - s.day;
+
+      const body = el('div.card.tight', {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('div.small', { text: o.name }),
+            el('div.tiny.faint', { text: `${o.organiser} · ${o.matches} match${o.matches > 1 ? 'es' : ''} from day ${o.eventDay}` })),
+          pill(TIER_LABEL[o.tier] || o.tier, o.tier === 'world' ? 'gold' : '')),
+        el('div.tiny.faint', { style: { marginTop: '6px' }, text: o.blurb }),
+        el('div.tiny.faint', { style: { marginTop: '4px' },
+          text: `Rights ${fmtMoney(o.bidRange[0])}–${fmtMoney(o.bidRange[1])} · the competition pays `
+            + `${fmtMoney(o.matchFee)} across the schedule, and you keep every gate. `
+            + `Bidding closes in ${Math.max(0, daysLeft)} days.` }));
+
+      if (!venue) {
+        body.append(el('div.issue', { style: { marginTop: '8px' } },
+          el('span.ic', { text: '!' }),
+          el('span', { text: `No registered venue with a ${o.sport} surface.` })));
+        return body;
+      }
+
+      body.append(el('div.reqlist', { style: { marginTop: '8px' } },
+        ...(check?.lines || []).map(requirementRow)));
+
+      if (preview?.clash) {
+        body.append(el('div.issue', {}, el('span.ic', { text: '!' }), el('span', { text: preview.clash })));
+        return body;
+      }
+      if (!check?.ok) return body;
+
+      // Three offers, not a slider: the decision is how much of the upside to
+      // give away, and three named points make that clearer than a number.
+      const steps = [
+        { label: 'Minimum', amount: o.bidRange[0] },
+        { label: 'Competitive', amount: Math.round((o.bidRange[0] + o.bidRange[1]) / 2) },
+        { label: 'Everything', amount: o.bidRange[1] },
+      ];
+      body.append(el('div.tiny.faint', { style: { marginTop: '8px' },
+        text: `At ${fmtMoney(bid.amount)} you have roughly a ${win}% chance against the other bidders.` }));
+      body.append(el('div.btnrow', { style: { marginTop: '8px' } },
+        ...steps.map((st) => el('button.btn.sm' + (st.amount === o.bidRange[1] ? '.primary' : ''), {
+          disabled: st.amount > s.cash,
+          onclick: () => {
+            const r = g.bidForCompetition(o.uid, { ...bid, amount: st.amount });
+            if (r?.error) this.app.toast('warn', 'Cannot bid', r.error);
+            else if (r.hosting) {
+              this.app.toast('good', 'Rights won',
+                `${venue.name} will stage the ${o.name}.`);
+            } else this.app.toast('info', 'Rights lost', 'Somebody else is staging it.');
+            this.app.refresh(); rerender();
+          },
+        }, `${st.label} ${fmtMoney(st.amount)}`))));
+      return body;
+    };
+
+    // ------------------------------------------------------------- the board
+    const honourCard = (h) => el('div.card.tight' + (h.ceremonial ? '' : '.good'), {},
+      el('div.rowbetween', {},
+        el('div', {},
+          el('div.small', { text: h.name }),
+          el('div.tiny.faint', { text: `${h.venueName} · ${h.matches} match${h.matches > 1 ? 'es' : ''}` })),
+        el('span.small.mono', { text: fmtNum(h.attendance) })),
+      el('div.tiny', { style: { marginTop: '5px' },
+        text: h.ceremonial ? h.scoreline
+          : h.shared ? `${h.trophy} shared · ${h.scoreline}`
+          : `${h.champion} lifted ${h.trophy} · ${h.scoreline}` }),
+      el('div.tiny.faint', { style: { marginTop: '3px' },
+        text: `Best crowd ${fmtNum(h.bestCrowd)} · rights ${fmtMoney(h.rightsPaid)} · `
+          + `${h.profit >= 0 ? 'made' : 'lost'} ${fmtMoney(Math.abs(h.profit))} across the schedule` }));
+
+    const recordRows = Object.entries(records || {});
+
+    return el('div', {},
+      headline,
+      active.length
+        ? section('On the calendar', el('div.stack', {}, ...active.map(activeCard)))
+        : null,
+      section('Rights open for bidding', offers.length
+        ? el('div.stack', {}, ...offers.slice(0, 8).map(offerCard))
+        : emptyState('⚑', s.venues.registered.length
+          ? 'Nothing open right now. Rights are awarded about five months ahead, so they come round in their own time.'
+          : 'Register a venue and the governing bodies will start approaching you.')),
+      recordRows.length ? section('Records', el('div.card.tight', {},
+        ...recordRows.map(([k, r]) => el('div.rowbetween', { style: { padding: '3px 0' } },
+          el('div', {},
+            el('span.small', { text: r.label }),
+            el('div.tiny.faint', { text: `${r.detail} · ${r.year}` })),
+          el('span.small.mono', { text: k === 'takings' ? fmtMoney(r.value) : fmtNum(r.value) }))))) : null,
+      history.length
+        ? section('Staged here', el('div.stack', {}, ...history.slice(0, 12).map(honourCard)))
+        : null);
   }
 
   // ================================================================= GOALS

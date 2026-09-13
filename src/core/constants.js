@@ -33,6 +33,23 @@ export const PEOPLE_PER_CAR = 2.6;
 /** Simulation clock: real seconds per in-game day. */
 export const SECONDS_PER_DAY = 20;
 export const DAYS_PER_MONTH = 30;
+export const DAYS_PER_YEAR = 360;
+
+/**
+ * The calendar year a game starts in. A competition is not "the Grand Final",
+ * it is "the 2026 Grand Final" - the year is half of what makes hosting one
+ * memorable, and the honours board is unreadable without it.
+ */
+export const START_YEAR = 2026;
+
+export function gameYear(day) {
+  return START_YEAR + Math.floor(Math.max(0, day - 1) / DAYS_PER_YEAR);
+}
+
+/** Day within the calendar year, 1-based. */
+export function dayOfYear(day) {
+  return ((Math.max(1, day) - 1) % DAYS_PER_YEAR) + 1;
+}
 
 export const MAX_UNDO = 60;
 

@@ -15,7 +15,7 @@
  *   risk        chance-of-problems weighting
  */
 
-const req = {
+export const req = {
   cap: (n) => ({ key: 'capacity', min: n, label: `Capacity ${n.toLocaleString()}+` }),
   rating: (n) => ({ key: 'rating', min: n, label: `Venue rating ${n}+` }),
   rep: (n) => ({ key: 'reputation', min: n, label: `Venue reputation ${n}+` }),

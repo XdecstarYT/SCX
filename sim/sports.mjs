@@ -10,6 +10,7 @@
  */
 import { Game } from '../src/core/game.js';
 import { SPORT_ZONES, zoneId } from '../src/data/zones.js';
+import { COMPETITIONS } from '../src/data/competitions.js';
 import { blockId } from '../src/data/blocks.js';
 import { PROPS, propId, SPORT_EQUIPMENT } from '../src/data/props.js';
 import { EVENT_TEMPLATES } from '../src/data/events.js';
@@ -61,10 +62,17 @@ export function buildComplex(game, sz, opts = {}) {
   const G = GROUND_Y;
   const B = blockId, Z = zoneId;
 
-  // How many seats does this sport's biggest event actually want?
-  const biggest = EVENT_TEMPLATES
+  // How many seats does this sport's biggest occasion actually want? That is
+  // its biggest event *or* its biggest competition: a ground built only for
+  // the event ladder cannot stage the championship that uses the same pitch.
+  const capOf = (rows) => (rows.find((r) => r.key === 'capacity') || { min: 0 }).min;
+  const biggestEvent = EVENT_TEMPLATES
     .filter((t) => t.sport === sz.sport)
-    .reduce((m, t) => Math.max(m, (t.req.find((r) => r.key === 'capacity') || { min: 0 }).min), 0);
+    .reduce((m, t) => Math.max(m, capOf(t.req)), 0);
+  const biggestComp = COMPETITIONS
+    .filter((c) => c.sport === sz.sport)
+    .reduce((m, c) => Math.max(m, capOf(c.req)), 0);
+  const biggest = Math.max(biggestEvent, biggestComp);
   const targetSeats = opts.seats || Math.max(3_000, Math.round(biggest * 1.25));
 
   // Enough rings to hold that, and enough land to hold the rings plus the
