@@ -126,6 +126,29 @@ loaded.
    contract terms, ticket pricing — scored against rival venues. You will lose
    bids.
 
+   The board itself is **composed rather than listed**. A base fixture says
+   what sport it is and roughly how big; an **angle** says what *this* staging
+   of it is — a derby, a title decider, a testimonial, a washout being
+   replayed, a broadcaster wanting it at night, a sponsor's centenary, a
+   licensing inspection, a fixture nobody else would take at three days'
+   notice. Forty-four angles compose onto every base their gates allow, which
+   is 2,373 distinct events and at least sixty per sport. Before this, most
+   sports had exactly three, and the National Basketball Final was the same
+   offer in year nine as in year one.
+
+   Most angles read the save rather than a table, which is the half that makes
+   the board dynamic rather than merely large: title deciders only late in a
+   season, testimonials only with a resident club, centenaries only for a
+   ground with a history, heat protocols only in a heatwave, a return fixture
+   only from an organiser you have worked with twice, a venue change only when
+   a rival is close enough to have lost one. The unmarked case keeps the
+   heaviest single weight, because a board where every fixture is a derby is a
+   board where none of them is.
+
+   Composition happens before instantiation, so nothing downstream can tell a
+   composed event from an authored one — and the sweep that holds an authored
+   template to its rules holds all 2,373 to the same ones.
+
    Once a bid for a serious event is credible the organiser stops filling in
    forms and starts **negotiating**: extra days, exclusive hospitality, a
    ticket allocation, a relaid pitch, accredited screening on every gate. Each
@@ -312,9 +335,10 @@ is a new row in `src/data/`.
 
 - **Greedy meshing.** A flat 16×16 slab meshes to ≤ 6 quads, not 512. A built
   stadium renders in under 30 draw calls.
-- **Custom shader, not textures.** Flat architectural colour, a
-  hemisphere + sun lighting model, and a fine panel seam drawn once per metre
-  (faded out by `fwidth` at distance). It reads as a building rather than a
+- **Custom shader, not texture files.** Architectural colour from the block
+  table, a hemisphere + sun lighting model, a fine panel seam drawn once per
+  metre (faded out by `fwidth` at distance), and sixteen procedural surface
+  finishes derived from world position. It reads as a building rather than a
   stack of cubes, and there is not a single texture to download.
 - **Instanced crowds.** Up to 1,600 spectators and 420 cars in two draw calls,
   positions lerped along an arrival path.
@@ -512,9 +536,25 @@ is still there, and the last line says so.
 
 ## How it looks
 
-No textures and no image assets: every surface is flat architectural colour
-from the block table, lit at runtime. Four things do the work of making that
-read as a building rather than a stack of cubes.
+No image assets of any kind: every surface is architectural colour from the
+block table, lit and textured at runtime. Five things do the work of making
+that read as a building rather than a stack of cubes.
+
+- **Sixteen procedural surfaces.** A finish is not a colour, it is how the
+  surface is made: brick and stone laid in courses with every other row offset
+  half a unit, timber with the grain, rolled sheet metal with a rib profile,
+  asphalt and gravel as loose aggregate, sand with wind ripples, tensile fabric
+  woven, perforated sheet with its holes, water that moves, a running track
+  with its lane joints, laid planking, mown turf in bands. All derived from
+  where the surface *is* in the world rather than from UVs, which is what a
+  texture atlas could not do here: greedy meshing merges a brick wall into one
+  thirty-voxel quad, and a world-space pattern comes out as one continuous
+  bond across it instead of thirty tiled copies.
+
+  The finish id shares a vertex attribute with the playing-surface flag. The
+  flag sat at bit 8, which the ninth finish would have collided with — turf
+  plus the flag reading as a seat — so it moved to 64, and a test holds every
+  finish id below it.
 
 - **Corner occlusion.** Every face corner is darkened by how much is tucked
   around it, the standard three-neighbour voxel rule, computed in the mesher.
