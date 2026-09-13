@@ -453,6 +453,14 @@ const BLOCK_IDS = [
   'roof_metal', 'roof_glass', 'roof_stadium', 'roof_retract', 'team_a',
   'team_b', 'team_c', 'advert', 'screen', 'banner', 'flag', 'floodlight',
   'railing', 'bench', 'planter', 'timber', 'window', 'door', 'fence',
+  'granite', 'truss', 'rebar_conc', 'mesh', 'curtain', 'perforated',
+  'louvre', 'arch', 'carpet', 'crumb', 'sand_court', 'gravel', 'boards',
+  'skate_conc', 'gym_floor', 'ice_synth', 'cycle_lane', 'tram',
+  'crossing', 'dropoff', 'seat_rail', 'seat_pad', 'seat_press',
+  'seat_acc', 'roof_etfe', 'roof_fabric', 'roof_solar', 'roof_louvre',
+  'statue', 'fountain', 'clocktower', 'turnstile', 'kiosk', 'cctv',
+  'speaker', 'mural', 'pine', 'solar_panel', 'water_tank', 'generator',
+  'hvac', 'substation', 'recycling',
 ];
 
 const ZONE_IDS = [
@@ -460,12 +468,16 @@ const ZONE_IDS = [
   'pitch_afl', 'court_basketball', 'court_tennis', 'track_athletics',
   'pool_swimming', 'rink_ice', 'ring_combat', 'field_baseball',
   'arena_esports', 'stage_event', 'seating', 'seating_vip', 'luxury_box',
-  'seating_standing', 'concourse', 'stairs', 'entrance', 'exit', 'fanzone',
-  'restroom', 'concession', 'restaurant', 'retail', 'hospitality',
-  'locker', 'medical', 'media', 'broadcast', 'office', 'security',
-  'storage', 'staff', 'training', 'parking', 'parking_vip', 'parking_bus',
-  'road', 'road_main', 'road_service', 'road_vip', 'road_emergency',
-  'road_bus', 'parking_staff', 'parking_taxi', 'transit',
+  'seating_standing', 'concourse', 'stairs', 'entrance', 'exit',
+  'fanzone', 'restroom', 'concession', 'restaurant', 'retail',
+  'hospitality', 'locker', 'medical', 'media', 'broadcast', 'office',
+  'security', 'storage', 'staff', 'training', 'parking', 'parking_vip',
+  'parking_bus', 'road', 'road_main', 'road_service', 'road_vip',
+  'road_emergency', 'road_bus', 'parking_staff', 'parking_taxi',
+  'transit', 'court_volleyball', 'court_beach', 'court_netball',
+  'court_handball', 'track_cycling', 'park_skate', 'wall_climb',
+  'box_office', 'physio', 'gym_public', 'creche', 'press_room', 'tunnel',
+  'plant', 'waste', 'cycle_route', 'bike_park',
 ];
 
 const PROP_IDS = [
@@ -473,7 +485,9 @@ const PROP_IDS = [
   'hoop_basketball', 'net_volley', 'net_tennis', 'stumps_cricket',
   'sightscreen', 'starting_block', 'lane_rope', 'lane_marker',
   'hurdle_set', 'dugout', 'coach_box', 'scoreboard_sm', 'scoreboard_lg',
-  'bench_crowd', 'goal_practice',
+  'bench_crowd', 'goal_practice', 'post_netball', 'goal_handball',
+  'net_beach', 'holds_climb', 'ramp_skate', 'gate_start', 'timing_tower',
+  'podium', 'camera_platform', 'water_station', 'bike_rack',
 ];
 
 test('block, zone and prop ids never move, because saves are written in them', async () => {

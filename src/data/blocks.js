@@ -123,6 +123,71 @@ export const BLOCKS = [
   // safety are scored on. Cutting doors into a facade is a real decision.
   { key: 'door',       name: 'Doorway',          category: 'exterior', color: 0x6f4c30, cost: 240, maintenance: 2.2, solid: false, transparent: true, opacity: 0.9, support: 2, appearance: 2, autoZone: 'entrance' },
   { key: 'fence',      name: 'Perimeter Fence',  category: 'decor', color: 0x707880, cost: 46,  maintenance: 0.8, solid: true, support: 1, appearance: 1, safety: 1 },
+
+  // --------------------------------------------------------------------------
+  // The second materials pass. Still appended, still never reordered.
+  // --------------------------------------------------------------------------
+
+  // Structure
+  { key: 'granite',    name: 'Granite',          category: 'structure', color: 0x6f7278, cost: 145, maintenance: 0.7, solid: true, support: 14, appearance: 2 },
+  { key: 'truss',      name: 'Steel Truss',      category: 'structure', color: 0x6c7681, cost: 240, maintenance: 2.2, solid: true, support: 32, spans: 4 },
+  { key: 'rebar_conc', name: 'Precast Section',  category: 'structure', color: 0x878d94, cost: 180, maintenance: 1.1, solid: true, support: 18, unlock: 'precast' },
+  { key: 'mesh',       name: 'Steel Mesh',       category: 'structure', color: 0x9aa3ad, cost: 58,  maintenance: 1.0, solid: true, transparent: true, opacity: 0.45, support: 3, finish: 'gloss' },
+
+  // Exterior
+  { key: 'curtain',    name: 'Curtain Wall',     category: 'exterior', color: 0x8fc3dc, cost: 285, maintenance: 3.4, solid: true, transparent: true, opacity: 0.38, support: 3, appearance: 5, finish: 'gloss', unlock: 'adv_materials' },
+  { key: 'perforated', name: 'Perforated Panel', category: 'exterior', color: 0xa8b2bd, cost: 160, maintenance: 1.6, solid: true, support: 5, appearance: 4, finish: 'gloss' },
+  { key: 'louvre',     name: 'Louvre Screen',    category: 'exterior', color: 0xc2c9d1, cost: 175, maintenance: 1.8, solid: true, support: 4, appearance: 4 },
+  { key: 'arch',       name: 'Entrance Arch',    category: 'exterior', color: 0xe2e6ea, cost: 320, maintenance: 2.4, solid: true, support: 12, appearance: 7 },
+
+  // Surfaces
+  { key: 'carpet',     name: 'Carpet',           category: 'surface', color: 0x6d4550, cost: 64,  maintenance: 1.4, solid: true, support: 5, appearance: 2 },
+  { key: 'crumb',      name: 'Rubber Crumb',     category: 'surface', color: 0x3c4147, cost: 110, maintenance: 1.2, solid: true, support: 4, autoZone: 'training' },
+  { key: 'sand_court', name: 'Beach Court Sand', category: 'surface', color: 0xe0c48d, cost: 96,  maintenance: 1.8, solid: true, support: 3, autoZone: 'court_beach' },
+  { key: 'gravel',     name: 'Gravel',           category: 'surface', color: 0x8c8880, cost: 26,  maintenance: 0.4, solid: true, support: 6 },
+  { key: 'boards',     name: 'Velodrome Boards', category: 'surface', color: 0xc79a5c, cost: 230, maintenance: 2.6, solid: true, support: 5, autoZone: 'track_cycling', unlock: 'velodrome' },
+  { key: 'skate_conc', name: 'Skate Concrete',   category: 'surface', color: 0x9ea4a9, cost: 120, maintenance: 1.0, solid: true, support: 8, autoZone: 'park_skate' },
+  { key: 'gym_floor',  name: 'Sprung Floor',     category: 'surface', color: 0xd2a566, cost: 185, maintenance: 2.0, solid: true, support: 5, autoZone: 'court_volleyball' },
+  { key: 'ice_synth',  name: 'Synthetic Ice',    category: 'surface', color: 0xdfeef5, cost: 175, maintenance: 2.2, solid: true, support: 4, autoZone: 'rink_ice', finish: 'gloss', unlock: 'ice_tech' },
+
+  // Roads and access
+  { key: 'cycle_lane', name: 'Cycle Lane',       category: 'roads', color: 0x2f6a54, cost: 64,  maintenance: 0.7, solid: true, support: 7, autoZone: 'cycle_route', traffic: 0.4 },
+  { key: 'tram',       name: 'Tram Line',        category: 'roads', color: 0x4a4f58, cost: 240, maintenance: 2.4, solid: true, support: 7, autoZone: 'transit', traffic: 2.0, unlock: 'transport' },
+  { key: 'crossing',   name: 'Crossing',         category: 'roads', color: 0xdad5c2, cost: 72,  maintenance: 0.9, solid: true, support: 7, autoZone: 'road', traffic: 0.8, safety: 1 },
+  { key: 'dropoff',    name: 'Drop-off Bay',     category: 'roads', color: 0x585f68, cost: 86,  maintenance: 0.9, solid: true, support: 7, autoZone: 'parking_taxi', traffic: 1.0 },
+
+  // Seating
+  { key: 'seat_rail',  name: 'Rail Seating',     category: 'seating', color: 0x3f6f5e, cost: 360, maintenance: 4.0, solid: true, support: 5, autoZone: 'seating', safety: 2, finish: 'seat', unlock: 'rail_seating' },
+  { key: 'seat_pad',   name: 'Padded Seating',   category: 'seating', color: 0x59405f, cost: 430, maintenance: 5.0, solid: true, support: 5, autoZone: 'seating', appearance: 2, finish: 'seat' },
+  { key: 'seat_press', name: 'Press Seating',    category: 'seating', color: 0x4a5764, cost: 480, maintenance: 5.2, solid: true, support: 5, autoZone: 'media', finish: 'seat' },
+  { key: 'seat_acc',   name: 'Accessible Bay',   category: 'seating', color: 0x3a7ba0, cost: 520, maintenance: 4.4, solid: true, support: 5, autoZone: 'seating', safety: 2, appearance: 1, finish: 'seat' },
+
+  // Roofing
+  { key: 'roof_etfe',  name: 'ETFE Cushion',     category: 'roof', color: 0xe8f2f7, cost: 520, maintenance: 4.6, solid: true, transparent: true, opacity: 0.5, support: 3, spans: 16, appearance: 7, finish: 'gloss', unlock: 'etfe' },
+  { key: 'roof_fabric',name: 'Tensile Fabric',   category: 'roof', color: 0xf0eee6, cost: 340, maintenance: 3.8, solid: true, support: 2, spans: 12, appearance: 5, unlock: 'canopy' },
+  { key: 'roof_solar', name: 'Solar Roof',       category: 'roof', color: 0x1d2733, cost: 610, maintenance: 4.0, solid: true, support: 3, spans: 6, appearance: 3, power: -0.014, finish: 'gloss', unlock: 'solar' },
+  { key: 'roof_louvre',name: 'Louvred Roof',     category: 'roof', color: 0xb9c2cb, cost: 400, maintenance: 3.6, solid: true, support: 3, spans: 9, appearance: 5 },
+
+  // Decoration
+  { key: 'statue',     name: 'Statue',           category: 'decor', color: 0xb9a87c, cost: 1_400, maintenance: 3.0, solid: true, support: 3, appearance: 9 },
+  { key: 'fountain',   name: 'Fountain',         category: 'decor', color: 0x7fbcd6, cost: 900,  maintenance: 5.5, solid: true, support: 2, appearance: 7, finish: 'gloss' },
+  { key: 'clocktower', name: 'Clock Face',       category: 'decor', color: 0xf1ece0, cost: 1_100, maintenance: 3.2, solid: true, support: 4, appearance: 8 },
+  { key: 'turnstile',  name: 'Turnstile',        category: 'decor', color: 0x757d86, cost: 380,  maintenance: 2.6, solid: true, support: 3, autoZone: 'entrance', safety: 1, finish: 'gloss' },
+  { key: 'kiosk',      name: 'Ticket Kiosk',     category: 'decor', color: 0xc8a75a, cost: 520,  maintenance: 3.0, solid: true, support: 3, autoZone: 'box_office', revenue: 40, appearance: 2 },
+  { key: 'cctv',       name: 'Camera Mast',      category: 'decor', color: 0x6b737c, cost: 640,  maintenance: 4.0, solid: true, support: 3, power: 0.004, safety: 3 },
+  { key: 'speaker',    name: 'Speaker Stack',    category: 'decor', color: 0x23262b, cost: 700,  maintenance: 4.2, solid: true, support: 3, power: 0.006, appearance: 2 },
+  { key: 'mural',      name: 'Mural Panel',      category: 'decor', color: 0xd4634a, cost: 190,  maintenance: 1.4, solid: true, support: 3, appearance: 5 },
+  { key: 'pine',       name: 'Pine Tree',        category: 'terrain', color: 0x2b5a37, cost: 240,  maintenance: 3.4, solid: true, support: 1, appearance: 3 },
+
+  // Plant and service. These are the first blocks that pay their way on the
+  // utility networks rather than on the gate: a roof of solar panels genuinely
+  // reduces what the grid has to supply.
+  { key: 'solar_panel',name: 'Solar Array',      category: 'service', color: 0x16202c, cost: 480, maintenance: 2.4, solid: true, support: 3, power: -0.012, finish: 'gloss', unlock: 'solar' },
+  { key: 'water_tank', name: 'Water Tank',       category: 'service', color: 0x8d99a4, cost: 520, maintenance: 2.8, solid: true, support: 6, finish: 'gloss' },
+  { key: 'generator',  name: 'Standby Generator',category: 'service', color: 0x3d444c, cost: 860, maintenance: 6.0, solid: true, support: 5, power: -0.02, safety: 2, unlock: 'power_grid' },
+  { key: 'hvac',       name: 'Plant Unit',       category: 'service', color: 0x7c858e, cost: 640, maintenance: 5.0, solid: true, support: 4, power: 0.01 },
+  { key: 'substation', name: 'Substation',       category: 'service', color: 0x555c64, cost: 980, maintenance: 5.6, solid: true, support: 6, power: -0.03, unlock: 'power_grid' },
+  { key: 'recycling',  name: 'Recycling Point',  category: 'service', color: 0x3f7a52, cost: 220, maintenance: 1.6, solid: true, support: 3, autoZone: 'waste', appearance: 1 },
 ];
 
 // --------------------------------------------------------------------------
@@ -177,6 +242,7 @@ export const BLOCK_CATEGORIES = [
   { key: 'seating',   name: 'Seating' },
   { key: 'roof',      name: 'Roofing' },
   { key: 'decor',     name: 'Decor' },
+  { key: 'service',   name: 'Plant & Service' },
   { key: 'terrain',   name: 'Terrain' },
 ];
 

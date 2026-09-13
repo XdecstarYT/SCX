@@ -67,6 +67,31 @@ export const ZONES = [
   { key: 'parking_staff',  name: 'Staff Parking',    group: 'transport', color: 0x6a7280 },
   { key: 'parking_taxi',   name: 'Taxi / Rideshare', group: 'transport', color: 0xb09a4a },
   { key: 'transit',     name: 'Transit Stop',     group: 'transport', color: 0x3fbfa9 },
+
+  // --------------------------------------------------------------------------
+  // Appended, never reordered: a zone id is written into every saved world.
+  // --------------------------------------------------------------------------
+
+  // Five more sports, each with a surface, equipment, events and clubs.
+  { key: 'court_volleyball', name: 'Volleyball Court', group: 'sport', color: 0xe0a94f, sport: 'volleyball', regulation: { w: 9, d: 5, ideal: { w: 12, d: 7 } },  surfaces: ['gym_floor', 'hardwood', 'rubber'] },
+  { key: 'court_beach',      name: 'Beach Court',      group: 'sport', color: 0xe6c98f, sport: 'beach',      regulation: { w: 8, d: 5, ideal: { w: 11, d: 7 } },  surfaces: ['sand_court', 'sand'] },
+  { key: 'court_netball',    name: 'Netball Court',    group: 'sport', color: 0x63b6d8, sport: 'netball',    regulation: { w: 16, d: 8, ideal: { w: 18, d: 10 } }, surfaces: ['gym_floor', 'hardwood', 'rubber'] },
+  { key: 'court_handball',   name: 'Handball Court',   group: 'sport', color: 0x5f8fd0, sport: 'handball',   regulation: { w: 20, d: 10, ideal: { w: 22, d: 12 } }, surfaces: ['gym_floor', 'hardwood', 'rubber'] },
+  { key: 'track_cycling',    name: 'Velodrome Track',  group: 'sport', color: 0xd08a4a, sport: 'cycling',    regulation: { w: 38, d: 24, ideal: { w: 46, d: 30 } }, surfaces: ['boards'], oval: true },
+  { key: 'park_skate',       name: 'Skate Park',       group: 'sport', color: 0x9aa3ad, sport: 'skate',      regulation: { w: 14, d: 10, ideal: { w: 20, d: 14 } }, surfaces: ['skate_conc', 'floor_conc'] },
+  { key: 'wall_climb',       name: 'Climbing Wall',    group: 'sport', color: 0xc2703f, sport: 'climbing',   regulation: { w: 8, d: 5, ideal: { w: 12, d: 8 } },   surfaces: ['rubber', 'crumb', 'floor_conc'] },
+
+  // Places a complex has that nobody sells a ticket for.
+  { key: 'box_office',  name: 'Box Office',       group: 'facility', color: 0xd8b45a },
+  { key: 'physio',      name: 'Physio Suite',     group: 'facility', color: 0x4fc0a0 },
+  { key: 'gym_public',  name: 'Public Gym',       group: 'facility', color: 0x7fc45f, revenue: true },
+  { key: 'creche',      name: 'Creche',           group: 'facility', color: 0xe8a0c0 },
+  { key: 'press_room',  name: 'Press Room',       group: 'facility', color: 0x8f9fb0 },
+  { key: 'tunnel',      name: "Players' Tunnel",  group: 'facility', color: 0x6a7482 },
+  { key: 'plant',       name: 'Plant Room',       group: 'facility', color: 0x5c646d },
+  { key: 'waste',       name: 'Waste & Recycling',group: 'facility', color: 0x4a7a55 },
+  { key: 'cycle_route', name: 'Cycle Route',      group: 'transport', color: 0x3f9a6a, traffic: 0.4 },
+  { key: 'bike_park',   name: 'Bike Parking',     group: 'transport', color: 0x58a878 },
 ];
 
 export const ZONE_NONE = 0;

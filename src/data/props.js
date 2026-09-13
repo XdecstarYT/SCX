@@ -304,6 +304,134 @@ export const PROPS = [
       [0, 0.4, 0.6, 7.2, 0.8, 0.3, TURFDARK],
     ],
   },
+  // --------------------------------------------------------------------------
+  // Appended. A prop id is written into every saved world, so nothing above
+  // this line ever moves.
+  // --------------------------------------------------------------------------
+  {
+    key: 'post_netball', name: 'Netball Post', sport: 'netball', group: 'indoor',
+    foot: { w: 1, d: 1 }, provides: 'hoop', needs: ['court_netball'], pairs: 2,
+    cost: 2_600, maintenance: 1.4, appearance: 1,
+    hint: 'A ring on a pole at each end. No backboard - that is the difference.',
+    parts: [
+      [0, 1.6, 0, 0.12, 3.2, 0.12, STEEL],
+      [0, 3.05, 0.2, 0.38, 0.06, 0.38, RIM],
+      [0, 2.85, 0.2, 0.34, 0.4, 0.34, NET],
+    ],
+  },
+  {
+    key: 'goal_handball', name: 'Handball Goal', sport: 'handball', group: 'indoor',
+    foot: { w: 3, d: 1 }, provides: 'goal', needs: ['court_handball'], pairs: 2,
+    cost: 3_100, maintenance: 1.6,
+    hint: 'Three metres by two, padded posts, at each end of the court.',
+    parts: [
+      [-1.5, 1.0, 0, 0.1, 2.0, 0.1, WHITE],
+      [1.5, 1.0, 0, 0.1, 2.0, 0.1, WHITE],
+      [0, 2.0, 0, 3.1, 0.1, 0.1, WHITE],
+      [0, 1.0, -0.5, 3.0, 2.0, 0.05, NET],
+    ],
+  },
+  {
+    key: 'net_beach', name: 'Beach Net', sport: 'beach', group: 'outdoor',
+    foot: { w: 5, d: 1 }, provides: 'net', needs: ['court_beach'], pairs: 1,
+    cost: 1_900, maintenance: 1.2,
+    hint: 'Two poles and a net, over sand.',
+    parts: [
+      [-4.2, 1.3, 0, 0.12, 2.6, 0.12, WOOD],
+      [4.2, 1.3, 0, 0.12, 2.6, 0.12, WOOD],
+      [0, 2.0, 0, 8.4, 1.0, 0.05, NET],
+    ],
+  },
+  {
+    key: 'holds_climb', name: 'Climbing Holds', sport: 'climbing', group: 'indoor',
+    foot: { w: 2, d: 1 }, provides: 'holds', needs: ['wall_climb'], pairs: 4,
+    cost: 2_200, maintenance: 2.0, appearance: 2,
+    hint: 'A route up the wall. Four sets makes a competition face.',
+    parts: [
+      [0, 3.0, 0, 3.6, 6.0, 0.3, PAD],
+      [-0.8, 1.4, 0.28, 0.3, 0.22, 0.3, RIM],
+      [0.7, 2.6, 0.28, 0.28, 0.2, 0.28, 0x3f8fd0],
+      [-0.4, 3.9, 0.28, 0.26, 0.2, 0.26, 0x49c58a],
+      [0.6, 5.1, 0.28, 0.3, 0.22, 0.3, 0xe0a94f],
+    ],
+  },
+  {
+    key: 'ramp_skate', name: 'Quarter Pipe', sport: 'skate', group: 'outdoor',
+    foot: { w: 5, d: 3 }, provides: 'ramp', needs: ['park_skate'], pairs: 2,
+    cost: 3_400, maintenance: 2.2, appearance: 2,
+    hint: 'A transition to drop in on. A park needs at least a couple.',
+    parts: [
+      [0, 0.6, -1.0, 5.0, 1.2, 2.0, GLASSY],
+      [0, 1.4, -1.8, 5.0, 0.5, 0.5, STEEL],
+      [0, 0.08, 0.6, 5.0, 0.16, 1.6, PAD],
+    ],
+  },
+  {
+    key: 'gate_start', name: 'Start Gate', sport: 'cycling', group: 'outdoor',
+    foot: { w: 3, d: 1 }, provides: 'startgate', needs: ['track_cycling'], pairs: 1,
+    cost: 5_600, maintenance: 2.6, power: 0.002,
+    hint: 'Holds the riders and releases them together.',
+    parts: [
+      [-1.4, 0.9, 0, 0.14, 1.8, 0.14, STEEL],
+      [1.4, 0.9, 0, 0.14, 1.8, 0.14, STEEL],
+      [0, 1.75, 0, 3.0, 0.14, 0.5, 0xd04a4a],
+      [0, 0.5, 0.3, 2.8, 0.9, 0.08, NET],
+    ],
+  },
+  {
+    key: 'timing_tower', name: 'Timing Tower', sport: 'cycling', group: 'outdoor',
+    foot: { w: 3, d: 3 }, provides: 'timing', pairs: 1,
+    cost: 8_800, maintenance: 4.0, power: 0.006, appearance: 3,
+    hint: 'Officials, clocks and the photo finish. Any timed sport wants one.',
+    parts: [
+      [0, 2.2, 0, 2.6, 4.4, 2.6, WHITE],
+      [0, 4.6, 0, 3.2, 0.3, 3.2, PAD],
+      [0, 3.4, 1.35, 2.2, 1.2, 0.1, GLASSY],
+    ],
+  },
+  {
+    key: 'podium', name: 'Medal Podium', sport: null, group: 'outdoor',
+    foot: { w: 3, d: 2 }, provides: 'podium', pairs: 1,
+    cost: 1_600, maintenance: 1.0, appearance: 4,
+    hint: 'Somewhere to stand at the end. Every ceremony wants one.',
+    parts: [
+      [0, 0.45, 0, 1.1, 0.9, 1.1, WHITE],
+      [-1.2, 0.3, 0, 1.1, 0.6, 1.1, 0xd8d2c0],
+      [1.2, 0.22, 0, 1.1, 0.44, 1.1, 0xc79a5c],
+    ],
+  },
+  {
+    key: 'camera_platform', name: 'Camera Platform', sport: null, group: 'outdoor',
+    foot: { w: 2, d: 2 }, provides: 'camera', pairs: 2,
+    cost: 4_200, maintenance: 2.4, power: 0.003, appearance: 1,
+    hint: 'Broadcast needs somewhere to put the cameras.',
+    parts: [
+      [0, 1.6, 0, 0.2, 3.2, 0.2, STEEL],
+      [0, 3.3, 0, 1.8, 0.2, 1.8, PAD],
+      [0, 3.8, 0, 0.5, 0.7, 0.9, 0x23262b],
+    ],
+  },
+  {
+    key: 'water_station', name: 'Water Station', sport: null, group: 'outdoor',
+    foot: { w: 1, d: 1 }, provides: 'water', pairs: 2,
+    cost: 620, maintenance: 1.4, appearance: 1,
+    hint: 'Somewhere for a crowd to fill a bottle.',
+    parts: [
+      [0, 0.5, 0, 0.7, 1.0, 0.5, STEEL],
+      [0, 1.05, 0, 0.8, 0.12, 0.6, GLASSY],
+    ],
+  },
+  {
+    key: 'bike_rack', name: 'Bike Rack', sport: null, group: 'outdoor',
+    foot: { w: 3, d: 1 }, provides: 'bikerack', pairs: 2,
+    cost: 480, maintenance: 0.8, appearance: 1,
+    hint: 'A crowd that cycles in is a crowd that does not park.',
+    parts: [
+      [-1.0, 0.45, 0, 0.08, 0.9, 0.7, STEEL],
+      [0, 0.45, 0, 0.08, 0.9, 0.7, STEEL],
+      [1.0, 0.45, 0, 0.08, 0.9, 0.7, STEEL],
+    ],
+  },
 ];
 
 // --------------------------------------------------------------------------
@@ -363,6 +491,7 @@ export const PROP_GROUPS = [
   { key: 'bat', name: 'Cricket' },
   { key: 'aquatic', name: 'Pool & Track' },
   { key: 'matchday', name: 'Match Day' },
+
 ];
 
 export function propsInGroup(g) {
@@ -391,6 +520,13 @@ export const SPORT_EQUIPMENT = {
   combat:     [{ provides: 'bench', need: 2 }],
   esports:    [{ provides: 'scoreboard', need: 1 }],
   concert:    [{ provides: 'scoreboard', need: 1 }],
+  volleyball: [{ provides: 'net', need: 1 }, { provides: 'bench', need: 2 }],
+  beach:      [{ provides: 'net', need: 1 }],
+  netball:    [{ provides: 'hoop', need: 2 }, { provides: 'bench', need: 2 }],
+  handball:   [{ provides: 'goal', need: 2 }, { provides: 'bench', need: 2 }],
+  cycling:    [{ provides: 'startgate', need: 1 }, { provides: 'timing', need: 1 }],
+  skate:      [{ provides: 'ramp', need: 2 }],
+  climbing:   [{ provides: 'holds', need: 4 }],
 };
 
 /** Every sport benefits from a scoreboard, so it is listed once here. */
@@ -402,5 +538,7 @@ export const PROVIDES_LABEL = {
   bench: 'player benches', coachbox: 'coaches boxes', scoreboard: 'a scoreboard',
   startblock: 'starting blocks', lanerope: 'lane ropes',
   lanemark: 'track lane markings', hurdles: 'hurdles', practice: 'practice nets',
-  seatbench: 'spectator benches',
+  seatbench: 'spectator benches', holds: 'climbing routes', ramp: 'ramps',
+  startgate: 'a start gate', timing: 'a timing tower', podium: 'a medal podium',
+  camera: 'camera platforms', water: 'water stations', bikerack: 'bike racks',
 };

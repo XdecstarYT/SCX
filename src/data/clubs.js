@@ -66,6 +66,26 @@ export const CLUBS = [
   { id: 'bs_pioneers',   name: 'Meridian Pioneers',    sport: 'baseball', level: 0, strength: 0.75, support: 0.66, colour: 0xc23a3a },
   { id: 'bs_dockers',    name: 'Dockyard Nine',        sport: 'baseball', level: 0, strength: 0.64, support: 0.55, colour: 0x2f7fb5 },
   { id: 'bs_prairie',    name: 'Prairie Jacks',        sport: 'baseball', level: 1, strength: 0.48, support: 0.4,  colour: 0xb08a5e },
+
+  // ------------------------------------------------------------- volleyball
+  { id: 'vb_summit',     name: 'Summit Spikers',       sport: 'volleyball', level: 0, strength: 0.74, support: 0.52, colour: 0xe0a94f },
+  { id: 'vb_tidal',      name: 'Tidal VC',             sport: 'volleyball', level: 0, strength: 0.65, support: 0.45, colour: 0x2f8f9f },
+  { id: 'vb_lantern',    name: 'Lantern Court',        sport: 'volleyball', level: 1, strength: 0.5,  support: 0.34, colour: 0x7b4fd0 },
+
+  // ---------------------------------------------------------------- netball
+  { id: 'nb_comets',     name: 'Coastal Comets',       sport: 'netball', level: 0, strength: 0.76, support: 0.6,  colour: 0x63b6d8 },
+  { id: 'nb_thistle',    name: 'Thistle Netball',      sport: 'netball', level: 0, strength: 0.66, support: 0.51, colour: 0x9a6bf0 },
+  { id: 'nb_kestrels',   name: 'Kestrel Netball',      sport: 'netball', level: 1, strength: 0.52, support: 0.4,  colour: 0xc23a3a },
+
+  // --------------------------------------------------------------- handball
+  { id: 'hb_foundry',    name: 'Foundry Handball',     sport: 'handball', level: 0, strength: 0.72, support: 0.48, colour: 0x5f8fd0 },
+  { id: 'hb_northgate',  name: 'Northgate HC',         sport: 'handball', level: 0, strength: 0.63, support: 0.41, colour: 0x4a5a7a },
+  { id: 'hb_marsh',      name: 'Marshfield',           sport: 'handball', level: 1, strength: 0.47, support: 0.31, colour: 0x3f7a45 },
+
+  // ---------------------------------------------------------------- cycling
+  { id: 'cy_meridian',   name: 'Meridian Track Team',  sport: 'cycling', level: 0, strength: 0.78, support: 0.5,  colour: 0xd08a4a },
+  { id: 'cy_velo',       name: 'Velo Nord',            sport: 'cycling', level: 0, strength: 0.68, support: 0.43, colour: 0x2b3038 },
+  { id: 'cy_ardenne',    name: 'Ardenne Wheelers',     sport: 'cycling', level: 1, strength: 0.53, support: 0.35, colour: 0x49a83f },
 ];
 
 export const CLUB_BY_ID = new Map(CLUBS.map((c) => [c.id, c]));
