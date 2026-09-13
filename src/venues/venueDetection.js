@@ -121,6 +121,7 @@ export function detectVenues(world, opts = {}) {
   complex.powerDeficit = Math.max(0, complex.powerDemand - powerCapacity);
   complex.utilityFactors = utilities || {};
   complex.pitchWear = pitchWear;
+  complex.programmeLift = opts.programmeLift || null;
 
   // Roads must actually reach the parking for it to be usable. Without any
   // road network some drivers still find their way in, so the floor is 0.3

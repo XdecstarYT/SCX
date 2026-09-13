@@ -15,6 +15,10 @@ import { COMPETITION_BY_ID } from '../data/competitions.js';
 import { evaluateBid, resolveBid, PRICING_TIERS } from '../events/bidding.js';
 import { Negotiation, ROUNDS_BY_TIER } from '../events/negotiation.js';
 import { autoMatchday, MatchdaySession } from './matchday.js';
+import {
+  createProgrammeState, available as programmesAvailable, activeProgrammes,
+  tickProgrammes, effectSummary, programmeSlots, PROGRAMME_BY_ID,
+} from './programmes.js';
 import { simulateEvent } from '../events/eventSimulation.js';
 import { bestVenueFor, checkRequirements } from '../events/eventRequirements.js';
 import { applyDailyFinance, monthlyFinance, LEDGER_CATEGORIES, takeLoan } from './economy.js';
@@ -391,6 +395,7 @@ export class Game {
     this.tickRivals();
     this.tickLeague();
     this.tickHosting();
+    this.tickProgrammes();
     this.tickScenario();
     this.maybeRandomEvent();
 
@@ -449,6 +454,9 @@ export class Game {
       powerCapacity: siteStatus.power.capacity,
       utilities: siteFactors,
       pitchWear: this.state.pitchWear || 0,
+      // Programmes that have finished are part of what the venue *is*, so the
+      // analyser sees them rather than having them added to its answer.
+      programmeLift: this.state.programmes?.effects || null,
     });
 
     // Where a venue is changes who turns up and how they get there.
@@ -995,6 +1003,80 @@ export class Game {
       (e) => e.eventDay > s.day || e.status === 'live');
   }
 
+  // ============================================================ PROGRAMMES
+  /**
+   * What the complex could start running, and what is stopping it.
+   *
+   * A programme is not an upgrade you buy. It takes weeks, costs money every
+   * one of them, occupies one of a handful of slots, and leaves something
+   * behind for good - so running the safety overhaul is a decision not to run
+   * the season-ticket drive, and that is the whole point of the system.
+   */
+  programmes() {
+    const s = this.state;
+    if (!s.programmes) s.programmes = createProgrammeState();
+    return {
+      available: programmesAvailable(s, this.primaryVenue),
+      active: activeProgrammes(s),
+      slots: programmeSlots(s),
+      used: s.programmes.active.length,
+      effects: effectSummary(s),
+      completed: s.programmes.completed,
+    };
+  }
+
+  startProgramme(id) {
+    const s = this.state;
+    if (!s.programmes) s.programmes = createProgrammeState();
+    const row = programmesAvailable(s, this.primaryVenue).find((r) => r.def.id === id);
+    if (!row) return { error: 'No such programme.' };
+    if (row.blocked) return { error: row.blocked };
+
+    s.cash -= row.def.cost;
+    this.record('eventCosts', -row.def.cost);
+    s.programmes.active.push({
+      id, startedDay: s.day, endsDay: s.day + row.def.days, paid: row.def.cost,
+    });
+    this.notify('research', `${row.def.name} under way`,
+      `${row.def.days} days, ${Math.round(row.def.upkeep).toLocaleString()} a day.`);
+    this.bus.emit('state');
+    return { ok: true, programme: row.def };
+  }
+
+  /** Stop one early. The money already spent is spent; nothing is left behind. */
+  cancelProgramme(id) {
+    const s = this.state;
+    const at = (s.programmes?.active || []).findIndex((a) => a.id === id);
+    if (at < 0) return { error: 'That is not running.' };
+    const def = PROGRAMME_BY_ID.get(id);
+    s.programmes.active.splice(at, 1);
+    this.notify('warn', `${def?.name || 'Programme'} stopped`,
+      'Nothing it had not already finished carries over.');
+    this.bus.emit('state');
+    return { ok: true };
+  }
+
+  /** A day of every running programme: the upkeep, and anything that finishes. */
+  tickProgrammes() {
+    const s = this.state;
+    if (!s.programmes) s.programmes = createProgrammeState();
+    const { finished, upkeep } = tickProgrammes(s);
+    if (upkeep > 0) {
+      s.cash -= upkeep;
+      this.record('maintenance', -upkeep, true);
+    }
+    for (const def of finished) {
+      this.notify('research', `${def.name} complete`, def.detail || def.desc);
+      this.bus.emit('programme', def);
+    }
+    if (finished.length) {
+      this.markWorldDirty();
+      this.analyze(true);
+      this.checkAchievements();
+    }
+    return finished;
+  }
+
   // ============================================================== MATCHDAY
   /**
    * Whether to stop the clock and hand this day to the player.
@@ -1434,7 +1516,7 @@ export class Game {
   /** Charge construction. Returns false when the player cannot afford it. */
   spendConstruction(amount, allowDebt = false) {
     const s = this.state;
-    const total = amount * s.buildCostMult;
+    const total = amount * s.buildCostMult * (s.programmes?.effects?.buildMult ?? 1);
     if (!allowDebt && total > s.cash) return false;
     s.cash -= total;
     s.stats.moneySpentBuilding += total;

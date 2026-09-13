@@ -1,6 +1,7 @@
 import { VoxelWorld, Chunk } from '../voxel/world.js';
 import { createLeagueState } from '../core/league.js';
 import { createHostingState } from '../core/hosting.js';
+import { createProgrammeState } from '../core/programmes.js';
 import { PropLayer } from '../voxel/props.js';
 import { SAVE_VERSION } from '../core/gameState.js';
 import { createHotbarState } from '../ui/hotbar.js';
@@ -196,6 +197,11 @@ export function migrate(save) {
   s.settings = s.settings || {};
   if (s.settings.liveMatchday === undefined) s.settings.liveMatchday = false;
   if (s.settings.matchdayFrom === undefined) s.settings.matchdayFrom = 2;
+  // Programmes postdate the first saves. An older complex has simply never
+  // run one; nothing it has already earned is affected.
+  if (!s.programmes || !Array.isArray(s.programmes.active)) s.programmes = createProgrammeState();
+  s.programmes.completed = s.programmes.completed || [];
+  s.programmes.effects = { ...createProgrammeState().effects, ...(s.programmes.effects || {}) };
   s.scenario = s.scenario || null;
   s.landLocked = !!s.landLocked;
   s.legacyShown = !!s.legacyShown;

@@ -228,6 +228,74 @@ real money. Champions bring prize money to their landlord.
 All of it lives in the save, never on the shared club table — a promotion in one
 game must not leak into another, which is exactly what a second tab is.
 
+## Matchday
+
+Every other system in this game operates between events. You build, you bid,
+you hire, you wait — and then the day the whole complex exists for resolved
+itself in one function call and handed back a number. The biggest moment in the
+game was the only one you could not touch.
+
+A matchday runs in six phases — build-up, gates, kick-off, interval, second
+half, egress — and each draws from a deck of 28 **calls**. Which calls come up
+is decided by what is actually true about the venue today: the risk table the
+simulation is about to roll from, the weather, how full it is, what tier it is,
+whether the away end is a problem. A ground whose plumbing is fine is never
+asked about a flooded restroom block.
+
+Every option is a trade, and the screen says so in numbers:
+
+| Call | Options |
+| --- | --- |
+| *The queue is not moving* | Open the reserve gates (+45% flow, $6K) · Relax the searches (+30% flow, and what a relaxed search invites) · Hold the line (−6 satisfaction) |
+| *The forecast has changed* | Close the roof (if you built one) · Cover what you can ($9K) · Say nothing and hope (45% washout) |
+| *The overtime sheet* | Approve all of it ($26K, guards three failures) · Approve half · Refuse it (saves $4K, invites chaos) |
+
+It **modifies** the existing simulation rather than replacing it. The day
+accumulates an `ops` object — guards, gate flow, spend, satisfaction, cost —
+and `simulateEvent` reads it, so a report from a played day is the same shape
+as one from a day nobody watched. Passing no ops produces the identical result
+it always did, and a test holds it there.
+
+Most days are not watched. The headless sims host hundreds of events, so the
+day always runs: you take the calls, or the relevant department head does, and
+**how well they choose is what the staff screen has been for all along.** A
+fully staffed operation under a good general manager takes a good call almost
+every time; a department with nobody in it muddles through. On a ground that
+struggles, the spread between the best calls and the worst is 41% of the
+attendance and twice the incidents.
+
+The risk list is the honest part: the failures it shows are the exact rows the
+simulation will roll, with their real odds and a bar showing how far your
+decisions have damped each one. A test compares the two lists.
+
+Off by default, and never for a league fixture or a competition match — a
+resident club plays every other weekend and nobody wants to take eight calls
+for it.
+
+## Programmes
+
+The other half of the same complaint. Event days were a number that arrived;
+the weeks between them were a clock you skipped.
+
+A **programme** is a piece of the job that running a stadium actually is. It
+takes weeks, costs money every one of them, occupies one of a handful of slots,
+and leaves something behind for good: a safety certificate review, a steward
+accreditation, a season-ticket drive, an energy retrofit, a full pitch relay, an
+academy partnership, a procurement review that nobody will thank you for.
+
+Twenty-six of them across six categories. The scarcity is the point — a new
+complex can hold one thing in its head, a large one with a general manager can
+hold four — so running the safety overhaul is a decision *not* to run the
+season-ticket drive, and a complex that tries everything finishes nothing.
+
+What they leave behind reaches the same places everything else does. A crowd
+flow study raises the rating the analyser computes; a steward accreditation
+makes the security department decide better on event day; gate modernisation
+multiplies the same gate throughput a matchday call does; an energy retrofit is
+a standing discount on the monthly statement. None of it is a separate
+bookkeeping system — the measures are lifted before the ratings are built out
+of them, so the rating and the thing it is a rating *of* never disagree.
+
 ## Hosting rights
 
 The event board is a market in single afternoons. A tenancy is one club, every
@@ -446,7 +514,7 @@ reinvests and expands using the same `Game` methods the UI calls, for hundreds
 of in-game days. It exists because "the economy feels about right" is not a
 claim anyone should ship.
 
-Running it found ten things that were wrong, all of which are now fixed:
+Running it found twelve things that were wrong, all of which are now fixed:
 
 | What it found | Why it mattered |
 | --- | --- |
@@ -460,6 +528,8 @@ Running it found ten things that were wrong, all of which are now fixed:
 | Requirements could read "have 50%, need 50%" and still fail | The comparison used raw values and the display rounded them. It now compares at the precision the player is shown. |
 | Every competition sport fell back to the football scoring model | A Court Masters tennis final finished 2-2 and the trophy was recorded as shared. Tennis, swimming, athletics, cycling, esports, netball and the rest had no scoring model of their own, so all of them were scored as low-scoring football, and the ones that cannot be drawn at all were being drawn. Each has its own model now, and a sport that plays on until somebody wins does. |
 | An opening ceremony was scored like a match | The Continental Games Opening Ceremony reported "Ardenne 1 - Ironhold 0". A ceremony is staged, not won; it is marked uncontested, quoted by its crowd, and recorded without a champion. |
+| Congestion was measured on the crowd that got in | A ground whose gates were so narrow they capped the crowd came out *less* congested than one that let everybody through — the queue round the block, which is the congestion, counted as an improvement. At the extreme the model could not represent the failure at all: two gates turning away 30,240 people carried a 0% chance of congestion, the same as sixty-four gates turning away nobody. It reads demand now, and the same test at two gates gives 80%. |
+| An unstaffed department did not muddle through, it sabotaged | The first version of the matchday auto-chooser took the best option or else picked uniformly from the rest, so refusing the overtime *and* inviting the chaos was as likely as the sensible second choice. A played game stopped reaching the top tier because its own operations kept undoing it. Choices are now weighted by how good they are, with competence as the temperature: incompetence is taking the second-best call, not the worst thing on the sheet. |
 | The board buried the top of the ladder | Every tier at or below the player's counted the same, so a 222,000-seat ground with maximum reputation was shown the same flood of club nights as a starter plot. With two world-tier templates against sixty-odd others, it played on for 630 days without ever being offered the opening ceremony the endgame is named after. Tiers a complex has outgrown now thin out as they recede, exactly as tiers above it already did. |
 | The Mega Sports District goal could never complete | It read `state.landTier`, which moved onto sites when the game gained more than one city. Its progress had read NaN ever since. A test now sweeps every goal and every achievement for this. |
 

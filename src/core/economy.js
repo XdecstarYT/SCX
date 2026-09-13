@@ -1,3 +1,7 @@
+import { PROGRAMMES } from '../data/programmes.js';
+
+/** Daily upkeep by programme id, so the statement can total what is running. */
+const PROGRAMME_COST = Object.fromEntries(PROGRAMMES.map((p) => [p.id, p.upkeep || 0]));
 import { DAYS_PER_MONTH } from './constants.js';
 
 /**
@@ -38,10 +42,21 @@ export function monthlyFinance(state, analysis) {
   const trainingVox = state.derived.trainingVoxels || 0;
   income.training = Math.round(trainingVox * 220 + state.staffBonus.sports * 40_000);
 
+  // Programmes that pay: season tickets, an academy, a community use deal. It
+  // is quoted per day because that is the unit a programme is priced in, and
+  // it belongs on the monthly statement like everything else.
+  const prog = state.programmes?.effects;
+  if (prog?.income) income.programmes = Math.round(prog.income * DAYS_PER_MONTH);
+
   // --- expense ------------------------------------------------------------
-  const financeCut = 1 - state.staffBonus.finance * 0.10;
+  // A finished procurement review or energy retrofit is a standing discount on
+  // everything the place costs to run.
+  const programmeCut = state.programmes?.effects?.costMult ?? 1;
+  const financeCut = (1 - state.staffBonus.finance * 0.10) * programmeCut;
   const maintFactor = (1 - state.staffBonus.operations * 0.14) * state.wearFactor;
   expense.maintenance = Math.round((complex ? complex.maintenance : 0) * MAINTENANCE_RATE * maintFactor * financeCut);
+  expense.programmes = Math.round((state.programmes?.active || [])
+    .reduce((n, a) => n + (PROGRAMME_COST[a.id] || 0), 0) * DAYS_PER_MONTH);
   expense.staff = Math.round(state.staff.reduce((s, h) => s + h.salary, 0) * state.salaryMult);
   expense.utilities = Math.round((
     (complex ? complex.powerDemand : 0) * 900 + 12_000 + (state.utilityUpkeep || 0)

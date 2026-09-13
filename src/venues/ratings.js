@@ -78,6 +78,17 @@ export function rateVenue(v, complex) {
   const gateSpread = clamp01(f.entranceGates / Math.max(2, Math.ceil(cap / 12000) + 1));
   const exitSpread = clamp01(f.exitGates / Math.max(2, Math.ceil(cap / 9000) + 1));
 
+  // A completed programme is a permanent improvement to the venue, so it lifts
+  // the measure before the ratings are built out of it rather than being
+  // stapled onto the total afterwards - otherwise the rating and the thing it
+  // is a rating *of* would disagree.
+  const lift = complex.programmeLift;
+  if (lift) {
+    for (const [k, v2] of Object.entries(lift.measure || {})) {
+      if (m[k] !== undefined) m[k] = clamp01(m[k] + v2);
+    }
+  }
+
   // --- composite ratings ---------------------------------------------------
   // Fitting a venue out with the right equipment is worth up to six points of
   // functionality on top of what the geometry already earned. It is added
@@ -215,7 +226,7 @@ export function rateVenue(v, complex) {
     issues.push({ key: 'structure', severity: 'error', text: `${v.structuralWarnings} roof sections lack adequate support. Add columns or beams beneath them.` });
   }
 
-  return {
+  const out = {
     functionality: Math.round(functionality),
     crowdFlow: Math.round(crowdFlow),
     accessibility: Math.round(accessibility),
@@ -228,6 +239,23 @@ export function rateVenue(v, complex) {
     issues,
     strengths,
   };
+  // Some programmes raise a rating directly rather than through a measure:
+  // a crowd flow study changes nothing you can point at and changes the way
+  // forty thousand people leave the building.
+  for (const [k, v2] of Object.entries(lift?.rating || {})) {
+    if (out[k] !== undefined && k !== 'measures') {
+      out[k] = Math.max(0, Math.min(100, Math.round(out[k] + v2)));
+    }
+  }
+  if (lift?.rating) {
+    // Recomputed with the same weights as above rather than a second set: two
+    // formulas for one number is how they drift apart.
+    out.overall = Math.max(0, Math.min(100, Math.round(
+      out.functionality * 0.24 + out.crowdFlow * 0.16 + out.safety * 0.16
+      + out.comfort * 0.15 + out.accessibility * 0.13
+      + out.appearance * 0.08 + out.prestige * 0.08)));
+  }
+  return out;
 }
 
 /** Highest event tier this venue can credibly host. */

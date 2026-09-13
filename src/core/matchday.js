@@ -212,14 +212,29 @@ export function scoreOption(option, ctx, risks) {
 export function autoChoose(call, ctx, risks, competence, rng) {
   const scored = call.options.map((o) => ({ o, s: scoreOption(o, ctx, risks) }));
   scored.sort((a, b) => b.s - a.s);
-  if (rng.chance(competence)) return scored[0].o;
-  // Not the best one, and flat across the rest rather than nudged toward the
-  // top of it. Biasing the fallback meant an unstaffed department reliably
-  // took the second-best option, which is barely a mistake - so hiring nobody
-  // cost almost nothing and the staff screen stayed decorative.
-  const rest = scored.slice(1);
-  if (!rest.length) return scored[0].o;
-  return rest[Math.min(rest.length - 1, Math.floor(rng() * rest.length))].o;
+  if (scored.length === 1) return scored[0].o;
+
+  // Weighted by how good each option is, with competence as the temperature.
+  //
+  // The first version of this took the best option or else picked uniformly
+  // from the rest, which made a weak department not mediocre but actively
+  // self-destructive: refusing the overtime *and* inviting the chaos was as
+  // likely as the sensible second choice. A played game stopped reaching the
+  // top tier because its unstaffed operations kept sabotaging themselves.
+  //
+  // Incompetence is taking the second-best call, or the third. It is not
+  // choosing the worst thing on the sheet at the same rate as the best.
+  const best = scored[0].s;
+  const spread = Math.max(1e-6, best - scored[scored.length - 1].s);
+  const temperature = 0.14 + (1 - competence) * 0.75;
+  const weights = scored.map((x) => Math.exp((x.s - best) / (spread * temperature)));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = rng.range(0, total);
+  for (let i = 0; i < scored.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) return scored[i].o;
+  }
+  return scored[0].o;
 }
 
 /**

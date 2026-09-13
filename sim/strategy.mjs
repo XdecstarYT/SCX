@@ -166,6 +166,11 @@ export class Strategy {
     if (this.spendable <= 0) return;
     // Utilities first: a network over capacity drags every rating down.
     this.fixUtilities();
+    // Then fill the programme slots. They are the cheapest permanent
+    // improvement available and they run in the background, so a competent
+    // operator never leaves one empty - and a complex that does leaves the
+    // money piling up with nothing to do with it.
+    this.runProgrammes();
 
     // Once the plot is full, land comes first: a player who keeps squeezing
     // sheds into the gaps instead of buying the next parcel never gets the
@@ -208,6 +213,44 @@ export class Strategy {
     return false;
   }
 
+  /**
+   * Keep every programme slot busy, best first.
+   *
+   * "Best" is deliberately crude: what it leaves behind, against what it costs
+   * in total. A sharper valuation would be a second balance model living in
+   * the harness, which is exactly the thing this file must not become.
+   */
+  runProgrammes() {
+    const g = this.game;
+    const p = g.programmes();
+    let free = p.slots - p.used;
+    if (free <= 0) return;
+    const worth = (d) => {
+      const e = d.effect || {};
+      let v = 0;
+      for (const x of Object.values(e.measure || {})) v += x * 90;
+      for (const x of Object.values(e.rating || {})) v += x * 1.8;
+      for (const x of Object.values(e.staff || {})) v += x * 120;
+      for (const x of Object.values(e.rep || {})) v += x * 0.5;
+      v += (e.income || 0) * 0.004;
+      if (e.costMult) v += (1 - e.costMult) * 90;
+      if (e.gate) v += (e.gate - 1) * 40;
+      if (e.spend) v += (e.spend - 1) * 50;
+      return v / Math.max(1, (d.cost + d.upkeep * d.days) / 200_000);
+    };
+    const open = p.available.filter((r) => r.canStart).sort((a, b) => worth(b.def) - worth(a.def));
+    for (const row of open) {
+      if (free <= 0) break;
+      // Leave enough behind to keep bidding and building.
+      if (this.spendable < row.def.cost + 1_500_000) continue;
+      if (g.startProgramme(row.def.id)?.ok) {
+        free--;
+        this.actions.programmes = (this.actions.programmes || 0) + 1;
+        this.log(`day ${this.s.day}: started ${row.def.name}`);
+      }
+    }
+  }
+
   fixUtilities() {
     const g = this.game;
     for (const u of g.utilityOptions()) {
@@ -229,15 +272,22 @@ export class Strategy {
     if (!v) return out;
     const m = v.ratings.measures;
     const want = [];
-    const need = (key, zone) => { if ((m[key] ?? 1) < 0.75) want.push(zone); };
+    // 0.75 is "good enough" for most of what a ground has. It is not good
+    // enough for the way in: entrance area is what caps how many people can
+    // physically get through the turnstiles, and a ground a quarter short of
+    // it turns thousands away and queues the rest round the block. A competent
+    // operator builds the gates out properly, so this one does too.
+    const need = (key, zone, to = 0.75) => { if ((m[key] ?? 1) < to) want.push(zone); };
+    // Order matters: only the first few wanted rooms are laid each pass, so
+    // the way in and the way out come before the retail unit.
+    need('entrance', 'entrance', 0.95);
+    need('exit', 'exit', 0.95);
     need('restroom', 'restroom');
     need('concession', 'concession');
     need('medical', 'medical');
     need('security', 'security');
     need('locker', 'locker');
     need('concourse', 'concourse');
-    need('exit', 'exit');
-    need('entrance', 'entrance');
     // Vomitories are the difference between a bowl and a crowd crush: they are
     // most of the crowd-flow and safety scores, and both are gates on the top
     // two tiers of event rather than a rounding error on the rating.
@@ -330,14 +380,23 @@ export class Strategy {
       const r = this.b.expandBowl() || this.b.addStand();
       if (r) { this.actions.builds++; this.log(`day ${this.s.day}: extended the bowl (${r.staged ? 'staged' : 'instant'}, ${fmt(r.cost)})`); }
     }
-    // A second city, once the game says it is allowed.
-    if (this.s.reputation.venue >= 55 && this.s.sites.length < 2) {
+    // A second city, once the game says it is allowed - and a third and a
+    // fourth once the money is plainly sitting there. An operator with half a
+    // billion spare and a ground already rated in the nineties does not leave
+    // it in the account; stopping at two cities was the harness's limit, not
+    // the game's, and it was the only reason the cash piled up at the end.
+    const wantMore = this.s.sites.length < 2
+      || (this.spendable > 250_000_000 && this.s.sites.length < 4);
+    if (this.s.reputation.venue >= 55 && wantMore) {
       const city = this.otherCity();
       if (city) {
         const r = g.buySite(city);
-        if (r?.ok) { this.actions.sites++; this.log(`day ${this.s.day}: bought land in a second city`); }
+        if (r?.ok) { this.actions.sites++; this.log(`day ${this.s.day}: bought land in ${city}`); }
       }
     }
+    // Likewise the plot itself: a surplus this large buys the next parcel
+    // whether or not the current one is squeezed yet.
+    if (this.spendable > 150_000_000 && this.game.land().next) this.buyLandWhenAffordable();
   }
 
   otherCity() {

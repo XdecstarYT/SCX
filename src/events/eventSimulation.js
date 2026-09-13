@@ -131,7 +131,11 @@ export function simulateEvent(ev, venue, state, contract, ops = NO_OPS) {
   }
 
   // People will not queue for an hour. Gate capacity caps real attendance.
-  const gateThroughput = venue.facilities.entrance * 400 * 2.2 * ops.gate;
+  // Programme lifts are permanent and the day's decisions are not, but they
+  // land on the same numbers, so they multiply together rather than one of
+  // them quietly winning.
+  const prog = state.programmes?.effects || {};
+  const gateThroughput = venue.facilities.entrance * 400 * 2.2 * ops.gate * (prog.gate || 1);
   const gateCapped = gateThroughput > 0 ? Math.min(venue.capacity.total, gateThroughput) : venue.capacity.total * 0.35;
   const soldOut = fill >= 0.985;
   let attendance = Math.round(Math.min(venue.capacity.total * fill, gateCapped));
@@ -149,8 +153,15 @@ export function simulateEvent(ev, venue, state, contract, ops = NO_OPS) {
   // Measuring it on admitted attendance meant a ground whose gates were so
   // narrow they capped the crowd came out *less* congested than one that let
   // everybody through - the queue round the block, which is the congestion,
-  // counted as an improvement. Turned-away supporters are the worst of it.
-  const wanted = clamp(fill + turnedAway / Math.max(1, venue.capacity.total), 0, 1.4);
+  // counted as an improvement.
+  //
+  // `fill` is already the share of capacity that wanted to come, so it is the
+  // whole of the demand term. Adding the turned-away on top of it double
+  // counted, because the turned-away are computed from that same figure: a
+  // gate-capped ground came out at 1.4 and every event in the game got harder.
+  // They are worse than merely queueing, so they aggravate it - by a quarter.
+  const turnedFraction = turnedAway / Math.max(1, venue.capacity.total);
+  const wanted = clamp(fill + turnedFraction * 0.25, 0, 1.15);
   const congestion = clamp(1 - venue.ratings.crowdFlow / 100, 0, 1) * wanted;
   const uf = state.utilityFactors || {};
   const risks = incidentRisks(ev, venue, state, { congestion, soldOut, extraRisk: eff.extraRisk || 0 });
@@ -191,9 +202,9 @@ export function simulateEvent(ev, venue, state, contract, ops = NO_OPS) {
   const spendBase = ev.audience === 'premium' ? 16 : ev.audience === 'family' ? 12 : 9;
   const sponsorBonus = state.sponsorBonuses || { food: 0, merch: 0, sponsor: 0, broadcast: 0, athlete: 0 };
   const food = Math.round(attendance * spendBase * Math.min(1.25, 0.3 + m.concession * 0.95)
-    * perDay * (1 + sponsorBonus.food) * ops.spend);
+    * perDay * (1 + sponsorBonus.food) * ops.spend * (prog.spend || 1));
   const merch = Math.round(attendance * (spendBase * 0.55) * Math.min(1.2, 0.15 + m.retail * 1.1)
-    * perDay * (1 + sponsorBonus.merch) * ops.spend);
+    * perDay * (1 + sponsorBonus.merch) * ops.spend * (prog.spend || 1));
   const carsUsed = Math.min(venue.parkingCars, Math.round(attendance / 2.6 * (1 - state.transitShare)));
   const parking = Math.round(carsUsed * 14 * perDay);
 

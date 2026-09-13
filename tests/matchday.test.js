@@ -252,17 +252,36 @@ test('a weak department genuinely picks badly, rather than picking well and payi
   const call = day.phases.flatMap((p) => p.calls).find((c) => c.options.length >= 3);
   assert.ok(call, 'no call with a real spread of options');
 
-  const bestOption = [...call.options]
-    .sort((a, b) => scoreOption(b, day.ctx, day.risks) - scoreOption(a, day.ctx, day.risks))[0];
+  // Measured on the quality of the choices rather than on how often the single
+  // best one is taken. A department that reliably picks the second-best option
+  // is not incompetent in any way the player would notice, and an earlier
+  // version of this that rewarded "not the best" made a weak department pick
+  // the worst thing on the sheet as often as the best - which is not
+  // mediocrity, it is sabotage, and it stopped a played game reaching the top
+  // tier at all.
+  const scores = call.options.map((o) => scoreOption(o, day.ctx, day.risks));
+  const best = Math.max(...scores);
+  const worst = Math.min(...scores);
   const rng = makeRng(7);
-  let bestTakenWeak = 0, bestTakenStrong = 0;
-  for (let i = 0; i < 400; i++) {
-    if (autoChoose(call, day.ctx, day.risks, 0.15, rng) === bestOption) bestTakenWeak++;
-    if (autoChoose(call, day.ctx, day.risks, 0.95, rng) === bestOption) bestTakenStrong++;
-  }
-  assert.ok(bestTakenStrong > bestTakenWeak * 2,
-    `competence barely matters: ${bestTakenStrong} vs ${bestTakenWeak} best calls taken`);
-  assert.ok(bestTakenWeak < 200, 'a department with nobody in it still takes the best call half the time');
+  const mean = (competence) => {
+    let total = 0;
+    const N = 600;
+    for (let i = 0; i < N; i++) {
+      total += scoreOption(autoChoose(call, day.ctx, day.risks, competence, rng), day.ctx, day.risks);
+    }
+    return total / N;
+  };
+  const weak = mean(0.15);
+  const strong = mean(0.95);
+  assert.ok(strong > weak,
+    `competence does not improve the choices (${strong.toFixed(1)} vs ${weak.toFixed(1)})`);
+  assert.ok(strong > best - (best - worst) * 0.2,
+    'a fully staffed department does not reliably take a good call');
+  assert.ok(weak < best - (best - worst) * 0.1,
+    'a department with nobody in it chooses as well as a full one');
+  // But even at its worst it is not picking the worst thing on the sheet.
+  assert.ok(weak > worst + (best - worst) * 0.15,
+    'an unstaffed department is sabotaging the day rather than muddling through');
 });
 
 // ------------------------------------------------------------- through a game

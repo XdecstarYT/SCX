@@ -10,6 +10,7 @@ import { CITIES, city as cityDef } from '../data/cities.js';
 import { ENDGAME_GOALS, GOAL_GROUPS, endgameProgress } from '../data/endgame.js';
 import { seasonProgress, seasonDay, SEASON_DAYS, division } from '../core/league.js';
 import { COMPETITION_BY_ID } from '../data/competitions.js';
+import { PROGRAMME_CATEGORIES } from '../data/programmes.js';
 import { gameYear } from '../core/constants.js';
 import { MOODS } from '../core/community.js';
 import { BLOCK_BY_KEY } from '../data/blocks.js';
@@ -367,7 +368,7 @@ export class Screens {
 
   // ================================================================== MORE
   openMore(initial = 'Staff') {
-    const tabs = ['Empire', 'Clubs', 'Hosting', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
+    const tabs = ['Empire', 'Clubs', 'Hosting', 'Programmes', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
     let active = tabs.includes(initial) ? initial : 'Empire';
     const tabBar = el('div.tabs');
     const render = () => {
@@ -377,6 +378,7 @@ export class Screens {
       const body = active === 'Empire' ? this.empireBody(render)
         : active === 'Clubs' ? this.clubsBody(render)
         : active === 'Hosting' ? this.hostingBody(render)
+        : active === 'Programmes' ? this.programmesBody(render)
         : active === 'Staff' ? this.staffBody(render)
         : active === 'Sponsors' ? this.sponsorsBody(render)
         : active === 'Research' ? this.researchBody(render)
@@ -875,6 +877,112 @@ export class Screens {
         ...results.map((r) => el('div.rowbetween', { style: { padding: '3px 0' } },
           el('span.small', { text: `${r.home} ${r.homeScore}-${r.awayScore} ${r.away}` }),
           el('span.tiny.faint', { text: r.ours ? `${r.attendance.toLocaleString()} in` : `day ${r.day}` }))))) : null);
+  }
+
+  // ============================================================ PROGRAMMES
+  /**
+   * What the complex is doing between events.
+   *
+   * The scarcity is the screen's whole subject, so it leads with it: how many
+   * slots you have, how many are full, and what is running in them. Everything
+   * below is a queue of things you are not doing yet.
+   */
+  programmesBody(rerender) {
+    const g = this.app.game;
+    const p = g.programmes();
+
+    const head = el('div.card.accent', {},
+      el('div.tiny.faint', { text: 'PROGRAMMES RUNNING' }),
+      el('div.big.num', { text: `${p.used} / ${p.slots}` }),
+      meter((p.used / Math.max(1, p.slots)) * 100, 100, p.used >= p.slots ? 'gold' : ''),
+      el('div.small.faint', { style: { marginTop: '8px' },
+        text: p.used >= p.slots
+          ? 'Every slot is full. Something has to finish before anything else starts.'
+          : `${p.slots - p.used} slot${p.slots - p.used === 1 ? '' : 's'} free. `
+            + 'Reputation and a general manager buy you more.' }));
+
+    const activeCard = (a) => el('div.card.tight.accent', {},
+      el('div.rowbetween', {},
+        el('div', {},
+          el('div.small', { text: a.def.name }),
+          el('div.tiny.faint', { text: a.def.desc })),
+        pill(`${a.daysLeft}d`, '')),
+      el('div', { style: { marginTop: '8px' } }, meter(a.progress * 100, 100, 'gold')),
+      el('div.rowbetween', { style: { marginTop: '8px' } },
+        el('span.tiny.faint', { text: `${fmtMoney(a.def.upkeep)} a day while it runs` }),
+        el('button.btn.sm.danger', {
+          onclick: () => {
+            const r = g.cancelProgramme(a.id);
+            if (r?.error) this.app.toast('warn', 'Cannot stop', r.error);
+            this.app.refresh(); rerender();
+          },
+        }, 'Stop')));
+
+    const effectLine = (e = {}) => {
+      const bits = [];
+      for (const [k, v] of Object.entries(e.measure || {})) bits.push(`+${Math.round(v * 100)}% ${k}`);
+      for (const [k, v] of Object.entries(e.rating || {})) bits.push(`+${v} ${k}`);
+      for (const [k, v] of Object.entries(e.staff || {})) bits.push(`+${Math.round(v * 100)}% ${k}`);
+      if (e.income) bits.push(`${fmtMoney(e.income)} a day`);
+      if (e.costMult) bits.push(`${Math.round((1 - e.costMult) * 100)}% lower running costs`);
+      if (e.gate) bits.push(`${Math.round((e.gate - 1) * 100)}% gate flow`);
+      if (e.spend) bits.push(`${Math.round((e.spend - 1) * 100)}% spend per head`);
+      for (const [k, v] of Object.entries(e.rep || {})) bits.push(`${v > 0 ? '+' : ''}${v} ${k}`);
+      return bits.join(' \u00b7 ');
+    };
+
+    const offerCard = (row) => {
+      const d = row.def;
+      const card = el('div.card.tight' + (row.canStart ? '' : '.off'), {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('div.small', { text: d.name }),
+            el('div.tiny.faint', { text: d.desc })),
+          el('div.right', { style: { flex: '0 0 auto' } },
+            el('div.small.mono', { text: fmtMoney(d.cost) }),
+            el('div.tiny.faint', { text: `${d.days} days` }))),
+        el('div.tiny.faint', { style: { marginTop: '6px' }, text: d.detail }),
+        el('div.tiny.mono', { style: { marginTop: '6px' }, text: effectLine(d.effect) }),
+        row.limit > 1 ? el('div.tiny.faint', { style: { marginTop: '4px' },
+          text: `Run ${row.runs} of ${row.limit} times.` }) : null);
+
+      const unmet = row.lines.filter((l) => !l.ok);
+      if (unmet.length) {
+        card.append(el('div.reqlist', { style: { marginTop: '8px' } },
+          ...unmet.map((l) => requirementRow({ ...l, label: l.label, have: l.have, need: l.min }))));
+      }
+      if (row.canStart) {
+        card.append(el('button.btn.sm.primary.full', { style: { marginTop: '8px' },
+          onclick: () => {
+            const r = g.startProgramme(d.id);
+            if (r?.error) this.app.toast('warn', 'Cannot start', r.error);
+            else this.app.toast('good', 'Under way', `${d.name}: ${d.days} days.`);
+            this.app.refresh(); rerender();
+          },
+        }, `Start \u00b7 ${fmtMoney(d.cost)} + ${fmtMoney(d.upkeep)}/day`));
+      } else {
+        card.append(el('div.tiny.faint', { style: { marginTop: '8px' }, text: row.blocked }));
+      }
+      return card;
+    };
+
+    const byCat = PROGRAMME_CATEGORIES.map((c) => {
+      const rows = p.available.filter((r) => r.def.category === c.key)
+        .sort((a, b) => (a.canStart === b.canStart ? 0 : a.canStart ? -1 : 1));
+      if (!rows.length) return null;
+      return section(c.name, el('div.stack', {}, ...rows.map(offerCard)));
+    }).filter(Boolean);
+
+    return el('div', {},
+      head,
+      p.active.length
+        ? section('Running now', el('div.stack', {}, ...p.active.map(activeCard)))
+        : null,
+      p.effects.length ? section('What they have left behind', el('div.card.tight', {},
+        ...p.effects.map((e) => el('div.rowbetween', { style: { padding: '3px 0' } },
+          el('span.small', { text: e.label }),
+          el('span.small.mono', { text: e.value }))))) : null,
+      ...byCat);
   }
 
   // =============================================================== HOSTING

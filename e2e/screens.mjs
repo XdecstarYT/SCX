@@ -106,7 +106,7 @@ for (const t of ['Summary', 'Ledger', 'Loans']) {
 
 await page.getByRole('tab', { name: 'More' }).click();
 await page.waitForTimeout(500);
-for (const t of ['Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings']) {
+for (const t of ['Clubs', 'Hosting', 'Programmes', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings']) {
   await openTab(t);
   const text = await page.locator('.sheet-body').innerText();
   const hasEmptyState = await page.locator('.sheet-body .emptystate').count();

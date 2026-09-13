@@ -5,6 +5,7 @@ import { UTILITY_KEYS, capacityOf, upkeepOf, computeDemand, serviceFactor } from
 import { climateEffects } from '../data/cities.js';
 import { createHotbarState } from '../ui/hotbar.js';
 import { createLeagueState } from './league.js';
+import { createProgrammeState } from './programmes.js';
 import { createHostingState } from './hosting.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
@@ -52,6 +53,8 @@ export function createState(opts = {}) {
 
     venues: { registered: [] },   // [{ key, name, sport, registeredDay }]
     league: createLeagueState(opts.seed ?? 1),
+    // What the complex is doing between events, and what that has left behind.
+    programmes: createProgrammeState(),
     // Hosting rights: the named competitions this complex has staged, is
     // staging, and could still bid for.
     hosting: createHostingState(),
@@ -138,6 +141,11 @@ export function attachDerived(state, analysis) {
     const role = STAFF_ROLE_MAP.get(h.roleId);
     if (!role) continue;
     bonus[role.channel] += role.effect * (h.skill / 70) * (0.6 + h.morale / 250);
+  }
+  // A finished training programme is a department that is better at its job
+  // for good, which is what separates a programme from a hire you can undo.
+  for (const [c, v] of Object.entries(state.programmes?.effects?.staff || {})) {
+    if (bonus[c] !== undefined) bonus[c] += v;
   }
   const mgmt = bonus.management;
   for (const c of STAFF_CHANNELS) {
