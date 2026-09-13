@@ -437,7 +437,9 @@ class App {
       el('div.tiny.faint', { text: 'EVERY LONG-TERM GOAL COMPLETE' }),
       el('h2', { text: l.complexName }),
       el('p.small.faint', { style: { margin: '8px 0 14px' },
-        text: `Thirteen out of thirteen, in ${l.years > 0 ? `${l.years} year${l.years === 1 ? '' : 's'} and ` : ''}`
+        // Read off the list rather than written out: this said "thirteen out
+        // of thirteen" for two releases after the list grew past thirteen.
+        text: `All ${l.goals} of them, in ${l.years > 0 ? `${l.years} year${l.years === 1 ? '' : 's'} and ` : ''}`
           + `${l.day % 360} days. There is nothing left on the list - which only means the`
           + ' list has run out, not the plot. Keep building.' }),
       el('div.card.tight', {},
@@ -450,7 +452,12 @@ class App {
         row('Through the gates', l.attendance.toLocaleString()),
         row('Lifetime profit', fmtMoney(l.profit)),
         row('Blocks placed', l.blocks.toLocaleString()),
-        row('Reputation', `${l.reputation} / 100`)),
+        row('Reputation', `${l.reputation} / 100`),
+        l.honours ? row('Competitions staged', String(l.honours.count)) : null,
+        l.honours?.biggest ? row('Biggest occasion',
+          `${l.honours.biggest.name} \u00b7 ${l.honours.biggest.attendance.toLocaleString()}`) : null),
+      l.honours?.lines?.length ? el('div.tiny.faint', { style: { marginTop: '10px' },
+        text: `On the board: ${l.honours.lines.join(', ')}.` }) : null,
       el('div.btnrow', { style: { marginTop: '14px' } },
         el('button.btn.primary', { onclick: () => this.hud.closeModal() }, 'Keep building'))));
   }

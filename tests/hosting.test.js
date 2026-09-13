@@ -421,3 +421,30 @@ test('a ground staging a competition is not free for anything else', async () =>
   const free = hosting.matches[hosting.matches.length - 1].day + 30;
   assert.equal(g.venueBusy(venue.key, free, 1), null, 'a clear day reads as busy');
 });
+
+test('the ending counts the goals it actually has, and names the occasions', async () => {
+  // The finale text said "thirteen out of thirteen" long after the list had
+  // grown past thirteen, because the number was written out rather than read.
+  const { Game } = await import('../src/core/game.js');
+  const { ENDGAME_GOALS } = await import('../src/data/endgame.js');
+  const g = new Game();
+  g.newGame({ complexName: 'Meridian Park', seed: 12 });
+  g.state.hosting.history = [
+    { compId: 'athletics_worlds', id: 'a', name: '2028 World Athletics Championships',
+      year: 2028, attendance: 440_000, matches: 7, champion: 'Meridia' },
+    { compId: 'urn_series', id: 'b', name: '2030 The Meridian Urn',
+      year: 2030, attendance: 160_000, matches: 5, champion: 'Meridia' },
+  ];
+
+  const l = g.legacy();
+  assert.equal(l.goals, ENDGAME_GOALS.length, 'the ending is quoting a stale goal count');
+  assert.equal(l.honours.count, 2);
+  assert.equal(l.honours.biggest.attendance, 440_000, 'the biggest occasion is not the biggest');
+  assert.ok(l.honours.lines.length >= 2, 'nothing is listed on the board');
+  assert.ok(l.honours.lines.every((x) => /^\d{4} /.test(x)), `a board line has no year: ${l.honours.lines}`);
+
+  // A complex that staged nothing says nothing rather than inventing a line.
+  const g2 = new Game();
+  g2.newGame({ complexName: 'Empty', seed: 13 });
+  assert.equal(g2.legacy().honours, null, 'a complex that staged nothing claimed honours');
+});

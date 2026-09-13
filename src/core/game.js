@@ -9,6 +9,7 @@ import { generateEvent, boardCapacity, resetEventIds, hostableSports } from '../
 import {
   createHostingState, competitionOffers, awardHosting, hostingsDue, resolvePairing,
   recordMatch, completeHosting, standingLine, championOf, honours as honoursBoard,
+  hostingLegacy,
 } from './hosting.js';
 import { COMPETITION_BY_ID } from '../data/competitions.js';
 import { evaluateBid, resolveBid, PRICING_TIERS } from '../events/bidding.js';
@@ -33,7 +34,7 @@ import { side as nationSide } from '../data/nations.js';
 import {
   createScenarioState, scenarioProgress, tickScenario, SCENARIO_BY_ID,
 } from './scenario.js';
-import { endgameProgress } from '../data/endgame.js';
+import { endgameProgress, ENDGAME_GOALS } from '../data/endgame.js';
 import { SPONSORS, ALL_SPONSORS, availableSponsors, blockedSponsors } from '../data/sponsors.js';
 import { RESEARCH, researchAvailable } from '../data/research.js';
 import { UTILITIES, UTILITY_KEYS, nextTier } from '../data/utilities.js';
@@ -1403,6 +1404,10 @@ export class Game {
       blocks: s.stats.blocksPlaced,
       achievements: s.achievements.length,
       reputation: Math.round(s.reputation.venue),
+      goals: ENDGAME_GOALS.length,
+      // What the ground will be remembered for, which is the only line on
+      // this summary that names a day rather than a total.
+      honours: hostingLegacy(s),
     };
   }
 
