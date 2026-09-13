@@ -7,7 +7,10 @@ import {
   toolCells, priceEdit, applyEdit, copyRegion, rotateClipboard,
   TOOLS, CLIP_STRIDE, PLAN_TOOLS, pricePlan, applyPlan, planPositions,
 } from './buildTools.js';
-import { generateGrandstand, generateParkingGarage, generateRetainingWall, generateTerrainEdit } from './structures.js';
+import {
+  generateGrandstand, generateParkingGarage, generateRetainingWall, generateTerrainEdit,
+  generateBowl, generateCanopy,
+} from './structures.js';
 import { generatePrefab, PREFAB_BY_KEY } from './prefabs.js';
 import { EditBatch } from './history.js';
 import { prop, PROP_BY_ID } from '../data/props.js';
@@ -51,6 +54,10 @@ export class BuildController {
     this.standGap = 14;        // columns between vomitories
     this.garageLevels = 3;
     this.terrainAmount = 2;
+    this.bowlRows = 12;        // rake depth of each tier of a seating bowl
+    this.canopyClear = 4;      // blocks of headroom under a canopy deck
+    this.roofPitch = 1;        // gable slope: blocks of rise per block in
+    this.domePitch = 1;        // 1 = a true hemisphere, lower = a shallow cap
     this.lastPlan = null;
     this.anchor = null;
     this.aim = null;
@@ -195,6 +202,22 @@ export class BuildController {
           gapEvery: this.standGap,
         });
       }
+      case 'bowl': {
+        const mat = block(this.material);
+        return generateBowl(w, a, b, {
+          seatBlock: mat.category === 'seating' ? this.material : blockId('seat'),
+          rise: this.standRise,
+          gapEvery: this.standGap,
+          rows: this.bowlRows,
+        });
+      }
+      case 'canopy': {
+        const mat = block(this.material);
+        return generateCanopy(w, a, b, {
+          block: mat.category === 'roof' ? this.material : blockId('roof_metal'),
+          clearance: this.canopyClear,
+        });
+      }
       case 'garage':
         return generateParkingGarage(w, a, b, { levels: this.garageLevels });
       case 'retaining':
@@ -232,6 +255,8 @@ export class BuildController {
     return toolCells(tool, this.game.world, a, b, {
       wallHeight: this.wallHeight,
       clipboard: this.clipboard,
+      roofPitch: this.roofPitch,
+      domePitch: this.domePitch,
     });
   }
 
@@ -857,8 +882,9 @@ export class BuildController {
   }
 }
 
-const BUILD_TOOL_KEYS = ['single', 'line', 'wall', 'floor', 'box', 'hollow', 'fill',
-  'replace', 'grandstand', 'garage', 'retaining'];
+const BUILD_TOOL_KEYS = ['single', 'line', 'wall', 'floor', 'box', 'hollow',
+  'circle', 'cylinder', 'dome', 'pitched', 'stairs', 'fill',
+  'replace', 'grandstand', 'bowl', 'canopy', 'garage', 'retaining'];
 
 /** Confirm before demolishing this many blocks, or equipment worth this much. */
 const CONFIRM_BLOCKS = 120;
@@ -868,10 +894,12 @@ const TERRAIN_TOOL_KEYS = ['raise', 'lower', 'flatten', 'ramp'];
 
 const STRUCTURE_LABEL = {
   grandstand: 'Grandstand', garage: 'Parking garage', retaining: 'Retaining wall',
+  bowl: 'Seating bowl', canopy: 'Canopy roof',
 };
 
 const TOOL_LABEL = {
   grandstand: 'Build: grandstand', garage: 'Build: parking garage',
+  bowl: 'Build: seating bowl', canopy: 'Build: canopy roof',
   retaining: 'Build: retaining wall', raise: 'Terrain: raise',
   lower: 'Terrain: lower', flatten: 'Terrain: flatten', ramp: 'Terrain: ramp',
 };
@@ -884,6 +912,10 @@ function describePlan(tool, meta, net) {
       return `Grandstand: ${meta.rows} rows, ${meta.capacity.toLocaleString()} seats (${money})`;
     case 'garage':
       return `Parking garage: ${meta.levels} levels, ${meta.spaces.toLocaleString()} spaces (${money})`;
+    case 'bowl':
+      return `Seating bowl: ${meta.sides} tiers, ${meta.capacity.toLocaleString()} seats (${money})`;
+    case 'canopy':
+      return `Canopy: ${meta.panels.toLocaleString()} panels on ${meta.columns} columns (${money})`;
     case 'retaining':
       return `Retaining wall built (${money})`;
     case 'prefab':

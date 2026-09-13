@@ -9,10 +9,11 @@ import { PREFAB_BY_KEY } from '../voxel/prefabs.js';
 const FACING = ['N', 'E', 'S', 'W'];
 
 const TOOL_SETS = {
-  build: ['single', 'line', 'wall', 'floor', 'box', 'hollow', 'fill', 'replace',
-          'grandstand', 'garage', 'retaining'],
-  zone: ['single', 'floor', 'box', 'line'],
-  demolish: ['single', 'box', 'floor', 'wall', 'line'],
+  build: ['single', 'line', 'wall', 'floor', 'box', 'hollow',
+          'circle', 'cylinder', 'dome', 'pitched', 'stairs', 'fill', 'replace',
+          'grandstand', 'bowl', 'canopy', 'garage', 'retaining'],
+  zone: ['single', 'floor', 'box', 'circle', 'line'],
+  demolish: ['single', 'box', 'floor', 'circle', 'wall', 'line'],
   inspect: ['single'],
   terrain: ['raise', 'lower', 'flatten', 'ramp'],
   blueprint: ['copy', 'paste', 'prefab'],
@@ -22,13 +23,21 @@ const TOOL_SETS = {
  * The contextual parameter button. Each tool that takes a number gets one
  * cycling control rather than a settings panel nobody would open.
  */
+const HEIGHT = { prop: 'wallHeight', icon: '\u2195', label: (v) => `H ${v}`, cycle: (v) => (v >= 12 ? 1 : v + (v >= 6 ? 3 : 1)) };
+const DEPTH = { prop: 'terrainAmount', icon: '\u2195', label: (v) => `${v * 2}m`, title: 'How far to move the ground', cycle: (v) => (v >= 8 ? 1 : v + 1) };
+
 const TOOL_PARAMS = {
-  wall:       { prop: 'wallHeight',    label: (v) => `H ${v}`,    title: 'Wall height in blocks', cycle: (v) => (v >= 12 ? 1 : v + (v >= 6 ? 3 : 1)) },
-  hollow:     { prop: 'wallHeight',    label: (v) => `H ${v}`,    title: 'Room height in blocks', cycle: (v) => (v >= 12 ? 1 : v + (v >= 6 ? 3 : 1)) },
-  grandstand: { prop: 'standRise',     label: (v) => (v === 1 ? 'Steep' : v === 2 ? 'V.Steep' : 'Shallow'), title: 'Rake: how fast the rows climb', cycle: (v) => (v === 1 ? 2 : v === 2 ? 0.5 : 1) },
-  garage:     { prop: 'garageLevels',  label: (v) => `${v} lvl`,  title: 'Number of parking decks', cycle: (v) => (v >= 6 ? 1 : v + 1) },
-  raise:      { prop: 'terrainAmount', label: (v) => `${v * 2}m`, title: 'How far to move the ground', cycle: (v) => (v >= 8 ? 1 : v + 1) },
-  lower:      { prop: 'terrainAmount', label: (v) => `${v * 2}m`, title: 'How far to move the ground', cycle: (v) => (v >= 8 ? 1 : v + 1) },
+  wall:       { ...HEIGHT, title: 'Wall height in blocks' },
+  hollow:     { ...HEIGHT, title: 'Room height in blocks' },
+  cylinder:   { ...HEIGHT, title: 'Cylinder height in blocks' },
+  grandstand: { prop: 'standRise',     icon: '\u25E4', label: (v) => (v === 1 ? 'Steep' : v === 2 ? 'V.Steep' : 'Shallow'), title: 'Rake: how fast the rows climb', cycle: (v) => (v === 1 ? 2 : v === 2 ? 0.5 : 1) },
+  bowl:       { prop: 'bowlRows',      icon: '\u25EF', label: (v) => `${v} rows`, title: 'How deep each tier of the bowl is', cycle: (v) => (v >= 30 ? 6 : v + 6) },
+  canopy:     { prop: 'canopyClear',   icon: '\u2312', label: (v) => `${v * 2}m`,  title: 'Headroom left under the deck', cycle: (v) => (v >= 12 ? 2 : v + 2) },
+  pitched:    { prop: 'roofPitch',     icon: '\u25B3', label: (v) => (v === 1 ? '45\u00B0' : v === 2 ? 'Steep' : 'Shallow'), title: 'Roof pitch', cycle: (v) => (v === 1 ? 2 : v === 2 ? 0.5 : 1) },
+  dome:       { prop: 'domePitch',     icon: '\u25D3', label: (v) => (v === 1 ? 'Round' : v > 1 ? 'Tall' : 'Shallow'), title: 'How far the dome rises', cycle: (v) => (v === 1 ? 1.5 : v > 1 ? 0.6 : 1) },
+  garage:     { prop: 'garageLevels',  icon: '\u26DB', label: (v) => `${v} lvl`,  title: 'Number of parking decks', cycle: (v) => (v >= 6 ? 1 : v + 1) },
+  raise:      { ...DEPTH },
+  lower:      { ...DEPTH },
 };
 
 /**
@@ -101,16 +110,20 @@ export class BuildDock {
       }, el('span.i', { text: t.icon }), el('span.n', { text: t.name })));
     }
 
-    if (this.bc.mode === 'build' || this.bc.mode === 'demolish') {
-      const h = this.bc.wallHeight;
+    // One contextual parameter button, driven by the table above, so a tool
+    // that takes a number gets its control without a settings panel and a
+    // tool that does not is not asked about wall height.
+    const param = TOOL_PARAMS[this.bc.tool];
+    if (param) {
+      const v = this.bc[param.prop];
       this.toolrow.append(el('button.tool', {
-        title: 'Wall / room height in blocks (tap to cycle)',
-        'aria-label': `Wall height ${h} blocks`,
+        title: `${param.title} (tap to cycle)`,
+        'aria-label': `${param.title}: ${param.label(v)}`,
         onclick: () => {
-          this.bc.wallHeight = h >= 12 ? 1 : h + (h >= 6 ? 3 : 1);
+          this.bc[param.prop] = param.cycle(v);
           this.bc.refreshPreview(); this.render();
         },
-      }, el('span.i', { text: '↕' }), el('span.n', { text: `H ${h}` })));
+      }, el('span.i', { text: param.icon }), el('span.n', { text: param.label(v) })));
     }
 
     if (this.bc.holdingProp || this.bc.holdingPrefab

@@ -5,6 +5,7 @@ import { blockId } from '../src/data/blocks.js';
 import { zoneId } from '../src/data/zones.js';
 import {
   generateGrandstand, generateParkingGarage, generateTerrainEdit, generateRetainingWall,
+  generateBowl, generateCanopy,
 } from '../src/voxel/structures.js';
 import { applyPlan, pricePlan, planPositions } from '../src/voxel/buildTools.js';
 import { detectVenues } from '../src/venues/venueDetection.js';
@@ -257,6 +258,61 @@ test('a grandstand built through the controller goes up over days', async () => 
   assert.ok((g.world.blockCounts.get(blockId('seat')) || 0) > 100, 'the seats are really there');
 });
 
+test('a bowl rings the pitch on all four sides, with the corners closed', () => {
+  const w = worldWithPitch();
+  // The pitch laid by worldWithPitch spans x 40..93, z 46..80.
+  const plan = generateBowl(w, { x: 40, y: GROUND_Y, z: 46 }, { x: 93, y: GROUND_Y, z: 80 },
+    { rows: 10 });
+  assert.equal(plan.meta.sides, 4, 'a bowl is four tiers, not three');
+  applyPlan(w, plan.cells, 'bowl');
+
+  const seat = blockId('seat');
+  const seatsIn = (x0, x1, z0, z1) => {
+    let n = 0;
+    for (let x = x0; x <= x1; x++)
+      for (let z = z0; z <= z1; z++)
+        for (let y = GROUND_Y; y < GROUND_Y + 14; y++) if (w.getBlock(x, y, z) === seat) n++;
+    return n;
+  };
+  assert.ok(seatsIn(40, 93, 36, 45) > 100, 'no north stand');
+  assert.ok(seatsIn(40, 93, 81, 90) > 100, 'no south stand');
+  assert.ok(seatsIn(30, 39, 46, 80) > 100, 'no west stand');
+  assert.ok(seatsIn(94, 103, 46, 80) > 100, 'no east stand');
+  // The side stands run the full length, so the corners are seats too rather
+  // than four holes where the money should be.
+  assert.ok(seatsIn(30, 39, 36, 45) > 20, 'the north-west corner is empty');
+  assert.ok(seatsIn(94, 103, 81, 90) > 20, 'the south-east corner is empty');
+
+  // And it is worth more than one stand of the same rake.
+  const one = generateGrandstand(w, { x: 40, z: 36 }, { x: 93, z: 45 }, {});
+  assert.ok(plan.meta.capacity > one.meta.capacity * 3,
+    `a bowl should hold far more than one stand (${plan.meta.capacity} vs ${one.meta.capacity})`);
+});
+
+test('a canopy clears what is under it, and the stands below count as covered', () => {
+  const w = worldWithPitch();
+  const stand = generateGrandstand(w, { x: 40, z: 36 }, { x: 93, z: 45 }, {});
+  applyPlan(w, stand.cells, 'stand');
+
+  const bare = detectVenues(w, { complexName: 'T' }).venues[0];
+  assert.equal(bare.seatRoofCoverage, 0, 'an open stand should not read as covered');
+
+  const plan = generateCanopy(w, { x: 40, y: GROUND_Y, z: 36 }, { x: 93, y: GROUND_Y, z: 45 },
+    { clearance: 4 });
+  assert.ok(plan.meta.columns > 0, 'a canopy with no columns is floating');
+
+  // The deck sits above the tallest thing in the footprint, not at the height
+  // you happened to be pointing at.
+  let highest = 0;
+  for (let x = 40; x <= 93; x++) for (let z = 36; z <= 45; z++) highest = Math.max(highest, w.heightAt(x, z));
+  assert.equal(plan.meta.height, highest + 4, 'the deck did not clear the stand');
+
+  applyPlan(w, plan.cells, 'canopy');
+  const roofed = detectVenues(w, { complexName: 'T' }).venues[0];
+  assert.ok(roofed.seatRoofCoverage > 0.5,
+    `a deck over the whole stand should cover it, got ${roofed.seatRoofCoverage}`);
+});
+
 // ---------------------------------------------------------------- the tools
 //
 // Every build tool carries a one-line hint that the player reads and trusts.
@@ -381,10 +437,115 @@ test('every build tool does what its own hint says it does', async () => {
     assert.deepEqual(back.size, clip.size, 'four quarter-turns did not come back round');
   }
 
+  // circle: an ellipse inscribed in the two corners, and nothing outside it.
+  {
+    const c = cellsOf('circle', at(10, G, 10), at(29, G, 29));
+    const n = countOf(c);
+    const area = 20 * 20;
+    assert.ok(n > area * 0.72 && n < area * 0.82,
+      `a disc in a 20x20 box should be about pi/4 of it, got ${n}/${area}`);
+    const set = new Set();
+    for (let i = 0; i < c.length; i += 3) {
+      assert.equal(c[i + 1], G, 'a circle is flat');
+      set.add(`${c[i]},${c[i + 2]}`);
+    }
+    assert.ok(set.has('19,19'), 'the middle of the disc is missing');
+    assert.ok(!set.has('10,10'), 'a corner of the box is outside the ellipse');
+    assert.ok(!set.has('29,10'), 'a corner of the box is outside the ellipse');
+    covered.add('circle');
+  }
+
+  // cylinder: that ellipse as a wall - hollow, and wallHeight tall.
+  {
+    const h = 5;
+    const rim = cellsOf('cylinder', at(10, G, 10), at(29, G, 29), { wallHeight: h });
+    const disc = new Set();
+    const dc = cellsOf('circle', at(10, G, 10), at(29, G, 29));
+    for (let i = 0; i < dc.length; i += 3) disc.add(`${dc[i]},${dc[i + 2]}`);
+
+    const foot = new Set();
+    const levels = new Set();
+    for (let i = 0; i < rim.length; i += 3) {
+      foot.add(`${rim[i]},${rim[i + 2]}`);
+      levels.add(rim[i + 1]);
+      assert.ok(disc.has(`${rim[i]},${rim[i + 2]}`), 'the wall left the ellipse');
+    }
+    assert.equal(levels.size, h, 'a cylinder is its rim times its height');
+    assert.equal(countOf(rim), foot.size * h);
+    assert.ok(!foot.has('19,19'), 'a cylinder is hollow; the middle should be open');
+    assert.ok(foot.size < disc.size / 2, 'the rim should be far smaller than the disc');
+    covered.add('cylinder');
+  }
+
+  // dome: a shell, open underneath, rising to an apex over the middle.
+  {
+    const c = cellsOf('dome', at(10, G, 10), at(29, G, 29), { domePitch: 1 });
+    let top = -1;
+    const solid = new Set();
+    for (let i = 0; i < c.length; i += 3) {
+      assert.ok(c[i + 1] >= G, 'a dome should not dig into the ground');
+      top = Math.max(top, c[i + 1]);
+      solid.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+    }
+    assert.equal(top, G + 10, 'a dome over a 20-wide box should rise 10');
+    assert.ok(solid.has(`19,${G + 10},19`) || solid.has(`20,${G + 10},20`), 'the apex is missing');
+    assert.ok(!solid.has(`19,${G + 5},19`), 'a dome is a shell, not a solid lump');
+    covered.add('dome');
+  }
+
+  // pitched: highest along the ridge, lowest at the eaves, no holes anywhere.
+  {
+    const c = cellsOf('pitched', at(10, G, 10), at(39, G, 29), { roofPitch: 1 });
+    const height = new Map();
+    for (let i = 0; i < c.length; i += 3) {
+      const k = `${c[i]},${c[i + 2]}`;
+      height.set(k, Math.max(height.get(k) ?? -1, c[i + 1]));
+    }
+    // The long axis is x, so the ridge runs down it and the rake is across z.
+    assert.equal(height.size, 30 * 20, 'a pitched roof should cover its whole footprint');
+    assert.equal(height.get('20,10'), G, 'the eave should sit at the height you tapped');
+    assert.equal(height.get('20,19'), G + 9, 'the ridge should be half the span up');
+    assert.equal(height.get('20,20'), G + 9, 'both sides of the ridge should meet');
+
+    // Watertight: every step's riser is filled, so there is no gap to see through.
+    const filled = new Set();
+    for (let i = 0; i < c.length; i += 3) filled.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+    for (let z = 11; z <= 19; z++) {
+      assert.ok(filled.has(`20,${G + (z - 10) - 1},${z}`) || filled.has(`20,${G + (z - 10)},${z}`),
+        `the roof has a hole in the riser at z=${z}`);
+    }
+    covered.add('pitched');
+  }
+
+  // stairs: reaches the height you tapped, one step at a time, solid all the way.
+  {
+    const c = cellsOf('stairs', at(10, G, 10), at(19, G + 9, 12));
+    const height = new Map();
+    for (let i = 0; i < c.length; i += 3) {
+      const k = `${c[i]},${c[i + 2]}`;
+      height.set(k, Math.max(height.get(k) ?? -1, c[i + 1]));
+    }
+    assert.equal(height.get('10,10'), G, 'the bottom step is not at the bottom');
+    assert.equal(height.get('19,10'), G + 9, 'the flight never reached the top');
+    for (let i = 0; i <= 9; i++) {
+      assert.equal(height.get(`${10 + i},10`), G + i, `step ${i} is at the wrong height`);
+    }
+    assert.ok(height.has('10,12') && height.has('10,11'),
+      'the flight should be as wide as the two taps span');
+
+    // Solid, not floating treads: every voxel under a step is there too.
+    const filled = new Set();
+    for (let i = 0; i < c.length; i += 3) filled.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+    for (let y = G; y <= G + 5; y++) {
+      assert.ok(filled.has(`15,${y},10`), `the fifth step is hollow at y=${y}`);
+    }
+    covered.add('stairs');
+  }
+
   // prefab and the procedural structures have their own tests above; terrain
   // tools have theirs. What matters here is that nothing ships untested.
   const tested = new Set([...covered, 'prefab', 'grandstand', 'garage', 'retaining',
-    'raise', 'lower', 'flatten', 'ramp']);
+    'bowl', 'canopy', 'raise', 'lower', 'flatten', 'ramp']);
   const untested = TOOLS.filter((t) => !tested.has(t.key)).map((t) => t.key);
   assert.deepEqual(untested, [], `tools with no test at all: ${untested.join(', ')}`);
 });

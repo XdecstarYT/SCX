@@ -1,6 +1,6 @@
 import { CHUNK_Y, GROUND_Y, BLOCK_SIZE } from '../core/constants.js';
 import { block, blockId, AIR } from '../data/blocks.js';
-import { zone, zoneId, ZONE_NONE } from '../data/zones.js';
+import { ZONES, zone, zoneId, ZONE_NONE } from '../data/zones.js';
 
 /**
  * Procedural structure generators.
@@ -120,12 +120,15 @@ export function generateGrandstand(world, a, b, opts = {}) {
   };
 }
 
+// Read off the registry rather than listed by hand: a hand-written list here
+// silently stopped covering baseball, esports and the concert stage, and every
+// sport added since would have had stands that faced the wrong way.
+const SPORT_ZONE_IDS = new Set(
+  ZONES.filter((z) => z.group === 'sport').map((z) => zoneId(z.key)));
+
 /** Find the centre of the nearest sport surface, so stands face the action. */
 function nearestPitch(world, cx, cz) {
-  const sportIds = new Set();
-  for (const z of ['pitch_football', 'pitch_soccer', 'pitch_rugby', 'pitch_cricket',
-    'court_basketball', 'court_tennis', 'track_athletics', 'pool_swimming',
-    'rink_ice', 'ring_combat']) sportIds.add(zoneId(z));
+  const sportIds = SPORT_ZONE_IDS;
 
   let sx = 0, sz = 0, n = 0;
   const step = Math.max(1, Math.floor(world.size / 90));
@@ -284,10 +287,100 @@ export function generateRetainingWall(world, a, b, opts = {}) {
   return { cells, meta: { length: steps } };
 }
 
+/**
+ * A full seating bowl around a playing surface.
+ *
+ * The player taps the *pitch*, not the stadium: the four tiers are laid
+ * outside that rectangle, each one facing in, with the side stands run long
+ * so the corners close rather than leaving four holes. It is four calls to
+ * the grandstand generator, which is the point - one bowl and four separately
+ * placed stands produce identical voxels, so nothing here is a second way of
+ * building a stand.
+ */
+export function generateBowl(world, a, b, opts = {}) {
+  const r = rect(a, b);
+  const rows = Math.max(2, Math.min(opts.rows ?? 12, 40));
+  const facing = { x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 };
+  const lim = world.size - 1;
+  const clamp = (v) => Math.max(0, Math.min(lim, v));
+
+  // North and south run the width of the pitch; east and west run the full
+  // length including the corners, so the ring closes.
+  const sides = [
+    { x0: r.x0, x1: r.x1, z0: clamp(r.z0 - rows), z1: r.z0 - 1 },
+    { x0: r.x0, x1: r.x1, z0: r.z1 + 1, z1: clamp(r.z1 + rows) },
+    { x0: clamp(r.x0 - rows), x1: r.x0 - 1, z0: clamp(r.z0 - rows), z1: clamp(r.z1 + rows) },
+    { x0: r.x1 + 1, x1: clamp(r.x1 + rows), z0: clamp(r.z0 - rows), z1: clamp(r.z1 + rows) },
+  ];
+
+  const cells = [];
+  let seats = 0, capacity = 0, built = 0;
+  for (const sd of sides) {
+    if (sd.x1 < sd.x0 || sd.z1 < sd.z0) continue;
+    if (sd.x0 < 0 || sd.z0 < 0 || sd.x1 > lim || sd.z1 > lim) continue;
+    const out = generateGrandstand(world,
+      { x: sd.x0, y: a.y, z: sd.z0 }, { x: sd.x1, y: a.y, z: sd.z1 },
+      { ...opts, facing });
+    if (!out.meta.seats) continue;
+    built++;
+    seats += out.meta.seats;
+    capacity += out.meta.capacity;
+    for (let i = 0; i < out.cells.length; i++) cells.push(out.cells[i]);
+  }
+  return { cells, meta: { seats, capacity, rows, sides: built } };
+}
+
+/**
+ * A roof deck on columns, spanning whatever is underneath it.
+ *
+ * Roof coverage over the stands is a rating in its own right, and placing it
+ * by hand means laying a slab twenty voxels in the air with nothing to aim at.
+ * This finds the tallest thing in the footprint, clears it, and drops columns
+ * down to the ground only where they will not land on a seat.
+ */
+export function generateCanopy(world, a, b, opts = {}) {
+  const r = rect(a, b);
+  const roofBlock = opts.block ?? blockId('roof_metal');
+  const columnBlock = opts.columnBlock ?? blockId('steel');
+  const clearance = Math.max(1, opts.clearance ?? 4);
+  const spacing = Math.max(2, opts.spacing ?? 8);
+
+  let highest = GROUND_Y - 1;
+  for (let z = r.z0; z <= r.z1; z++) {
+    for (let x = r.x0; x <= r.x1; x++) {
+      if (!world.inBounds(x, 0, z)) continue;
+      highest = Math.max(highest, groundAt(world, x, z));
+    }
+  }
+  const deckY = clampY(highest + clearance);
+
+  const cells = [];
+  let panels = 0, columns = 0;
+  for (let z = r.z0; z <= r.z1; z++) {
+    for (let x = r.x0; x <= r.x1; x++) {
+      if (!world.inBounds(x, deckY, z)) continue;
+      cells.push(x, deckY, z, roofBlock, ZONE_NONE);
+      panels++;
+
+      // A column only on the grid, only on the rim, and only where the drop
+      // is clear - a post through the middle of a tier is worse than no roof.
+      const onRim = x === r.x0 || x === r.x1 || z === r.z0 || z === r.z1;
+      if (!onRim || (x % spacing !== 0 && z % spacing !== 0)) continue;
+      const foot = groundAt(world, x, z) + 1;
+      if (deckY - foot < 2) continue;
+      for (let y = foot; y < deckY; y++) cells.push(x, clampY(y), z, columnBlock, ZONE_NONE);
+      columns++;
+    }
+  }
+  return { cells, meta: { panels, columns, height: deckY, area: panels } };
+}
+
 export const STRUCTURES = {
   grandstand: generateGrandstand,
   garage: generateParkingGarage,
   retaining: generateRetainingWall,
+  bowl: generateBowl,
+  canopy: generateCanopy,
 };
 
 export const TERRAIN_MODES = ['raise', 'lower', 'flatten', 'ramp'];

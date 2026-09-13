@@ -10,7 +10,8 @@ import { PROP_BY_ID } from '../data/props.js';
  * list. They are priced and applied through pricePlan/applyPlan.
  */
 export const PLAN_TOOLS = new Set([
-  'grandstand', 'garage', 'retaining', 'raise', 'lower', 'flatten', 'ramp', 'prefab',
+  'grandstand', 'bowl', 'canopy', 'garage', 'retaining',
+  'raise', 'lower', 'flatten', 'ramp', 'prefab',
 ]);
 
 export const TOOLS = [
@@ -20,6 +21,14 @@ export const TOOLS = [
   { key: 'floor',    name: 'Floor',     icon: '▭', drag: true,  hint: 'Tap two corners; fills a flat slab' },
   { key: 'box',      name: 'Rectangle', icon: '❑', drag: true,  hint: 'Tap two corners; fills a solid box' },
   { key: 'hollow',   name: 'Room',      icon: '⬚', drag: true,  hint: 'Tap two corners; builds walls, floor and ceiling' },
+
+  // Curved and sloped geometry. Circle is to Floor what Cylinder is to Wall:
+  // the same gesture, an elliptical footprint instead of a rectangular one.
+  { key: 'circle',   name: 'Circle',    icon: '\u25CF', drag: true, hint: 'Tap two corners; fills the ellipse inside them' },
+  { key: 'cylinder', name: 'Cylinder',  icon: '\u25CB', drag: true, hint: 'Tap two corners; raises an elliptical wall' },
+  { key: 'dome',     name: 'Dome',      icon: '\u25D3', drag: true, hint: 'Tap two corners; arches a dome shell over them' },
+  { key: 'pitched',  name: 'Gable',     icon: '\u25B3', drag: true, hint: 'Tap two corners; lays a pitched roof that sheds rain' },
+  { key: 'stairs',   name: 'Stairs',    icon: '\u25E5', drag: true, hint: 'Tap the bottom, then the top; builds a flight between them' },
   { key: 'fill',     name: 'Fill',      icon: '⬛', drag: false, hint: 'Flood-fills the enclosed area you tap' },
   { key: 'replace',  name: 'Replace',   icon: '⇄', drag: true,  hint: 'Tap two corners; swaps the material you first tapped' },
   { key: 'copy',     name: 'Copy',      icon: '⧉', drag: true,  hint: 'Tap two corners to copy a structure' },
@@ -29,6 +38,8 @@ export const TOOLS = [
   // Procedural structures: the player sets the footprint, the engine lays the
   // repetitive rows, supports, columns and vomitories.
   { key: 'grandstand', name: 'Stand',   icon: '\u25E4', drag: true, hint: 'Tap two corners; builds a raked seating tier facing the pitch' },
+  { key: 'bowl',       name: 'Bowl',    icon: '\u25EF', drag: true, hint: 'Tap the two corners of the pitch; rings it with four tiers' },
+  { key: 'canopy',     name: 'Canopy',  icon: '\u2312', drag: true, hint: 'Tap two corners; roofs everything under them on columns' },
   { key: 'garage',     name: 'Garage',  icon: '\u26DB', drag: true, hint: 'Tap two corners; builds a multi-level car park' },
   { key: 'retaining',  name: 'Retain',  icon: '\u2261', drag: true, hint: 'Tap two points; builds a retaining wall along the line' },
 
@@ -86,6 +97,133 @@ function lineCells(a, b, out) {
       if (ex >= 0) { x += sx; ex -= 2 * dz; }
       if (ey >= 0) { y += sy; ey -= 2 * dz; }
       ex += 2 * dx; ey += 2 * dy; z += sz;
+    }
+  }
+  return out;
+}
+
+/**
+ * Filled ellipse inscribed in the footprint, on one horizontal level. Uses the
+ * same half-voxel centring as the prefab canvas so a Circle drawn by hand and
+ * an oval laid by a prefab land on exactly the same voxels.
+ */
+function ellipseCells(a, b, y, out) {
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x);
+  const z0 = Math.min(a.z, b.z), z1 = Math.max(a.z, b.z);
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const rx = (x1 - x0 + 1) / 2, rz = (z1 - z0 + 1) / 2;
+  for (let z = z0; z <= z1; z++) {
+    for (let x = x0; x <= x1; x++) {
+      const dx = (x + 0.5 - cx) / rx, dz = (z + 0.5 - cz) / rz;
+      if (dx * dx + dz * dz <= 1) out.push(x, clampY(y), z);
+    }
+  }
+  return out;
+}
+
+/** The rim of that ellipse: inside, but with a neighbour outside. */
+function ellipseRing(a, b, y, out) {
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x);
+  const z0 = Math.min(a.z, b.z), z1 = Math.max(a.z, b.z);
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const rx = (x1 - x0 + 1) / 2, rz = (z1 - z0 + 1) / 2;
+  const inside = (x, z) => {
+    const dx = (x + 0.5 - cx) / rx, dz = (z + 0.5 - cz) / rz;
+    return dx * dx + dz * dz <= 1;
+  };
+  for (let z = z0; z <= z1; z++) {
+    for (let x = x0; x <= x1; x++) {
+      if (!inside(x, z)) continue;
+      if (inside(x + 1, z) && inside(x - 1, z) && inside(x, z + 1) && inside(x, z - 1)) continue;
+      out.push(x, clampY(y), z);
+    }
+  }
+  return out;
+}
+
+/**
+ * A one-voxel-thick half-ellipsoid shell sitting on the footprint.
+ *
+ * Drawing each horizontal slice as a ring leaves gaps wherever the surface is
+ * shallow, so instead every voxel inside the solid is kept only when one of
+ * its six neighbours is outside it. That is watertight by construction.
+ */
+function domeCells(a, b, opts, out) {
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x);
+  const z0 = Math.min(a.z, b.z), z1 = Math.max(a.z, b.z);
+  const baseY = clampY(Math.min(a.y, b.y));
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const rx = (x1 - x0 + 1) / 2, rz = (z1 - z0 + 1) / 2;
+  const ry = Math.max(1, Math.round(Math.min(rx, rz) * (opts.domePitch ?? 1)));
+  const solid = (x, y, z) => {
+    if (y < baseY) return false;
+    const dx = (x + 0.5 - cx) / rx, dz = (z + 0.5 - cz) / rz, dy = (y - baseY) / ry;
+    return dx * dx + dz * dz + dy * dy <= 1;
+  };
+  for (let y = baseY; y <= baseY + ry; y++) {
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!solid(x, y, z)) continue;
+        // The base course is a rim, not a lid: leave the floor open.
+        const shell = !solid(x + 1, y, z) || !solid(x - 1, y, z)
+          || !solid(x, y, z + 1) || !solid(x, y, z - 1) || !solid(x, y + 1, z);
+        if (shell) out.push(x, clampY(y), z);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * A pitched roof surface. The ridge runs down the long axis; height climbs
+ * from each eave toward it, and the risers between steps are filled so rain
+ * (and the renderer) sees a closed surface rather than a flight of stairs.
+ */
+function pitchedCells(a, b, opts, out) {
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x);
+  const z0 = Math.min(a.z, b.z), z1 = Math.max(a.z, b.z);
+  const baseY = clampY(Math.min(a.y, b.y));
+  const pitch = opts.roofPitch ?? 1;
+  const alongX = (x1 - x0) >= (z1 - z0);
+  for (let z = z0; z <= z1; z++) {
+    for (let x = x0; x <= x1; x++) {
+      // Distance in from the nearer eave, measured across the short axis.
+      const from = alongX ? Math.min(z - z0, z1 - z) : Math.min(x - x0, x1 - x);
+      const h = Math.round(from * pitch);
+      const prev = Math.round(Math.max(0, from - 1) * pitch);
+      for (let y = prev + (from === 0 ? 0 : 1); y <= h; y++) out.push(x, clampY(baseY + y), z);
+    }
+  }
+  return out;
+}
+
+/**
+ * A flight of stairs from the first point to the second: a solid wedge, so it
+ * carries its own load and reads as concrete rather than as floating treads.
+ * The run follows whichever horizontal axis is longer; the width is whatever
+ * the two taps span across the other one.
+ */
+function stairCells(a, b, opts, out) {
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const alongX = Math.abs(dx) >= Math.abs(dz);
+  const run = Math.max(1, Math.abs(alongX ? dx : dz));
+  const step = (alongX ? dx : dz) >= 0 ? 1 : -1;
+  const width = Math.max(1, Math.abs(alongX ? dz : dx) + 1);
+  const wStart = alongX ? Math.min(a.z, b.z) : Math.min(a.x, b.x);
+  const baseY = clampY(Math.min(a.y, b.y));
+  const topY = clampY(Math.max(a.y, b.y));
+  // One block of climb per step unless the two taps are further apart
+  // vertically than horizontally, in which case the flight steepens to reach.
+  const climb = topY - baseY;
+  const rise = Math.max(1, opts.stairRise ?? (Math.round(climb / run) || 1));
+  for (let i = 0; i <= run; i++) {
+    const y = clampY(baseY + (climb > 0 ? Math.min(i * rise, climb) : i * rise));
+    const px = alongX ? a.x + i * step : 0;
+    const pz = alongX ? 0 : a.z + i * step;
+    for (let w = 0; w < width; w++) {
+      const x = alongX ? px : wStart + w;
+      const z = alongX ? wStart + w : pz;
+      for (let yy = baseY; yy <= y; yy++) out.push(x, clampY(yy), z);
     }
   }
   return out;
@@ -159,6 +297,26 @@ export function toolCells(tool, world, a, b, opts = {}) {
       }
       break;
     }
+    case 'circle':
+      ellipseCells(a, b || a, a.y, cells);
+      break;
+    case 'cylinder': {
+      const h = Math.max(1, opts.wallHeight || 3);
+      const rim = ellipseRing(a, b || a, a.y, []);
+      for (let i = 0; i < rim.length; i += 3) {
+        for (let k = 0; k < h; k++) cells.push(rim[i], clampY(rim[i + 1] + k), rim[i + 2]);
+      }
+      break;
+    }
+    case 'dome':
+      domeCells(a, b || a, opts, cells);
+      break;
+    case 'pitched':
+      pitchedCells(a, b || a, opts, cells);
+      break;
+    case 'stairs':
+      stairCells(a, b || a, opts, cells);
+      break;
     case 'fill':
       floodCells(world, { x: a.x, y: clampY(a.y), z: a.z }, cells);
       break;
