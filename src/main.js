@@ -1416,6 +1416,7 @@ window.__sct.dev = {
     };
   },
   prefabKeys: () => PREFABS.map((p) => p.key),
+  researchIds: () => RESEARCH.map((r) => r.id),
   /**
    * Project a voxel's top face to client pixels. Used by the end-to-end tests
    * to aim real taps at known blocks, and handy for debugging aim problems.

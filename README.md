@@ -42,30 +42,42 @@ loaded.
    length, so you build where you stand.
 
    From the overview camera the same hotbar drives bulk tools: single-block,
-   line, wall, floor, rectangle, room, flood-fill, replace, copy and paste.
-   Undo/redo throughout. Planning mode lets you design an entire stand and see
-   the price before committing a penny.
+   line, wall, floor, rectangle, room, flood-fill, replace, copy and paste,
+   plus five geometry tools for the shapes a rectangle cannot make — *Circle*
+   and *Cylinder* (the round answer to Floor and Wall), *Dome*, *Gable* and
+   *Stairs*. The curved and sloped ones are watertight by construction rather
+   than by eye. Undo/redo throughout. Planning mode lets you design an entire
+   stand and see the price before committing a penny.
 
-   Seventy materials across eight categories — structure, exterior, surfaces,
-   roads and parking, seating, roofing, decor and terrain — twelve of them
-   behind research. Every one is priced, placeable and reversible, and a test
-   sweeps the whole palette to keep it that way.
+   113 materials across nine categories — structure, exterior, surfaces, roads
+   and parking, seating, roofing, decor, site services and terrain — with
+   twenty behind research, including solar arrays and generators that feed
+   power back into the site instead of drawing on it. Every one is priced,
+   placeable and reversible, and a test sweeps the whole palette to keep it
+   that way.
 
-   Three **procedural structures** handle the parts that are pure repetition:
+   Five **procedural structures** handle the parts that are pure repetition:
    *Stand* works out which way the pitch is and lays a raked seating tier with
-   its own supports and vomitories; *Garage* builds a multi-level car park with
+   its own supports and vomitories; *Bowl* rings a pitch with four of them and
+   runs the side tiers long so the corners close; *Canopy* finds the tallest
+   thing in a footprint and decks over it on columns, which is what makes roof
+   coverage reachable at all; *Garage* builds a multi-level car park with
    decks, columns and a ramp bay; *Retain* builds a retaining wall that matches
    the ground behind it. A separate **TERRAIN** mode raises, lowers, flattens
    and ramps the ground while preserving each column's surface material.
 
-   The **prefab library** goes further: fourteen finished facilities — soccer
-   pitch, Australian Rules oval, cricket ground, basketball court, tennis
-   court, small and main grandstands, gym, performance centre, locker rooms,
-   stadium entrance, food court, car park and fan plaza — each laid out
-   correctly, fitted with its own equipment, and rotatable in 90° steps before
-   you commit. They stamp through the same pricing, staging and undo path as
-   anything you build by hand, so a prefab is a starting point you can then
-   take apart, not a black box.
+   The **prefab library** goes further: twenty-seven finished facilities — a
+   regulation surface for every sport the game can schedule, from a soccer
+   pitch and a cricket ground to a velodrome, a skate park and a climbing wall,
+   plus grandstands, gyms, locker rooms, a stadium entrance, a ticket office, a
+   media centre, a VIP pavilion, a services compound, a transit interchange and
+   a civic forecourt — each laid out correctly, fitted with its own equipment,
+   and rotatable in 90° steps before you commit. They stamp through the same
+   pricing, staging and undo path as anything you build by hand, so a prefab is
+   a starting point you can then take apart, not a black box. A prefab built
+   out of materials that are still behind research is locked with them: it says
+   which project it needs rather than quietly handing you a Glass Roof you have
+   not earned.
 
    Anything substantial becomes a **construction project** that rises out of
    the ground over several days, lowest blocks first. You cannot throw up a

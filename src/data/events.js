@@ -538,6 +538,14 @@ export const EVENT_TEMPLATES = [
     community: 4,
   },
   {
+    id: 'track_omnium', name: 'Regional Omnium', sport: 'cycling', tier: 'regional',
+    organiser: 'National Cycling Union', popularity: 0.45, base: 26, fee: 118_000,
+    bid: [16_000, 140_000], days: 2, risk: 0.18, prestige: 8, audience: 'regional',
+    req: [req.field('cycling'), req.cap(3_000), req.rating(42), req.m('medical', 0.5, 'Medical')],
+    blurb: 'Four disciplines, one points table, and a thousand people who understand it.',
+    community: 4,
+  },
+  {
     id: 'track_national', name: 'National Track Championships', sport: 'cycling', tier: 'national',
     organiser: 'National Cycling Union', popularity: 0.6, base: 42, fee: 460_000,
     bid: [75_000, 540_000], days: 4, risk: 0.24, prestige: 16, audience: 'national',
@@ -577,6 +585,14 @@ export const EVENT_TEMPLATES = [
     req: [req.field('climbing'), req.cap(400), req.rating(22)],
     blurb: 'Four problems, a stopwatch, and a very quiet room until somebody tops one.',
     community: 5,
+  },
+  {
+    id: 'climb_series', name: 'Regional Climbing Series', sport: 'climbing', tier: 'regional',
+    organiser: 'Vertical League', popularity: 0.4, base: 22, fee: 96_000,
+    bid: [13_000, 115_000], days: 2, risk: 0.16, prestige: 7, audience: 'regional',
+    req: [req.field('climbing'), req.cap(2_500), req.rating(38), req.m('medical', 0.5, 'Medical')],
+    blurb: 'Lead and boulder over a weekend, on routes reset between rounds.',
+    community: 6,
   },
   {
     id: 'climb_world', name: 'World Climbing Series', sport: 'climbing', tier: 'national',
