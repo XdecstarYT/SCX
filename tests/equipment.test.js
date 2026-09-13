@@ -369,3 +369,51 @@ test('no prefab ships with a roof the inspector would flag', () => {
       `${def.key} leaves roof sections without support`);
   }
 });
+
+test('equipment is lit like the world it stands in', async () => {
+  // The voxel shader reads corner occlusion and a surface finish off vertex
+  // attributes. The prop geometry supplied neither, so WebGL handed the shader
+  // zero for both: every piece of equipment in the game was drawn at 38%
+  // ambient light and in flat colour, beside a stadium that had neither.
+  const { buildPropGeometry } = await import('../src/world/propRenderer.js');
+  const { PROPS, PART_FINISH } = await import('../src/data/props.js');
+  const { FINISH_ID } = await import('../src/voxel/mesher.js');
+
+  for (const type of PROPS) {
+    const geo = buildPropGeometry(type);
+    const ao = geo.getAttribute('ao');
+    const fin = geo.getAttribute('fin');
+    assert.ok(ao, `${type.key} has no occlusion attribute; it will render dark`);
+    assert.ok(fin, `${type.key} has no finish attribute; it will render flat`);
+    assert.equal(ao.count, geo.getAttribute('position').count,
+      `${type.key} has occlusion for only some of its vertices`);
+    assert.equal(fin.count, geo.getAttribute('position').count);
+
+    // A freestanding object is not wedged into a corner: fully open, which is
+    // 3 on the shader's 0-3 scale.
+    for (let i = 0; i < ao.count; i++) {
+      assert.equal(ao.getX(i), 3, `${type.key} vertex ${i} is occluded for no reason`);
+    }
+    // And every finish it claims is one the shader can actually draw.
+    const valid = new Set(Object.values(FINISH_ID));
+    for (let i = 0; i < fin.count; i++) {
+      assert.ok(valid.has(fin.getX(i)), `${type.key} uses finish id ${fin.getX(i)}`);
+    }
+  }
+
+  // The mapping itself points at finishes that exist.
+  for (const [colour, name] of Object.entries(PART_FINISH)) {
+    assert.ok(FINISH_ID[name] !== undefined,
+      `part colour ${colour} maps to unknown finish "${name}"`);
+  }
+
+  // Something in the catalogue actually uses each of them, or the table is
+  // describing materials nothing is made of.
+  const used = new Set();
+  for (const type of PROPS) {
+    const geo = buildPropGeometry(type);
+    const fin = geo.getAttribute('fin');
+    for (let i = 0; i < fin.count; i++) used.add(fin.getX(i));
+  }
+  assert.ok(used.size >= 4, `equipment only ever uses ${used.size} materials`);
+});

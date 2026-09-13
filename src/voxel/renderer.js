@@ -54,6 +54,7 @@ const VERT = /* glsl */`
 
 const FRAG = /* glsl */`
   precision highp float;
+  uniform float uTime;
   uniform vec3 uSunDir;
   uniform vec3 uSunColor;
   uniform vec3 uSkyColor;
@@ -268,6 +269,95 @@ const FRAG = /* glsl */`
     return fract(p.x * p.y);
   }
 
+  // ------------------------------------------------------------ surfaces
+  //
+  // Procedural, from world position, because this project has no image assets
+  // and a texture atlas would mean every merged face carrying UVs that survive
+  // greedy meshing - which they cannot, since a merged quad may be thirty
+  // voxels long. Deriving the pattern from where the surface *is* in the world
+  // makes a thirty-voxel brick wall come out as one continuous bond instead of
+  // thirty tiled copies.
+  //
+  // Each returns a multiplier around 1.0, so a surface darkens and lightens
+  // its own colour rather than replacing it.
+
+  /** Which two world axes this face runs along, and the height on it. */
+  vec2 faceUv(vec3 n, vec3 w) {
+    vec3 a = abs(n);
+    if (a.y > 0.5) return w.xz;              // floors and roofs
+    if (a.x > 0.5) return vec2(w.z, w.y);    // walls facing x
+    return vec2(w.x, w.y);                   // walls facing z
+  }
+
+  /** Coursed masonry: rows, with every other row offset half a unit. */
+  float courses(vec2 uv, float h, float len, float mortar) {
+    float row = floor(uv.y / h);
+    float u = uv.x / len + mod(row, 2.0) * 0.5;
+    vec2 f = vec2(fract(u), fract(uv.y / h));
+    vec2 d = min(f, 1.0 - f);
+    vec2 w = fwidth(vec2(u, uv.y / h)) * 1.4 + 0.006;
+    float line = min(smoothstep(0.0, w.x, d.x), smoothstep(0.0, w.y, d.y));
+    // Each brick is very slightly its own shade, which is most of what stops
+    // a wall reading as wallpaper.
+    float tint = (hash21(vec2(floor(u), row)) - 0.5) * 0.09;
+    return mix(1.0 - mortar, 1.0, line) + tint;
+  }
+
+  /** Rolled sheet: a trapezoidal rib profile running one way. */
+  float ribs(float t, float pitch, float depth) {
+    float f = fract(t / pitch);
+    float profile = smoothstep(0.0, 0.18, f) * (1.0 - smoothstep(0.82, 1.0, f));
+    return 1.0 - depth + profile * depth * 2.0;
+  }
+
+  /** Grain: fine lines with the run of the timber, plus knots. */
+  float grainLines(vec2 uv) {
+    float g = sin(uv.y * 7.3 + sin(uv.x * 1.7) * 1.4) * 0.5 + 0.5;
+    float fine = hash21(floor(vec2(uv.x * 3.0, uv.y * 26.0)));
+    return 0.93 + g * 0.055 + fine * 0.035;
+  }
+
+  /**
+   * Wind ripples in loose material. Two scales and a hash break-up, because a
+   * single sine came out as a regular chevron pattern - which reads as a
+   * printed fabric rather than as sand.
+   */
+  float ripples(vec2 uv, float scale, float amt) {
+    float wobble = sin(uv.y * scale * 0.31) * 1.2 + hash21(floor(uv * 0.7)) * 1.6;
+    float r = sin(uv.x * scale + wobble) * 0.6
+            + sin(uv.x * scale * 2.3 + wobble * 1.7) * 0.25
+            + (hash21(floor(uv * scale * 1.6)) - 0.5) * 0.5;
+    return 1.0 - amt * 0.4 + r * amt;
+  }
+
+  /** Chunky loose stone: cell noise, each cell its own shade. */
+  float chunks(vec2 uv, float scale, float amt) {
+    vec2 c = floor(uv * scale);
+    float a = hash21(c), b = hash21(c + 17.3);
+    return 1.0 - amt * 0.5 + (a * 0.7 + b * 0.3) * amt;
+  }
+
+  /** Woven fabric: a fine crosshatch that catches light along one bias. */
+  float weave(vec2 uv, float scale) {
+    float a = sin(uv.x * scale) * sin(uv.y * scale);
+    return 0.965 + a * 0.045;
+  }
+
+  /** Perforated sheet: a grid of holes, darker at the centre of each. */
+  float perforation(vec2 uv, float pitch) {
+    vec2 f = fract(uv / pitch) - 0.5;
+    float d = length(f);
+    float aa = fwidth(d) * 1.5 + 0.02;
+    return mix(0.62, 1.0, smoothstep(0.24 - aa, 0.24 + aa, d));
+  }
+
+  /** Moving water: two crossing wave trains, which is enough to read as one. */
+  float waterSurface(vec2 uv, float t) {
+    float a = sin(uv.x * 0.9 + t * 1.1) * sin(uv.y * 0.7 - t * 0.8);
+    float b = sin((uv.x + uv.y) * 1.6 - t * 1.7);
+    return 0.94 + (a * 0.5 + b * 0.5) * 0.075;
+  }
+
   void main() {
     vec3 N = normalize(vWNormal);
     float ndl = max(dot(N, uSunDir), 0.0);
@@ -291,29 +381,71 @@ const FRAG = /* glsl */`
     float grain = 0.044;
 
     // The finish id and the "this is a playing surface" flag share one
-    // attribute, so they have to be taken apart before either is read.
-    float finish = mod(vFin, 8.0);
-    bool playable = vFin >= 8.0;
+    // attribute, so they have to be taken apart before either is read. The
+    // flag sits at 64, above every finish id, because it used to sit at 8 and
+    // collided with them the moment there were more than eight finishes.
+    float finish = mod(vFin, 64.0);
+    bool playable = vFin >= 64.0;
+    int fid = int(finish + 0.5);
+    vec2 suv = faceUv(N, vWorld);
 
-    if (finish > 2.5) {
-      // Seating. A deck of seats is thousands of separate mouldings, and the
-      // one thing it never is, is a single flat colour.
-      grain = 0.10;
-    } else if (finish > 1.5) {
-      // Glass, metal, ice, water: a real highlight, so a facade catches the
-      // sun and a roof has a sheen along its length.
-      gloss = 1.0;
-      grain = 0.018;
-    } else if (finish > 0.5) {
+    if (fid == 1) {
       // Mown turf. Groundsmen cut in bands and the nap of the grass throws the
       // light differently each way, which is why a pitch on television is
-      // striped. Five-metre bands, plus a fine speckle so it is not a gradient.
-      // Grass has no panel seams: it is the one surface where the per-metre
-      // grid reads as tiling rather than as construction.
+      // striped. Grass has no panel seams: it is the one surface where the
+      // per-metre grid reads as tiling rather than as construction.
       float band = sin(vWorld.x * 0.2094);
       base *= 1.0 + smoothstep(-0.25, 0.25, band) * 0.075 - 0.037;
       seamMul = 0.0;
       grain = 0.034;
+    } else if (fid == 2) {
+      // Glass, ice, polished panel: a real highlight, so a facade catches the
+      // sun and a roof has a sheen along its length.
+      gloss = 1.0;
+      grain = 0.018;
+    } else if (fid == 3) {
+      // Seating. A deck of seats is thousands of separate mouldings, and the
+      // one thing it never is, is a single flat colour. Rows read across the
+      // stand, so the banding follows the face rather than the world.
+      base *= 0.97 + 0.06 * step(0.5, fract(suv.y * 0.5));
+      grain = 0.10;
+    } else if (fid == 4) {
+      base *= courses(suv, 0.75, 1.9, 0.16);        // brick
+      seamMul = 0.0; grain = 0.03;
+    } else if (fid == 5) {
+      base *= courses(suv, 1.3, 2.6, 0.13);         // coursed stone
+      seamMul = 0.0; grain = 0.05;
+    } else if (fid == 6) {
+      base *= grainLines(suv);                      // timber
+      seamMul = 0.35; grain = 0.03;
+    } else if (fid == 7) {
+      base *= ribs(suv.x, 1.0, 0.09);               // rolled sheet metal
+      gloss = 0.55; seamMul = 0.25; grain = 0.02;
+    } else if (fid == 8) {
+      base *= chunks(suv, 1.4, 0.09);               // asphalt
+      seamMul = 0.0; grain = 0.06;
+    } else if (fid == 9) {
+      base *= ripples(suv, 3.0, 0.075);             // sand
+      seamMul = 0.0; grain = 0.05;
+    } else if (fid == 10) {
+      base *= chunks(suv, 2.6, 0.17);               // gravel
+      seamMul = 0.0; grain = 0.08;
+    } else if (fid == 11) {
+      base *= weave(suv, 9.0);                      // tensile fabric
+      gloss = 0.3; seamMul = 0.2; grain = 0.02;
+    } else if (fid == 12) {
+      base *= perforation(suv, 0.5);                // perforated sheet
+      gloss = 0.4; seamMul = 0.0; grain = 0.02;
+    } else if (fid == 13) {
+      base *= waterSurface(suv, uTime);             // water
+      gloss = 1.0; seamMul = 0.0; grain = 0.01;
+    } else if (fid == 14) {
+      // Running track: rolled synthetic, with lane joints across the run.
+      base *= 0.985 + 0.03 * step(0.5, fract(suv.y * 0.833));
+      seamMul = 0.0; grain = 0.045;
+    } else if (fid == 15) {
+      base *= grainLines(vec2(suv.y, suv.x)) * courses(suv, 4.0, 0.28, 0.1);  // planking
+      seamMul = 0.0; grain = 0.03;
     }
     base *= (1.0 - grain * 0.5) + hash21(floor(vWorld.xz * 0.55 + vWorld.y * 0.31)) * grain;
 
@@ -348,7 +480,7 @@ const FRAG = /* glsl */`
       // Fresnel: glancing angles catch far more, which is what makes glass
       // read as glass rather than as pale blue paint.
       float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
-      lit += uSunColor * (spec * 0.55 * sun + fres * 0.10) * ao * (1.0 - uNight * 0.7);
+      lit += uSunColor * (spec * 0.55 * sun + fres * 0.10) * gloss * ao * (1.0 - uNight * 0.7);
     }
 
     // Panel seams: one line per metre of real surface, faded out by distance
@@ -382,6 +514,7 @@ export function createVoxelMaterial(opts = {}) {
       uFogColor: { value: new THREE.Color(0xa8c4dc) },
       uFogNear: { value: 220 },
       uFogFar: { value: 900 },
+      uTime: { value: 0 },
       uNight: { value: 0 },
       uOpacity: { value: opts.opacity ?? 1 },
       uSeam: { value: opts.seam ?? 0.16 },
@@ -598,6 +731,8 @@ export class WorldRenderer {
       m.uniforms.uGroundColor.value.copy(env.groundColor);
       m.uniforms.uFogColor.value.copy(env.fogColor);
       m.uniforms.uNight.value = env.night;
+      // Water moves. It is the only surface in the game that has to.
+      if (m.uniforms.uTime) m.uniforms.uTime.value = env.time ?? m.uniforms.uTime.value;
       m.uniforms.uFogNear.value = env.fogNear;
       m.uniforms.uFogFar.value = env.fogFar;
     }

@@ -101,8 +101,36 @@ function aoPack(bx, by, bz, uAxis, vAxis) {
   return a0 | (a1 << 2) | (a2 << 4) | (a3 << 6);
 }
 
-/** Surface finish -> the shader's numeric id. */
-const FINISH_ID = { matte: 0, turf: 1, gloss: 2, seat: 3 };
+/**
+ * Surface finish -> the shader's numeric id.
+ *
+ * A finish is not a colour; it is how the surface is made. Brick is laid in
+ * courses, sheet metal is rolled into ribs, timber runs with the grain, sand
+ * ripples and gravel does not. Flat colour for all of them is most of what
+ * makes a voxel scene read as plastic, and the fix is in the shader rather
+ * than in a texture atlas the project has deliberately never had.
+ *
+ * Ids are packed into a vertex attribute alongside the playing-surface flag,
+ * so nothing here may exceed SPORTS_BIT.
+ */
+const FINISH_ID = {
+  matte: 0,
+  turf: 1,
+  gloss: 2,
+  seat: 3,
+  brick: 4,       // courses, with every other row offset half a brick
+  stone: 5,       // irregular coursed blocks
+  timber: 6,      // grain along the longer axis
+  metal: 7,       // trapezoidal profile, rolled sheet
+  asphalt: 8,     // coarse aggregate, no panel seams
+  sand: 9,        // wind ripples
+  gravel: 10,     // chunky loose stone
+  fabric: 11,     // woven weave, soft sheen
+  mesh: 12,       // perforated sheet
+  water: 13,      // moving ripples
+  track: 14,      // rolled synthetic, running with the lanes
+  boards: 15,     // laid planking
+};
 
 /**
  * Every material any sport can be played on, taken from the zone table so it
@@ -110,7 +138,12 @@ const FINISH_ID = { matte: 0, turf: 1, gloss: 2, seat: 3 };
  * keeps the halfway line on the grass instead of running up the terracing.
  */
 const SPORT_SURFACES = new Set(SPORT_ZONES.flatMap((z) => z.surfaces));
-const SPORTS_BIT = 8;
+/**
+ * The playing-surface flag rides in the same attribute as the finish id, above
+ * all of them. It used to be 8, which collided with the finish ids the moment
+ * there were more than eight finishes - turf plus the flag read as a seat.
+ */
+const SPORTS_BIT = 64;
 
 /** A face whose four corners match can be merged with its neighbours. */
 const AO_UNIFORM = new Set([0x00, 0x55, 0xAA, 0xFF]);
@@ -333,3 +366,6 @@ export function meshZoneOverlay(world, chunk) {
 }
 
 export { MeshBuilder };
+
+/** Exported so the tests can hold the packing and the shader to each other. */
+export { FINISH_ID, SPORTS_BIT };

@@ -33,6 +33,25 @@ const RIM = 0xd9762a;
 const GLASSY = 0xdfe9f0;
 const TURFDARK = 0x2b6b33;
 
+/**
+ * What each of those materials is made of, for the shader.
+ *
+ * Equipment was drawn in flat colour while the stadium around it had grain,
+ * coursing and ribs, which made a goal frame read as plastic beside a brick
+ * wall. Keying the finish off the colour constant means every prop already
+ * authored gets its material without any of them being edited.
+ */
+export const PART_FINISH = {
+  [NET]: 'mesh',
+  [STEEL]: 'metal',
+  [RIM]: 'metal',
+  [WOOD]: 'timber',
+  [GLASSY]: 'gloss',
+  [TURFDARK]: 'turf',
+  [WHITE]: 'matte',
+  [PAD]: 'matte',
+};
+
 export const PROPS = [
   // ------------------------------------------------------------- football
   {

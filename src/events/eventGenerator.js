@@ -1,6 +1,7 @@
 import { EVENT_TEMPLATES, TIER_UNLOCK_REPUTATION, ORGANISER_TRAITS } from '../data/events.js';
 import { makeRng, hashString } from '../core/rng.js';
 import { TIER_ORDER } from '../venues/ratings.js';
+import { composeEvent } from './eventComposer.js';
 
 let nextId = 1;
 export function resetEventIds(n = 1) { nextId = n; }
@@ -55,8 +56,11 @@ export function generateEvent(state, seedSalt = 0) {
     const sportW = hosted.size === 0 || hosted.has(t.sport) ? 4 : 1;
     for (let i = 0; i < tierW * sportW; i++) weighted.push(t);
   }
-  const tpl = rng.pick(weighted);
-  return instantiate(tpl, state, rng);
+  const base = rng.pick(weighted);
+  // The base says what sport and roughly how big; the angle says what *this*
+  // staging of it is. Composing here rather than authoring every combination
+  // is what turns three events per sport into a hundred.
+  return instantiate(composeEvent(state, base, rng), state, rng);
 }
 
 /**
@@ -81,7 +85,9 @@ function currentTier(rep) {
 export function instantiate(tpl, state, rng) {
   const jitter = rng.jitter(0.22);
   const LEAD = { local: [3, 9], regional: [6, 16], national: [10, 26], international: [14, 34], world: [20, 46] };
-  const [lmin, lmax] = LEAD[tpl.tier] || [6, 18];
+  // An angle may override the notice period: a fixture offered because
+  // somebody else's ground fell through this morning is the whole point of it.
+  const [lmin, lmax] = tpl.lead || LEAD[tpl.tier] || [6, 18];
   const leadDays = rng.int(lmin, lmax);
   const bidLo = Math.round(tpl.bid[0] * jitter);
   const bidHi = Math.round(tpl.bid[1] * jitter);
@@ -90,6 +96,8 @@ export function instantiate(tpl, state, rng) {
   const ev = {
     uid: `E${nextId++}`,
     templateId: tpl.id,
+    baseId: tpl.baseId || tpl.id,
+    angleId: tpl.angleId || 'plain',
     name: tpl.name,
     sport: tpl.sport,
     tier: tpl.tier,

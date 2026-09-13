@@ -138,6 +138,9 @@ export class Sky {
       groundColor: new THREE.Color(0x424a55),
       fogColor: new THREE.Color(0xa8c4dc),
       night: 0,
+      // A wall clock in seconds, for the few surfaces that move. Water is the
+      // only one so far, and it is the one surface that looks wrong still.
+      time: 0,
       shadowStrength: 1,
       fogNear: 200,
       fogFar: 1100,
@@ -175,6 +178,7 @@ export class Sky {
     lerpCol(this.env.groundColor, a.gnd, b.gnd);
     lerpCol(this.env.fogColor, a.fog, b.fog);
     this.env.night = a.night + (b.night - a.night) * t;
+    this.env.time = (typeof performance !== 'undefined' ? performance.now() : Date.now()) * 0.001;
 
     // Weather desaturates the palette and pulls the fog in.
     const grey = (c) => {

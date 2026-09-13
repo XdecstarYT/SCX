@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { BLOCK_SIZE } from '../core/constants.js';
 import { createVoxelMaterial } from '../voxel/renderer.js';
-import { PROP_BY_ID, prop } from '../data/props.js';
+import { PROP_BY_ID, prop, PART_FINISH } from '../data/props.js';
+import { FINISH_ID } from '../voxel/mesher.js';
 
 /**
  * Renders the prop layer.
@@ -16,10 +17,16 @@ const HALF = 0.5;
 
 /** Build a merged, vertex-coloured geometry for one prop type. */
 export function buildPropGeometry(type) {
-  const pos = [], nor = [], col = [], uv = [], emis = [], idx = [];
+  const pos = [], nor = [], col = [], uv = [], emis = [], ao = [], fin = [], idx = [];
   let v = 0;
   for (const part of type.parts) {
-    const [cx, cy, cz, w, h, d, colour, glow = 0] = part;
+    const [cx, cy, cz, w, h, d, colour, glow = 0, finish] = part;
+    // The shader packs corner occlusion as 0-3. Props are freestanding
+    // objects, not voxels wedged into a corner, so they are fully open - and
+    // leaving the attribute off entirely meant the shader read 0 and drew
+    // every piece of equipment in the game at 38% ambient light.
+    const aoValue = 3;
+    const finValue = FINISH_ID[finish || PART_FINISH[colour]] || 0;
     const r = ((colour >> 16) & 255) / 255;
     const g = ((colour >> 8) & 255) / 255;
     const b = (colour & 255) / 255;
@@ -37,7 +44,14 @@ export function buildPropGeometry(type) {
       [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [0, 0, -1], w, h],
     ];
     for (const [a, bb, c, e, n, su, sv] of faces) {
-      for (const p of [a, bb, c, e]) { pos.push(p[0], p[1], p[2]); nor.push(n[0], n[1], n[2]); col.push(r, g, b); emis.push(glow); }
+      for (const p of [a, bb, c, e]) {
+        pos.push(p[0], p[1], p[2]);
+        nor.push(n[0], n[1], n[2]);
+        col.push(r, g, b);
+        emis.push(glow);
+        ao.push(aoValue);
+        fin.push(finValue);
+      }
       uv.push(0, 0, su, 0, su, sv, 0, sv);
       idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
       v += 4;
@@ -49,6 +63,8 @@ export function buildPropGeometry(type) {
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setAttribute('quadUv', new THREE.Float32BufferAttribute(uv, 2));
   geo.setAttribute('emis', new THREE.Float32BufferAttribute(emis, 1));
+  geo.setAttribute('ao', new THREE.Float32BufferAttribute(ao, 1));
+  geo.setAttribute('fin', new THREE.Float32BufferAttribute(fin, 1));
   geo.setIndex(idx);
   geo.computeBoundingSphere();
   return geo;

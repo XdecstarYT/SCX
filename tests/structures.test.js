@@ -679,16 +679,41 @@ test('occlusion does not stop a flat wall merging into a handful of quads', asyn
 
 test('every block carries a surface finish the shader knows', async () => {
   const { BLOCK_BY_ID } = await import('../src/data/blocks.js');
-  const known = new Set(['matte', 'turf', 'gloss', 'seat']);
+  // Read off the shader's own table rather than a list written out here. The
+  // list version of this went stale the moment there were more than four
+  // finishes, and a guard that has to be edited alongside the thing it guards
+  // is not guarding it.
+  const { FINISH_ID, SPORTS_BIT } = await import('../src/voxel/mesher.js');
+  const known = new Set(Object.keys(FINISH_ID));
   for (const b of BLOCK_BY_ID.slice(1)) {
     assert.ok(known.has(b.finish), `${b.key} has finish "${b.finish}", which the shader cannot render`);
   }
+
+  // The finish id and the playing-surface flag share one vertex attribute.
+  // When the flag sat at 8 and an eighth finish was added, turf-plus-flag read
+  // as a seat and a pitch came out looking like terracing.
+  for (const [name, id] of Object.entries(FINISH_ID)) {
+    assert.ok(id >= 0 && id < SPORTS_BIT,
+      `finish "${name}" is id ${id}, which collides with the playing-surface flag at ${SPORTS_BIT}`);
+  }
+
   // And the ones that obviously should differ, do.
   const finishOf = (k) => BLOCK_BY_ID.find((b) => b.key === k).finish;
   assert.equal(finishOf('turf'), 'turf');
   assert.equal(finishOf('glass'), 'gloss');
   assert.equal(finishOf('seat'), 'seat');
   assert.equal(finishOf('concrete'), 'matte');
+  assert.equal(finishOf('brick'), 'brick');
+  assert.equal(finishOf('timber'), 'timber');
+  assert.equal(finishOf('asphalt'), 'asphalt');
+  assert.equal(finishOf('water'), 'water');
+
+  // Every finish the shader can draw is actually used by something, or it is
+  // dead code in a hot loop.
+  const used = new Set(BLOCK_BY_ID.slice(1).map((b) => b.finish));
+  for (const name of known) {
+    assert.ok(used.has(name), `no block uses the "${name}" finish`);
+  }
 });
 
 test('pitch markings follow the surface the player actually built', async () => {
