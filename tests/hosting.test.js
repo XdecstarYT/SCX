@@ -363,3 +363,61 @@ test('a ceremony is staged, not won', () => {
   assert.equal(entry.ceremonial, true);
   assert.equal(entry.shared, false, 'a ceremony was recorded as a shared trophy');
 });
+
+test('a ground staging a competition is not free for anything else', async () => {
+  const { Game } = await import('../src/core/game.js');
+  const { buildComplex } = await import('../sim/sports.mjs');
+  const { SPORT_ZONES } = await import('../src/data/zones.js');
+  const { EVENT_TEMPLATES } = await import('../src/data/events.js');
+  const { instantiate } = await import('../src/events/eventGenerator.js');
+  const { makeRng } = await import('../src/core/rng.js');
+
+  const g = new Game();
+  g.newGame({ complexName: 'Busy', seed: 8 });
+  g.notify = () => {};
+  buildComplex(g, SPORT_ZONES.find((z) => z.sport === 'rugby'), { roof: true, screens: true, seats: 34_000 });
+  g.state.cash = 300_000_000;
+  g.state.reputation.venue = 92;
+  g.state.reputation.organiser = 92;
+  g.markWorldDirty();
+  g.analyze(true);
+  const v = g.analysis.venues.find((x) => x.sport === 'rugby');
+  g.registerVenue(v.key, 'Busy Park');
+  g.analyze(true);
+  const venue = g.allVenues().find((x) => x.sport === 'rugby');
+
+  const comp = COMPETITION_BY_ID.get('autumn_tests');
+  g.skipDay(firstMatchDay(comp, 2026) - 148 - g.state.day);
+  let hosting = null;
+  for (let i = 0; i < 6 && !hosting; i++) {
+    const offer = g.competitionOffers().find((o) => o.compId === comp.id);
+    if (!offer) { g.skipDay(360); continue; }
+    g.state.cash = 300_000_000;
+    const r = g.bidForCompetition(offer.uid,
+      { amount: offer.bidRange[1], venueKey: venue.key, packages: [], terms: [], pricing: 'standard' });
+    hosting = r.hosting || null;
+    if (!hosting) g.skipDay(360);
+  }
+  assert.ok(hosting, 'never won the rights');
+
+  // The days the competition occupies are named, and there are as many as
+  // there are unplayed matches.
+  const busyDays = g.venueCommitments(venue.key);
+  assert.equal(busyDays.length, comp.matches, 'the calendar does not know about every match');
+
+  // An event booked onto one of those days is refused, with the reason.
+  const tpl = EVENT_TEMPLATES.find((t) => t.sport === 'rugby' && t.tier === 'regional');
+  const ev = instantiate(tpl, g.state, makeRng(77));
+  ev.eventDay = hosting.matches[0].day;
+  ev.bidDeadline = ev.eventDay;
+  ev.status = 'open';
+  g.state.events.board.push(ev);
+  const blocked = g.submitBid(ev.uid, {
+    amount: ev.bidRange[1], venueKey: venue.key, packages: [], terms: [], pricing: 'standard' });
+  assert.ok(blocked.error, 'an event was booked into a ground mid-series');
+  assert.match(blocked.error, /staging/, `the refusal does not say why: "${blocked.error}"`);
+
+  // A day the competition does not want is still free.
+  const free = hosting.matches[hosting.matches.length - 1].day + 30;
+  assert.equal(g.venueBusy(venue.key, free, 1), null, 'a clear day reads as busy');
+});

@@ -922,6 +922,8 @@ export class Screens {
           el('div.tiny.faint', { text: `${h.venueName} · ${h.comp?.format || ''} · for ${h.trophy}` })),
         pill(h.remaining ? `${h.remaining} to play` : 'Complete', h.remaining ? '' : 'ok')),
       el('div.tiny', { style: { marginTop: '6px' }, text: h.standing }),
+      h.homeSide ? el('div.tiny.good', { style: { marginTop: '4px' },
+        text: `${h.homeSide.name} are in this, at their own ground.` }) : null,
       el('div.card.tight', { style: { marginTop: '8px' } }, ...h.matches.map((m) => matchRow(h, m))),
       el('div.tiny.faint', { style: { marginTop: '6px' },
         text: `Rights cost ${fmtMoney(h.rightsPaid)} · ${fmtNum(h.totalAttendance)} through the gates so far` }));

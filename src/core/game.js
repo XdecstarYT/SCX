@@ -596,12 +596,17 @@ export class Game {
   hostings() {
     const s = this.state;
     if (!s.hosting) s.hosting = createHostingState();
+    const tenantIds = new Set((s.league?.tenants || [])
+      .filter((t) => t.clubId).map((t) => `${t.venueKey}:${t.clubId}`));
     return s.hosting.active.map((h) => ({
       ...h,
       comp: COMPETITION_BY_ID.get(h.compId),
       standing: standingLine(h),
       remaining: h.matches.filter((m) => !m.played).length,
       next: h.matches.find((m) => !m.played) || null,
+      // A resident club contesting something staged at its own ground is the
+      // moment the tenancy and the rights systems are both for.
+      homeSide: h.sides.find((x) => tenantIds.has(`${h.venueKey}:${x.id}`)) || null,
     }));
   }
 
@@ -697,6 +702,35 @@ export class Game {
     return { ok: true, outcome, evaluation, ev: offer, venue, hosting };
   }
 
+  /**
+   * The days a venue is already committed to: every match of every staged
+   * competition, plus the days each one runs over. A Test is four days, and a
+   * ground cannot stage anything else on any of them.
+   */
+  venueCommitments(venueKey) {
+    const out = [];
+    for (const h of this.state.hosting?.active || []) {
+      if (h.venueKey !== venueKey) continue;
+      const comp = COMPETITION_BY_ID.get(h.compId);
+      const span = comp?.matchDays || 1;
+      for (const m of h.matches) {
+        if (m.played) continue;
+        out.push({ from: m.day, to: m.day + span - 1, label: `${h.name}, ${m.label}` });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Is this venue free for something running `days` days from `day`? Returns
+   * the clash, so the caller can say which competition is in the way.
+   */
+  venueBusy(venueKey, day, days = 1) {
+    const to = day + Math.max(1, days) - 1;
+    return this.venueCommitments(venueKey)
+      .find((c) => day <= c.to && to >= c.from) || null;
+  }
+
   /** Whether a schedule would land on top of one this venue already holds. */
   hostingClash(offer, venue) {
     const comp = COMPETITION_BY_ID.get(offer.compId);
@@ -708,6 +742,14 @@ export class Game {
       const last = h.matches[h.matches.length - 1];
       if (from <= last.day && to >= h.matches[0].day) {
         return `${venue.name} is already staging the ${h.name} over those dates.`;
+      }
+    }
+    // A competition also has to clear the events already booked into it.
+    for (const ev of this.state.events.scheduled) {
+      if (ev.bid?.venueKey !== venue.key) continue;
+      const evTo = ev.eventDay + Math.max(1, ev.days || 1) - 1;
+      if (from <= evTo && to >= ev.eventDay) {
+        return `${venue.name} is booked for ${ev.name} on day ${ev.eventDay}.`;
       }
     }
     return null;
@@ -886,6 +928,13 @@ export class Game {
     const evaluation = evaluateBid(ev, venue, s, bid);
     if (!evaluation.check.ok) return { error: 'Your venue does not meet the requirements yet.' };
     if (bid.amount > s.cash) return { error: 'You cannot cover this bid.' };
+    // A ground staging a competition is not available for anything else. Five
+    // Tests is fifty days of the calendar, and that cost is most of what makes
+    // the rights a decision rather than free money.
+    const busy = this.venueBusy(venue.key, ev.eventDay, ev.days || 1);
+    if (busy) {
+      return { error: `${venue.name} is staging ${busy.label} on day ${busy.from}.` };
+    }
 
     s.stats.bidsPlaced++;
     const outcome = resolveBid(ev, evaluation, bid);
