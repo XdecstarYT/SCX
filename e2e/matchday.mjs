@@ -68,9 +68,13 @@ const built = await page.evaluate(() => {
   }
 
   g.state.cash = 200_000_000;
-  g.state.reputation.venue = 74;
-  g.state.reputation.organiser = 74;
-  g.state.reputation.fans = 80;
+  // Reputation deliberately in step with the ground. At 74 the board correctly
+  // offers a rating-45 venue mostly national and international fixtures it
+  // cannot meet - which is the tier weighting working, and made this test
+  // flaky rather than the game wrong.
+  g.state.reputation.venue = 30;
+  g.state.reputation.organiser = 45;
+  g.state.reputation.fans = 70;
   g.state.weather = 'rain';
   g.markWorldDirty();
   g.analyze(true);
@@ -224,19 +228,28 @@ const delegated = await page.evaluate(() => {
   const g = window.__sct.game;
   const venue = g.allVenues().find((x) => x.sport === 'football');
   const before = g.state.events.history.length;
-  for (let i = 0; i < 400 && !g.matchday; i++) {
+  // Same path as the first one: bid on everything open, because submitBid is
+  // what decides which offers this ground actually qualifies for. Picking one
+  // offer a day and hoping was why this step was flaky.
+  for (let i = 0; i < 600 && !g.matchday; i++) {
     g.state.cash = 200_000_000;
-    const offer = g.state.events.board.find((e) => e.status === 'open'
-      && (e.sport === 'football' || e.sport === 'concert'));
-    if (offer) g.submitBid(offer.uid, { amount: offer.bidRange[1], venueKey: venue.key,
-      packages: [], terms: [], pricing: 'standard' });
+    g.state.reputation.venue = Math.min(g.state.reputation.venue, 34);
+    for (const offer of g.state.events.board.filter((e) => e.status === 'open')) {
+      const r = g.submitBid(offer.uid, { amount: offer.bidRange[1], venueKey: venue.key,
+        packages: [], terms: [], pricing: 'standard' });
+      if (r?.outcome?.won) break;
+    }
     g.skipDay(1);
   }
-  if (!g.matchday) return null;
+  if (!g.matchday) {
+    return { diagnostic: { day: g.state.day, board: g.state.events.board.length,
+      scheduled: g.state.events.scheduled.length } };
+  }
   const r = g.matchdayDelegate(true);
   return { ok: !!r.report, calls: r.report?.ops?.calls?.length || 0,
     more: g.state.events.history.length > before };
 });
+if (delegated?.diagnostic) console.log('  delegate diagnostic: ' + JSON.stringify(delegated.diagnostic));
 check(delegated?.ok, delegated
   ? `delegating the whole day still resolved it, over ${delegated.calls} calls`
   : 'a second matchday never opened');
