@@ -474,6 +474,17 @@ export class BuildController {
     if (!cells || cells.length === 0) { this.anchor = null; return null; }
     const g = this.game;
 
+    // A prefab may be built out of materials that are still behind research.
+    // The palette greys those blocks out, so a prefab that used them would be
+    // a way round the tech tree rather than a shortcut through the tedium.
+    if (this.activeTool === 'prefab') {
+      const def = PREFAB_BY_KEY.get(this.prefabKey);
+      if (def?.unlock && !g.isUnlocked(def.unlock)) {
+        this.anchor = null;
+        return { error: `${def.name} needs the matching research project first.` };
+      }
+    }
+
     // Procedural structures take the plan path: multi-material, one batch.
     if (this.isPlanTool && this.lastPlan) {
       const plan = this.lastPlan;

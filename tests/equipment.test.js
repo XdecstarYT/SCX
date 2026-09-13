@@ -296,6 +296,61 @@ test('a staged prefab installs its equipment when the project completes', async 
     'the finished pitch did not get its goals, flags and benches');
 });
 
+test('a prefab cannot hand you a material research has not unlocked yet', async () => {
+  // The palette greys out locked blocks. A prefab that placed one anyway
+  // would be a way round the tech tree, not a shortcut through the tedium,
+  // so a prefab built out of locked materials has to be locked itself.
+  const { BLOCK_BY_ID } = await import('../src/data/blocks.js');
+  const { RESEARCH } = await import('../src/data/research.js');
+  const ids = new Set(RESEARCH.map((r) => r.id));
+  const w = new VoxelWorld(256);
+  w.generateTerrain();
+
+  for (const def of PREFABS) {
+    if (def.unlock) {
+      assert.ok(ids.has(def.unlock), `${def.key} names an unknown project "${def.unlock}"`);
+    }
+    const plan = generatePrefab(w, def.key, { x: 4, y: GROUND_Y, z: 4 }, 0);
+    for (let i = 3; i < plan.cells.length; i += 5) {
+      const b = BLOCK_BY_ID[plan.cells[i]];
+      if (!b?.unlock) continue;
+      assert.equal(b.unlock, def.unlock,
+        `${def.key} places ${b.key}, which needs "${b.unlock}", but the prefab `
+        + `${def.unlock ? `is gated on "${def.unlock}"` : 'is not gated at all'}`);
+    }
+    for (const pr of plan.props) {
+      const t = prop(pr.typeId);
+      if (!t?.unlock) continue;
+      assert.equal(t.unlock, def.unlock, `${def.key} places locked equipment ${t.key}`);
+    }
+  }
+});
+
+test('every sport prefab lays a surface that passes its own regulations', async () => {
+  // A prefab is the game telling the player what a court is supposed to look
+  // like. One that reads as undersized when the analyser measures it would be
+  // the game marking its own homework wrong.
+  const { ZONES } = await import('../src/data/zones.js');
+  const sportPrefabs = PREFABS.filter((d) => d.group === 'field');
+  assert.ok(sportPrefabs.length >= 12, 'the field library got smaller');
+
+  for (const def of sportPrefabs) {
+    const w = new VoxelWorld(128);
+    w.generateTerrain();
+    const plan = generatePrefab(w, def.key, { x: 20, y: GROUND_Y, z: 20 }, 0);
+    applyPlan(w, plan.cells, def.key, plan.props);
+    const { venues } = detectVenues(w, {});
+    const v = venues[0];
+    assert.ok(v, `${def.key} produced no venue at all`);
+    assert.equal(v.field.regulation, 1,
+      `${def.key} lays a ${v.sportName} the analyser calls undersized `
+      + `(${v.field.w}x${v.field.d}, needs ${v.field.minW}x${v.field.minD})`);
+    assert.equal(v.field.surfaceOk, true, `${def.key} lays the wrong surface for its own sport`);
+    const z = ZONES.find((x) => x.name === v.sportName);
+    assert.ok(z?.group === 'sport', `${def.key} anchored on something that is not a sport`);
+  }
+});
+
 test('no prefab ships with a roof the inspector would flag', () => {
   // The game warns about roof sections that outrun their supports, and those
   // warnings cause event-day incidents. A prefab the game itself hands you

@@ -30,6 +30,7 @@ import { blockId, block, BLOCK_BY_KEY, BLOCK_CATEGORIES } from './data/blocks.js
 import { PROPS, PROP_BY_KEY, PROP_GROUPS, PROP_BY_ID, propId } from './data/props.js';
 import { propSlotKey } from './ui/hotbar.js';
 import { PREFABS, PREFAB_GROUPS, generatePrefab } from './voxel/prefabs.js';
+import { RESEARCH } from './data/research.js';
 import { applyPlan } from './voxel/buildTools.js';
 import { zoneId, zone, ZONE_BY_KEY, ZONE_GROUPS } from './data/zones.js';
 import { instantiate } from './events/eventGenerator.js';
@@ -1032,8 +1033,14 @@ class App {
           el('div.section', { text: g.name }),
           el('div.stack', {}, ...items.map((def) => {
             const est = this.estimatePrefab(def);
-            return el('button.card.tight.tap', {
-              'aria-label': `${def.name}, ${def.size.x} by ${def.size.z} blocks`,
+            // A prefab built out of locked materials is gated on the project
+            // that unlocks them, and says so rather than failing on the tap.
+            const project = def.unlock && !this.game.isUnlocked(def.unlock)
+              ? RESEARCH.find((r) => r.id === def.unlock) : null;
+            return el('button.card.tight.tap' + (project ? '.off' : ''), {
+              'aria-label': `${def.name}, ${def.size.x} by ${def.size.z} blocks`
+                + (project ? `, locked: needs ${project.name}` : ''),
+              disabled: !!project,
               onclick: () => {
                 this.controller.setPrefab(def.key);
                 this.hud.closeSheet();
@@ -1045,9 +1052,11 @@ class App {
               el('div.rowbetween', {},
                 el('div', {},
                   el('div.small', { text: `${def.icon} ${def.name}` }),
-                  el('div.tiny.faint', { text: def.hint })),
+                  el('div.tiny.faint', {
+                    text: project ? `Needs ${project.name}. ${def.hint}` : def.hint })),
                 el('div.right', { style: { flex: '0 0 auto' } },
-                  el('div.small.mono' + (est.cost > cash ? '.bad' : ''), { text: fmtMoney(est.cost) }),
+                  el('div.small.mono' + (project ? '.faint' : est.cost > cash ? '.bad' : ''), {
+                    text: project ? 'Locked' : fmtMoney(est.cost) }),
                   el('div.tiny.faint', { text: `${def.size.x}\u00D7${def.size.z} blocks` }))));
           })));
       }).filter(Boolean));
