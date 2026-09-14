@@ -19,6 +19,11 @@ import { Hotbar } from './ui/hotbar.js';
 import { HeldBlock } from './world/viewmodel.js';
 import { PropRenderer } from './world/propRenderer.js';
 import { Effects } from './world/effects.js';
+import { JobMarkers } from './world/jobMarkers.js';
+import { formatLeft, URGENT_SECONDS } from './core/incidents.js';
+
+/** Title of the jobs sheet, and the name it is recognised by when redrawing. */
+const JOBS_SHEET = 'What needs doing';
 import { Screens } from './ui/screens.js';
 import { MatchdayScreen } from './ui/matchdayUi.js';
 import { EventsUi } from './ui/eventsUi.js';
@@ -292,6 +297,7 @@ class App {
       // The complex, with people in it. Runs all the time, not just on an
       // event day, because an empty stadium is a model rather than a game.
       this.life = new WorldLife(this.scene, world);
+    this.jobMarkers = new JobMarkers(this.scene);
       this.held = new HeldBlock(this.camera);
       this.scene.add(this.camera);   // so camera children render
 
@@ -532,6 +538,9 @@ class App {
       if (op.op === 'add') this.effects.propPlaced(op.x, op.y, op.z, t.color, w);
       else this.effects.removed(op.x, op.y, op.z, t.color);
     }
+    // Fittings sound different from blocks. The rate limit is per cue, so a
+    // whole row of seats going in is one tick rather than forty.
+    if (b.props.length) audio.play(b.props[0].op === 'add' ? 'prop' : 'remove');
 
     // Sample rather than spray: a 2,000-block fill needs a hint of dust, not
     // two thousand particle bursts.
@@ -1281,6 +1290,13 @@ class App {
       if (n.kind === 'achievement' || n.kind === 'goal') audio.play('achievement');
     });
     bus.on('state', () => this.hud?.refresh());
+    // Jobs come and go on their own clock, so the chip has to be told rather
+    // than waiting for something else to refresh the HUD.
+    bus.on('jobs', () => {
+      this.hud.refresh();
+      if (this.hud.sheetOpen && this.hud.sheetName === JOBS_SHEET) this.showJobs();
+    });
+
     bus.on('analysis', () => {
       this.life?.rebuild(this.game.analysis);
       this.refreshStatus();
@@ -1344,7 +1360,7 @@ class App {
       Math.max(90, venue.reach * 2.6));
     this.rig.pitch = 0.45;
     this.showOrbit = true;
-    audio.play('crowd');
+    audio.play('cheer');
 
     const banner = el('div.tutorial.eventday', {},
       el('div.step', { text: 'EVENT DAY' }),
@@ -1692,7 +1708,9 @@ class App {
     this.rig.sensitivity = s.sensitivity;
     this.rig.invertY = s.invertY;
     audio.enabled = s.sound;
+    audio.ambient = s.ambience ?? true;
     this.effects?.setEnabled(!s.reducedMotion);
+    this.hud.reducedMotion = s.reducedMotion;
     this.fpsNode.style.display = s.showFps ? '' : 'none';
     // Handedness is a root attribute rather than inline styles: inline styles
     // beat the landscape media query, which is how the action pad used to end
@@ -1763,6 +1781,7 @@ class App {
       { icon: '?', title: 'Show the tutorial', onclick: () => this.tutorial.show() },
     ]);
     this.hud.onTab = (t) => this.setTab(t);
+    this.hud.onJobs = () => this.showJobs();
     this.hud.onSpeed = (a) => this.speedAction(a);
     this.dock?.renderInfo();
     this.tutorial?.refresh();
@@ -1775,6 +1794,64 @@ class App {
     else if (a === 'cycle') s.speed = s.speed >= 8 ? 1 : s.speed * 2;
     else if (a === 'skip') { this.game.skipDay(1); audio.play('ui'); }
     this.hud.refresh();
+  }
+
+  // ------------------------------------------------------------------- jobs
+  /**
+   * The running of the place: what needs doing, how long is left on it, and
+   * what it costs to send somebody. One tap per job, because the decision
+   * worth making is which of six to do first, not which of two buttons.
+   */
+  showJobs() {
+    const report = this.game.jobs();
+    const body = el('div.stack');
+    if (!report.live.length) {
+      body.append(el('div.card.tight', {},
+        el('div.small', { text: 'Nothing needs doing.' }),
+        el('div.tiny.faint', { text: 'Jobs come up while the place is open and people are in it.' })));
+    }
+    for (const j of report.live) {
+      const left = j.secondsLeft;
+      const urgent = left <= URGENT_SECONDS;
+      body.append(el('div.card.job', { class: urgent ? 'urgent' : '' },
+        el('div.rowbetween', {},
+          el('div.row', {},
+            el('span.job-icon', { text: j.def.icon }),
+            el('div', {},
+              el('div.small.strong', { text: j.def.name }),
+              el('div.tiny.faint', { text: j.def.blurb }))),
+          el('div.tiny', { class: urgent ? 'bad' : 'faint', text: formatLeft(left) })),
+        el('div.rowbetween', { style: { marginTop: '8px' } },
+          el('button.btn.small', {
+            onclick: () => this.doJob(j.uid),
+          }, `${j.def.action}${j.cost ? ` \u00b7 ${fmtMoney(j.cost)}` : ' \u00b7 free'}`),
+          el('button.btn.small.ghost', { onclick: () => this.goToJob(j) }, 'Show me'))));
+    }
+    if (report.done || report.missed) {
+      body.append(el('div.tiny.faint', { style: { marginTop: '4px' },
+        text: `${report.done} seen to, ${report.missed} missed.` }));
+    }
+    this.hud.openSheet(JOBS_SHEET, body);
+  }
+
+  doJob(uid) {
+    const r = this.game.handleJob(uid);
+    if (r.error) { this.toast('warn', 'Cannot do that', r.error); audio.play('deny'); return; }
+    audio.play(r.cost ? 'spend' : 'cash');
+    this.effects.flash(r.job.x, r.job.y, r.job.z, r.def.colour, { scale: 1.6, duration: 0.4 });
+    this.toast('good', r.def.name, r.cost
+      ? `Seen to for ${fmtMoney(r.cost)}.`
+      : 'Seen to. That one was free.');
+    this.refresh();
+    if (this.hud.sheetOpen) this.showJobs();
+  }
+
+  /** Put the camera on it, so "where is that" is never a question. */
+  goToJob(j) {
+    this.hud.closeSheet();
+    this.rig.focusOn((j.x + 0.5) * BLOCK_SIZE, j.y * BLOCK_SIZE, (j.z + 0.5) * BLOCK_SIZE, 44);
+    this.effects.flash(j.x, j.y, j.z, j.def.colour, { scale: 1.8, duration: 0.5, grow: 0.6 });
+    this.toast('info', j.def.name, j.def.blurb);
   }
 
   toast(kind, title, body) {
@@ -1839,6 +1916,26 @@ class App {
     };
   }
 
+  /**
+   * Where a job may land. Straight off the living world's own scan - there is
+   * no second pass over the voxels for this.
+   */
+  jobSites() {
+    const l = this.life;
+    if (!l) return {};
+    return {
+      walk: l.walk,
+      stand: l.seats,
+      parking: l.bays.length ? l.bays : l.parks,
+      pitch: l.pitches?.length
+        ? l.pitches.flatMap((p) => [Math.round(p.x), Math.round(p.y), Math.round(p.z)])
+        : [],
+      // A queue needs a turnstile to form at. With none zoned, the jobs that
+      // want one simply never come up.
+      gate: l.gates,
+    };
+  }
+
   tickFrame(dt) {
     const g = this.game;
 
@@ -1849,8 +1946,29 @@ class App {
     // own crowd, so the standing population steps aside while it runs.
     if (this.life) {
       this.life.setEnabled(!this.show?.active);
-      if (!this.show?.active) this.life.update(dt, this.lifeContext());
+      if (!this.show?.active) {
+        const ctx = this.lifeContext();
+        this.life.update(dt, ctx);
+        // What you hear and what you can see are the same numbers, so a busy
+        // ground cannot sound like an empty one.
+        audio.setAmbience({ ...ctx, roads: Math.min(1, this.life.roads.length / 900) });
+        // ...and the jobs that come up land on the same surfaces the crowd is
+        // walking on, so nothing is ever asked of a place you did not build.
+        this.game.tickJobs({
+          dt,
+          population: ctx.population,
+          event: ctx.stands > 0.2,
+          sites: this.jobSites(),
+        });
+      }
     }
+    if (this.jobMarkers) {
+      const show = !this.show?.active && this.tab !== 'play';
+      this.jobMarkers.setEnabled(show);
+      if (show) this.jobMarkers.update(dt, this.game.jobs().live);
+    }
+    audio.update(dt);
+    this.hud.tick(dt);
 
     // Slow orbit during the event-day cinematic.
     if (this.showOrbit) this.rig.yaw += dt * 0.06;
@@ -1931,6 +2049,8 @@ app.boot().catch((e) => {
   }
 });
 window.__sct = app;
+// Sound has no visible output, so it needs a handle to be testable at all.
+window.__sct.audio = audio;
 
 /**
  * Small console API. Handy for poking at a save from devtools, and it is what

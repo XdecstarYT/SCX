@@ -763,3 +763,41 @@ input[type='range']::-moz-range-thumb { width: 22px; height: 22px; border-radius
   flex: 0 0 auto; width: 20px; height: 20px; border-radius: 5px;
   border: 1px solid rgba(0, 0, 0, .4); box-shadow: inset 0 -5px 8px rgba(0, 0, 0, .25);
 }
+
+/* The cash stat marks itself while the counter is still moving, so money
+   arriving is something you notice rather than a number that changed when
+   you were not looking. */
+.stat.cash .v { transition: color 180ms ease, text-shadow 180ms ease; }
+.stat.cash.up .v { color: var(--green); text-shadow: 0 0 10px color-mix(in srgb, var(--green) 65%, transparent); }
+.stat.cash.down .v { color: var(--red); text-shadow: 0 0 10px color-mix(in srgb, var(--red) 55%, transparent); }
+.stat.cash.up, .stat.cash.down { animation: cash-bump 320ms ease-out; }
+@keyframes cash-bump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+[data-motion='reduced'] .stat.cash.up, [data-motion='reduced'] .stat.cash.down { animation: none; }
+
+/* ------------------------------------------------------------------ jobs */
+/* The running of the place: what needs doing, where, and how long is left. */
+.row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.strong { font-weight: 650; }
+.btn.small { padding: 6px 10px; font-size: 12px; }
+.btn.ghost { background: transparent; border-color: var(--line); color: var(--text-faint); }
+
+.chip.jobs.urgent {
+  border-color: rgba(255,95,109,.55);
+  color: var(--red);
+  animation: job-beat 1.1s ease-in-out infinite;
+}
+@keyframes job-beat {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+[data-motion='reduced'] .chip.jobs.urgent { animation: none; }
+
+.card.job .job-icon { font-size: 20px; flex: 0 0 auto; line-height: 1; }
+.card.job + .card.job { margin-top: 8px; }
+.card.job.urgent { border-color: rgba(255,95,109,.42); background: var(--red-soft); }
+.card.job .tiny.bad { color: var(--red); font-weight: 650; }
+.card.job .tiny.faint { white-space: normal; }

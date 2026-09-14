@@ -1,6 +1,14 @@
 import { el, fill, clear } from './dom.js';
 import { scenarioLabel } from '../core/scenario.js';
 import { fmtMoney, fmtNum } from '../core/economy.js';
+import { audio } from '../core/audio.js';
+
+/** Seconds the cash stat stays marked after it moves. */
+const CASH_FLASH = 0.9;
+/** Seconds the counter takes to travel whatever distance it is given. */
+const CASH_SECONDS = 0.8;
+/** Below this, a change is the day ticking over rather than news. */
+const CASH_NOTICE = 250;
 
 const NAV = [
   { key: 'home',    name: 'Home',    icon: '⌂' },
@@ -26,6 +34,11 @@ export class Hud {
     this.onCamera = null;
     this.onSpeed = null;
     this.toastTimers = new Map();
+    this.cashShown = undefined;
+    this.cashTarget = undefined;
+    this.cashFlash = 0;
+    this.cashRate = 0;
+    this.reducedMotion = false;
     this.build();
   }
 
@@ -76,9 +89,17 @@ export class Hud {
       onclick: () => this.onTab?.('home'),
     }, '\u2692 0%');
 
+    // What the place needs doing right now. Hidden when there is nothing, so
+    // an empty plot is not carrying a permanent zero.
+    this.jobChip = el('button.chip.jobs', {
+      'aria-label': 'Jobs waiting', title: 'Jobs waiting',
+      style: { display: 'none' },
+      onclick: () => this.onJobs?.(),
+    }, '\u{1F4CB} 0');
+
     this.topbar = el('div.topbar', {},
       this.cashStat, this.repStat, this.capStat, this.dayStat,
-      el('div.clockbox', {}, this.scenarioChip, this.buildChip, this.weatherChip,
+      el('div.clockbox', {}, this.scenarioChip, this.jobChip, this.buildChip, this.weatherChip,
         this.pauseChip, this.speedChip, this.skipChip));
 
     // ---------------------------------------------------------- side rails
@@ -162,11 +183,61 @@ export class Hud {
     }
   }
 
+  // ---------------------------------------------------------------- the till
+  /**
+   * Money arriving should read as something happening rather than a number
+   * that was one thing and is now another. `refresh` only runs when something
+   * asks it to, so the figure is eased toward its target per frame instead,
+   * and the stat is marked for as long as it is moving.
+   */
+  setCash(value) {
+    if (this.cashShown === undefined) {
+      this.cashShown = value;
+      this.cashTarget = value;
+      this.cashV.textContent = fmtMoney(value);
+      return;
+    }
+    if (value === this.cashTarget) return;
+    const delta = value - this.cashTarget;
+    this.cashTarget = value;
+    // Close whatever gap is left in a fixed time, however big it is. Easing
+    // by a fraction of the remaining gap never actually arrives: a five
+    // million pound jump was still two thousand short a full second later,
+    // and the stat sat lit up forever because it had never finished.
+    this.cashRate = Math.abs(value - this.cashShown) / CASH_SECONDS;
+    // Wages and gate receipts tick over constantly. Marking the stat for
+    // those would leave it permanently lit and mean nothing, so only a change
+    // that is actually worth looking up for gets the flash.
+    if (Math.abs(delta) >= Math.max(CASH_NOTICE, Math.abs(value) * 0.001)) {
+      this.cashStat.classList.toggle('up', delta > 0);
+      this.cashStat.classList.toggle('down', delta < 0);
+      this.cashFlash = CASH_FLASH;
+    }
+  }
+
+  /** Per frame. Only the parts of the HUD that move on their own live here. */
+  tick(dt) {
+    if (this.cashTarget === undefined) return;
+    if (this.cashFlash > 0 && (this.cashFlash -= dt) <= 0) {
+      this.cashStat.classList.remove('up', 'down');
+    }
+    const gap = this.cashTarget - this.cashShown;
+    if (gap === 0) return;
+    if (this.reducedMotion || Math.abs(gap) < 1) {
+      this.cashShown = this.cashTarget;
+    } else {
+      const step = Math.max(this.cashRate * dt, Math.abs(gap) * dt);
+      this.cashShown += Math.sign(gap) * Math.min(Math.abs(gap), step);
+      if (Math.abs(this.cashTarget - this.cashShown) < 1) this.cashShown = this.cashTarget;
+    }
+    this.cashV.textContent = fmtMoney(this.cashShown);
+  }
+
   // ------------------------------------------------------------------- data
   refresh() {
     const s = this.game.state;
     if (!s) return;
-    this.cashV.textContent = fmtMoney(s.cash);
+    this.setCash(s.cash);
     this.cashStat.classList.toggle('negative', s.cash < 0);
     this.repV.textContent = Math.round(s.reputation.venue);
     this.capV.textContent = fmtNum(s.derived?.bestCapacity || 0);
@@ -176,6 +247,20 @@ export class Hud {
     this.pauseChip.textContent = s.paused ? '▶' : '⏸';
     this.pauseChip.classList.toggle('on', !s.paused);
     this.speedChip.textContent = `${s.speed}x`;
+
+    const jobs = s.jobs?.live || [];
+    if (jobs.length) {
+      const urgent = jobs.filter((j) => (j.dueAt - (s.jobs.clock || 0)) <= 20).length;
+      this.jobChip.style.display = '';
+      this.jobChip.textContent = `\u{1F4CB} ${jobs.length}`;
+      this.jobChip.classList.toggle('urgent', urgent > 0);
+      this.jobChip.title = urgent
+        ? `${jobs.length} jobs waiting, ${urgent} about to lapse`
+        : `${jobs.length} job${jobs.length > 1 ? 's' : ''} waiting`;
+    } else {
+      this.jobChip.style.display = 'none';
+      this.jobChip.classList.remove('urgent');
+    }
 
     const projects = s.construction || [];
     if (projects.length) {
@@ -228,6 +313,10 @@ export class Hud {
 
   // ----------------------------------------------------------------- sheets
   openSheet(title, body, opts = {}) {
+    if (!this.sheetOpen) audio.play('open');
+    // Which sheet is up, so a caller that wants to redraw its own can tell
+    // without tracking it separately and drifting out of step.
+    this.sheetName = opts.name || title;
     const head = el('div.sheet-head', {},
       el('h2', { text: title }),
       opts.action || null,
@@ -249,6 +338,8 @@ export class Hud {
     // the app the player had just dismissed something and should be returned
     // to the build tab, so the nav highlight never matched the open screen.
     const wasOpen = this.sheetOpen;
+    if (wasOpen) audio.play('close');
+    this.sheetName = null;
     this.sheet.classList.add('hidden');
     clear(this.sheetPanel);
     this.sheetBody = null;

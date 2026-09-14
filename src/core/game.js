@@ -59,6 +59,12 @@ import { SPONSORS, ALL_SPONSORS, availableSponsors, blockedSponsors } from '../d
 import { RESEARCH, researchAvailable } from '../data/research.js';
 import { UTILITIES, UTILITY_KEYS, nextTier } from '../data/utilities.js';
 import { RANDOM_EVENTS } from '../data/randomEvents.js';
+// Aliased: the methods that wrap these share their names, and a bare call
+// inside a same-named method is a trap for whoever reads it next.
+import {
+  tickJobs as rollJobs, handleJob as sendToJob,
+  jobCost, secondsLeft, jobSummary, JOB_BY_KEY,
+} from './incidents.js';
 import { ACHIEVEMENTS } from '../data/achievements.js';
 import { makeRng, hashString } from './rng.js';
 
@@ -1935,6 +1941,53 @@ export class Game {
 
   // ===================================================================== TICKETS
   /** Everything the ticketing screen shows. */
+  // ------------------------------------------------------------------- jobs
+  /**
+   * Roll the running of the place forward. Driven from the frame loop rather
+   * than the daily tick because jobs land on the hour and need to know where
+   * the crowd actually is, which is something only the world knows.
+   */
+  tickJobs(ctx = {}) {
+    const s = this.state;
+    if (!s) return null;
+    const tick = Math.floor((s.jobs?.clock || 0) / 10);
+    const rng = makeRng(hashString(`${s.seed}:jobs:${tick}:${s.day}`));
+    const out = rollJobs(s, { ...ctx, rng });
+    // No notice when one comes up: the chip counts it and a marker is already
+    // standing over it. A toast per job turned an ordinary afternoon into
+    // three stacked banners over the thing you were trying to look at.
+    for (const j of out.expired) {
+      this.notify('warn', `Missed: ${j.def.name}`, 'Nobody got to it in time.');
+    }
+    if (out.spawned.length || out.expired.length) this.bus.emit('jobs', this.jobs());
+    return out;
+  }
+
+  /** Everything waiting to be done, soonest deadline first. */
+  jobs() {
+    const s = this.state;
+    const live = (s.jobs?.live || []).map((j) => ({
+      ...j,
+      def: JOB_BY_KEY[j.key],
+      secondsLeft: secondsLeft(s, j),
+      cost: jobCost(s, JOB_BY_KEY[j.key] || {}),
+    })).filter((j) => j.def);
+    live.sort((a, b) => a.secondsLeft - b.secondsLeft);
+    // Not a spread of the summary: it carries its own `live` as a count, and
+    // letting that land on top turned the list into a number.
+    const sum = jobSummary(s);
+    return { live, count: sum.live, urgent: sum.urgent, done: sum.done, missed: sum.missed };
+  }
+
+  /** Send somebody to deal with one. */
+  handleJob(uid) {
+    const r = sendToJob(this.state, uid);
+    if (!r) return { error: 'That has already been dealt with.' };
+    if (r.error) return r;
+    this.bus.emit('jobs', this.jobs());
+    return r;
+  }
+
   ticketing() {
     return ticketSummary(this.state, this.primaryVenue);
   }

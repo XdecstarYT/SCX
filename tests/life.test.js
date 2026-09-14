@@ -74,6 +74,21 @@ test('seats are the tops of the rows, not the insides of the block', () => {
   }
 });
 
+test('turnstiles are both walkable and countable as gates', () => {
+  const w = ground();
+  const conc = blockId('floor_conc');
+  for (let x = 40; x < 46; x++) w.setBlock(x, G - 1, 55, conc, zoneId('entrance'));
+  const l = life(w);
+  assert.equal(l.gates.length / 3, 6, 'six turnstile cells');
+  const walkable = new Set();
+  for (let i = 0; i < l.walk.length; i += 3) walkable.add(`${l.walk[i]},${l.walk[i + 2]}`);
+  for (let i = 0; i < l.gates.length; i += 3) {
+    assert.ok(walkable.has(`${l.gates[i]},${l.gates[i + 2]}`), 'people still walk through it');
+  }
+  // No entrance zoned means no gates, so nothing that needs one can happen.
+  assert.equal(life(ground()).gates.length, 0);
+});
+
 test('roads, bays and seats are told apart', () => {
   const l = life(ground());
   assert.ok(l.roads.length > 0, 'the road is a road');

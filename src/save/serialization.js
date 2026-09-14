@@ -6,6 +6,7 @@ import { createSiteWalkState } from '../core/siteWalk.js';
 import { createPitchState } from '../core/groundskeeping.js';
 import { createSafetyState } from '../core/safety.js';
 import { createTicketState } from '../core/ticketing.js';
+import { createJobState } from '../core/incidents.js';
 import { PropLayer } from '../voxel/props.js';
 import { SAVE_VERSION } from '../core/gameState.js';
 import { createHotbarState } from '../ui/hotbar.js';
@@ -167,7 +168,7 @@ export function deserializeWorlds(save) {
 export function migrate(save) {
   if (!save || !save.state) throw new Error('Save file is not readable.');
   const s = save.state;
-  s.settings = { sound: true, music: false, reducedMotion: false, highContrast: false,
+  s.settings = { sound: true, ambience: true, reducedMotion: false, highContrast: false,
     largeText: false, sensitivity: 1, invertY: false, showFps: false, autosave: true,
     handedness: 'right', shadows: 'auto', ...(s.settings || {}) };
   s.modifiers = s.modifiers || [];
@@ -205,6 +206,7 @@ export function migrate(save) {
   // that nothing has been installed under yet.
   if (!s.pitches || !s.pitches.byVenue) s.pitches = createPitchState();
   if (!s.tickets || !s.tickets.season) s.tickets = createTicketState();
+  if (!s.jobs || !Array.isArray(s.jobs.live)) s.jobs = createJobState();
   // An older complex has no certificates. Rather than shut every existing
   // ground overnight, a save that predates the system is grandfathered: each
   // venue is treated as certified until its first renewal falls due.

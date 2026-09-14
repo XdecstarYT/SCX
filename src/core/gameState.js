@@ -10,6 +10,7 @@ import { createSiteWalkState } from './siteWalk.js';
 import { createPitchState } from './groundskeeping.js';
 import { createSafetyState } from './safety.js';
 import { createTicketState } from './ticketing.js';
+import { createJobState } from './incidents.js';
 import { createHostingState } from './hosting.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
@@ -63,6 +64,7 @@ export function createState(opts = {}) {
     pitches: createPitchState(),
     safety: createSafetyState(),
     tickets: createTicketState(),
+    jobs: createJobState(),
     // Hosting rights: the named competitions this complex has staged, is
     // staging, and could still bid for.
     hosting: createHostingState(),
@@ -99,7 +101,7 @@ export function createState(opts = {}) {
     },
 
     settings: {
-      sound: true, music: false, reducedMotion: false, highContrast: false,
+      sound: true, ambience: true, reducedMotion: false, highContrast: false,
       largeText: false, sensitivity: 1, invertY: false, showFps: false,
       autosave: true, handedness: 'right', shadows: 'auto',
       // Run your own event days. Off by default: a player who has never seen

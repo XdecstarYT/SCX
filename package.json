@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host",
-    "test": "node --test tests/loop.test.js tests/systems.test.js tests/structures.test.js tests/negotiation.test.js tests/content.test.js tests/league.test.js tests/scenario.test.js tests/empire.test.js tests/equipment.test.js tests/hosting.test.js tests/dynamic.test.js tests/matchday.test.js tests/programmes.test.js tests/playmode.test.js tests/groundskeeping.test.js tests/safety.test.js tests/ticketing.test.js tests/life.test.js",
+    "test": "node --test tests/loop.test.js tests/systems.test.js tests/structures.test.js tests/negotiation.test.js tests/content.test.js tests/league.test.js tests/scenario.test.js tests/empire.test.js tests/equipment.test.js tests/hosting.test.js tests/dynamic.test.js tests/matchday.test.js tests/programmes.test.js tests/playmode.test.js tests/groundskeeping.test.js tests/safety.test.js tests/ticketing.test.js tests/life.test.js tests/incidents.test.js",
     "test:balance": "node --test tests/balance.test.js",
     "test:all": "npm test && npm run test:balance",
     "sim": "node sim/longrun.mjs",

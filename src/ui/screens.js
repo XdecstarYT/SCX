@@ -1472,6 +1472,8 @@ export class Screens {
       section('Audio',
         el('div.card', {},
           toggleRow('Sound effects', 'Block placement, UI and crowd', s.settings.sound, (v) => set('sound', v)),
+          toggleRow('Ambience', 'Wind, traffic and the sound of the crowd you have',
+            s.settings.ambience !== false, (v) => set('ambience', v)),
           toggleRow('Autosave', 'Save automatically every in-game day', s.settings.autosave, (v) => set('autosave', v)))),
 
       section('About',

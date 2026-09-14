@@ -38,6 +38,8 @@ const WALK_BLOCKS = new Set([
   'floor_conc', 'paving', 'paving_light', 'paving_dark', 'tile', 'boardwalk',
   'concourse', 'asphalt', 'gravel',
 ]);
+/** Walkable, but also where you queue - jobs care about these separately. */
+const GATE_ZONES = ['entrance', 'exit', 'box_office'];
 const ROAD_ZONES = ['road', 'road_main', 'road_service', 'road_bus', 'road_vip', 'road_emergency'];
 const PARK_ZONES = ['parking', 'parking_vip', 'parking_bus', 'parking_staff', 'parking_taxi'];
 const SEAT_ZONES = ['seating', 'seating_vip', 'seating_standing', 'luxury_box'];
@@ -68,6 +70,7 @@ export class WorldLife {
     this.parks = [];
     this.seats = [];
     this.bays = [];
+    this.gates = [];
     this.seatOrder = new Uint32Array(0);
     this.pitches = [];     // [{ x, y, z, w, d }] sport surfaces, for training
 
@@ -106,8 +109,9 @@ export class WorldLife {
     const roadIds = new Set(ROAD_ZONES.map(zoneId).filter(Boolean));
     const parkIds = new Set(PARK_ZONES.map(zoneId).filter(Boolean));
     const seatIds = new Set(SEAT_ZONES.map(zoneId).filter(Boolean));
+    const gateIds = new Set(GATE_ZONES.map(zoneId).filter(Boolean));
 
-    this.walk = []; this.roads = []; this.parks = []; this.seats = []; this.bays = [];
+    this.walk = []; this.roads = []; this.parks = []; this.seats = []; this.bays = []; this.gates = [];
     this.walkSet = new Set();
 
     // Walk every column, not just the top of it. The obvious version of this
@@ -137,6 +141,9 @@ export class WorldLife {
           if (walkIds.has(zid) || (zid === 0 && WALK_BLOCKS.has(block(id).key))) {
             this.walk.push(x, y + 1, z);
             this.walkSet.add(key(x, z));
+            // A turnstile is walkable and is also the one place a queue can
+            // form, so it goes in both lists rather than getting its own scan.
+            if (gateIds.has(zid)) this.gates.push(x, y + 1, z);
           }
         }
       }
