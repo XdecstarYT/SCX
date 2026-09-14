@@ -55,6 +55,23 @@ const snap = () => page.evaluate(() => ({
 
 // ==================================================== 1. one tap, one block
 console.log('one tap places once...');
+
+// How long the repeat waits before it starts, in ms. Kept here rather than
+// imported because the bundle is what is under test.
+const REPEAT_DELAY_MS = 340;
+
+// Time the press inside the page rather than trusting the harness to deliver
+// one. A loaded machine can turn an intended 60ms tap into half a second by
+// the time the pointerup arrives, and at that point two blocks is the correct
+// answer - so the assertion has to be made against the press that actually
+// happened, not the one that was asked for.
+await page.evaluate(() => {
+  const btn = document.querySelector('button.abtn.place');
+  window.__hold = {};
+  btn.addEventListener('pointerdown', () => { window.__hold.down = performance.now(); }, true);
+  window.addEventListener('pointerup', () => { window.__hold.up = performance.now(); }, true);
+});
+
 const hold = async (ms) => {
   const b = await (await page.$('button.abtn.place')).boundingBox();
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
@@ -62,6 +79,8 @@ const hold = async (ms) => {
   await page.waitForTimeout(ms);
   await page.mouse.up();
   await page.waitForTimeout(400);
+  const h = await page.evaluate(() => window.__hold);
+  return Math.round((h.up ?? 0) - (h.down ?? 0));
 };
 
 await page.evaluate(() => {
@@ -71,13 +90,23 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(400);
 
+let shortPresses = 0;
 for (const ms of [40, 110, 300]) {
   const before = await snap();
-  await hold(ms);
-  const after = await snap();
-  check(after.undos - before.undos === 1,
-    `a ${ms}ms tap places exactly once (placed ${after.undos - before.undos})`);
+  const held = await hold(ms);
+  const placed = (await snap()).undos - before.undos;
+  if (held < REPEAT_DELAY_MS) {
+    shortPresses++;
+    check(placed === 1, `a ${held}ms tap places exactly once (placed ${placed})`);
+  } else {
+    // The press overran the delay, so the repeat firing is the design working.
+    check(placed >= 1, `press overran to ${held}ms and swept (${placed}) - as designed`);
+  }
 }
+// If every press overran, the tap path was never actually exercised and a
+// green run would mean nothing.
+check(shortPresses >= 2,
+  `at least two presses were genuinely shorter than the repeat delay (${shortPresses} of 3)`);
 
 // ...and a deliberate hold still sweeps, or the tool is useless for walls.
 {
@@ -290,9 +319,12 @@ check(await page.locator('.modebar').count() === 1, 'the full build dock comes b
   await page.evaluate(() => { window.__sct.controller.setMode('build'); window.__sct.controller.setTool('single'); });
   await page.waitForTimeout(200);
   const before = await snap();
-  await hold(60);
-  const after = await snap();
-  check(after.undos - before.undos === 1, 'building still works after a round trip through play mode');
+  const held = await hold(60);
+  const placed = (await snap()).undos - before.undos;
+  // The point here is that building works again at all, so accept whatever a
+  // press of this length should produce.
+  const want = held < REPEAT_DELAY_MS ? placed === 1 : placed >= 1;
+  check(want, `building still works after a round trip through play mode (${held}ms press placed ${placed})`);
 }
 
 await page.screenshot({ path: `${SHOTS}/arrange-mode.png` });

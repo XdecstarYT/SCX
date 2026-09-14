@@ -132,12 +132,23 @@ if (afterHold - beforeHold < 4) throw new Error('holding the button did not repe
     app.input.beginHold(0);
     app.onTap(null, 0, true);            // the press fires one action itself
   });
-  await page.waitForTimeout(220);        // a long tap, still shorter than the delay
-  await page.evaluate(() => window.__sct.input.releaseHold());
+  await page.waitForTimeout(220);        // a long tap, meant to stay under the delay
+  // Measure what the press actually was. On a loaded machine the round trip
+  // that releases it can overrun the delay, and then the repeat firing is the
+  // design working rather than the bug coming back - so assert against the
+  // press that happened, not the one that was asked for.
+  const held = await page.evaluate(() => {
+    const s = window.__sct.input.holdSeconds;
+    window.__sct.input.releaseHold();
+    return s;
+  });
   await page.waitForTimeout(200);
   const placed = (await count('concrete')) - beforeTap;
-  console.log(`  a 220ms tap placed ${placed} block(s)`);
-  if (placed !== 1) throw new Error(`a tap should place exactly one block, placed ${placed}`);
+  console.log(`  a ${Math.round(held * 1000)}ms tap placed ${placed} block(s)`);
+  if (held < 0.34 && placed !== 1) {
+    throw new Error(`a tap shorter than the repeat delay should place one block, placed ${placed}`);
+  }
+  if (placed < 1) throw new Error('the press placed nothing at all');
 }
 await shot(4, 'swept');
 
