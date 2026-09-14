@@ -10,6 +10,7 @@ import { CITIES, city as cityDef } from '../data/cities.js';
 import { ENDGAME_GOALS, GOAL_GROUPS, endgameProgress } from '../data/endgame.js';
 import { seasonProgress, seasonDay, SEASON_DAYS, division } from '../core/league.js';
 import { COMPETITION_BY_ID } from '../data/competitions.js';
+import { CERTIFICATE_DAYS } from '../core/siteWalk.js';
 import { PROGRAMME_CATEGORIES } from '../data/programmes.js';
 import { gameYear } from '../core/constants.js';
 import { MOODS } from '../core/community.js';
@@ -245,9 +246,50 @@ export class Screens {
               ? el('div', {}, ...v.ratings.issues.map(issueRow))
               : el('div.small.faint', { text: 'No outstanding issues. This venue is in good shape.' }),
             good.length ? el('div', { style: { marginTop: '8px' } }, ...good) : null)),
+        this.walkCard(v),
         section('What this venue could host', this.suitabilityCard(v)));
     };
     this.hud.openSheet('Venue Report', render());
+  }
+
+  /**
+   * What walking the place turned up. The analyser estimates sightlines from
+   * the shape of the bowl; these are seats a person actually sat in and could
+   * not see out of, which is a different and more damning kind of fact - so it
+   * gets its own panel rather than being folded into the ratings.
+   */
+  walkCard(v) {
+    const w = this.state.siteWalk;
+    if (!w) return null;
+    const mine = (w.restricted || []).filter((r) =>
+      Math.hypot(r.x - v.centre.x, r.z - v.centre.z) <= (v.reach || 60) * 1.6);
+    const walked = w.completedDay >= 0;
+    const daysLeft = walked ? CERTIFICATE_DAYS - (this.state.day - w.completedDay) : 0;
+
+    return section('On the ground', el('div.card', {},
+      el('div.rowbetween', {},
+        el('div.small', { text: walked && daysLeft > 0 ? 'Inspection in date' : 'No current inspection' }),
+        walked && daysLeft > 0
+          ? pill(`${daysLeft} days left`, 'ok')
+          : el('span.tiny.faint', { text: 'Walk the site in Play mode' })),
+      el('div.tiny.faint', { style: { marginTop: '4px' },
+        text: `${w.seatsChecked || 0} seat${w.seatsChecked === 1 ? '' : 's'} checked from the stand itself.` }),
+      mine.length
+        ? el('div', { style: { marginTop: '8px' } },
+            el('div.section', { text: `${mine.length} restricted-view seat${mine.length === 1 ? '' : 's'} found here` }),
+            ...mine.slice(0, 6).map((r) => el('div.rowbetween', { style: { padding: '4px 0' } },
+              el('div', {},
+                el('div.small.bad', { text: r.blockedBy ? `${r.blockedBy} in the way` : 'Cannot see the field' }),
+                el('div.tiny.faint', { text: `at ${r.x}, ${r.z}` })),
+              el('button.btn.sm', {
+                title: 'Walk to this seat and look',
+                onclick: () => { this.hud.closeSheet(); this.app.showSeat(r); },
+              }, 'Go and sit'))),
+            mine.length > 6 ? el('div.tiny.faint', { text: `\u2026 and ${mine.length - 6} more.` }) : null)
+        : el('div.tiny.faint', { style: { marginTop: '6px' },
+            text: walked
+              ? 'Nothing wrong with the seats you have sat in.'
+              : 'Sit in the stand in Play mode to check what an ordinary ticket can see.' })));
   }
 
   suitabilityCard(v) {

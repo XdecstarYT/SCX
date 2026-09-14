@@ -1,5 +1,6 @@
 import { VoxelWorld } from '../voxel/world.js';
 import { History } from '../voxel/history.js';
+import { combineLift, inspectionLift } from './siteWalk.js';
 import { EventBus } from './eventBus.js';
 import { createState, attachDerived, applyReputation, landInfo, activeSite, utilityStatusFor, SAVE_VERSION } from './gameState.js';
 import { CITIES, city as cityDef, climateEffects } from '../data/cities.js';
@@ -456,7 +457,9 @@ export class Game {
       pitchWear: this.state.pitchWear || 0,
       // Programmes that have finished are part of what the venue *is*, so the
       // analyser sees them rather than having them added to its answer.
-      programmeLift: this.state.programmes?.effects || null,
+      // A site walk that is still in date counts the same way a finished
+      // programme does: the analyser sees the venue as it now is.
+      programmeLift: combineLift(this.state.programmes?.effects || null, inspectionLift(this.state)),
     });
 
     // Where a venue is changes who turns up and how they get there.

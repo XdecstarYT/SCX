@@ -81,6 +81,12 @@ const STEPS = [
     body: 'More seats unlock bigger events; better facilities unlock higher tiers. The venue report says exactly what is holding you back. Later, Management \u2192 Empire lets you buy land in another city entirely.',
     done: (g) => g.state.stats.eventsHosted >= 2,
   },
+  {
+    id: 'walk',
+    title: 'Go and stand in it',
+    body: 'Tap PLAY to walk your complex instead of editing it. The bar at the bottom reads the spot you are standing on \u2014 what you can see, how wide the walkway is, how far the toilets are. Sit in the stand and it tells you what that ticket actually sees. Visit every stop and file the inspection for a reputation gain and a safety lift.',
+    done: (g) => (g.state.siteWalk?.walks || 0) > 0,
+  },
 ];
 
 export class Tutorial {

@@ -542,6 +542,69 @@ test('every build tool does what its own hint says it does', async () => {
     covered.add('stairs');
   }
 
+  // ------------------------------------------------------ the arrange kit
+  //
+  // Paint, Surface and Area all promise the same thing in different sizes:
+  // the shape you built does not change, only what it is made of.
+
+  // paint: the one block you tapped, and only if there is one there.
+  {
+    const c = cellsOf('paint', at(4, G, 4));
+    assert.deepEqual(c, [4, G, 4]);
+    covered.add('paint');
+  }
+
+  // paintbox: the box, but air inside it is left as air.
+  {
+    const w2 = new VoxelWorld(64);
+    w2.generateTerrain();
+    // A three-block pillar with a gap in it.
+    w2.setBlock(20, G, 20, conc, 0);
+    w2.setBlock(20, G + 2, 20, conc, 0);
+    const c = toolCells('paintbox', w2, at(20, G, 20), at(20, G + 2, 20));
+    assert.equal(countOf(c), 3, 'the area covers the whole box');
+    const price = priceEdit(w2, c, 'paint', blockId('brick'));
+    assert.equal(price.placed, 2, 'paint should skip the gap, not fill it');
+    applyEdit(w2, c, 'paint', blockId('brick'));
+    assert.equal(w2.getBlock(20, G + 1, 20), 0, 'painting filled a hole it should have left alone');
+    assert.equal(w2.getBlock(20, G, 20), blockId('brick'), 'the block under the gap was not painted');
+    covered.add('paintbox');
+  }
+
+  // surface: the connected face of one material, and not the far side of it.
+  {
+    const w2 = new VoxelWorld(64);
+    w2.generateTerrain();
+    // A 6x3 brick wall running along x at z=30, with concrete behind it.
+    const brick = blockId('brick');
+    for (let x = 10; x < 16; x++) {
+      for (let y = G; y < G + 3; y++) {
+        w2.setBlock(x, y, 30, brick, 0);
+        w2.setBlock(x, y, 31, conc, 0);
+      }
+    }
+    // Looking at the wall from -z: the face normal points that way.
+    const c = toolCells('surface', w2, at(12, G + 1, 30), null, {
+      face: { x: 12, y: G + 1, z: 30, nx: 0, ny: 0, nz: -1 },
+    });
+    assert.equal(countOf(c), 18, `the whole 6x3 brick face should come back, got ${countOf(c)}`);
+    for (let i = 0; i < c.length; i += 3) {
+      assert.equal(c[i + 2], 30, 'surface crossed into the wall behind it');
+      assert.equal(w2.getBlock(c[i], c[i + 1], c[i + 2]), brick, 'surface picked up a different material');
+    }
+    covered.add('surface');
+  }
+
+  // move and clone carry a fitting rather than emitting cells; they are
+  // covered by the build-controller test below and the arrange end-to-end run.
+  // sample only reads. None of the three can emit a cell list, and asking
+  // toolCells for one must not invent an edit.
+  for (const key of ['move', 'clone', 'sample']) {
+    const c = cellsOf(key, at(4, G, 4));
+    assert.equal(countOf(c), 1, `${key} should resolve to the aimed cell, not a region`);
+    covered.add(key);
+  }
+
   // prefab and the procedural structures have their own tests above; terrain
   // tools have theirs. What matters here is that nothing ships untested.
   const tested = new Set([...covered, 'prefab', 'grandstand', 'garage', 'retaining',

@@ -2,6 +2,7 @@ import { VoxelWorld, Chunk } from '../voxel/world.js';
 import { createLeagueState } from '../core/league.js';
 import { createHostingState } from '../core/hosting.js';
 import { createProgrammeState } from '../core/programmes.js';
+import { createSiteWalkState } from '../core/siteWalk.js';
 import { PropLayer } from '../voxel/props.js';
 import { SAVE_VERSION } from '../core/gameState.js';
 import { createHotbarState } from '../ui/hotbar.js';
@@ -197,6 +198,10 @@ export function migrate(save) {
   s.settings = s.settings || {};
   if (s.settings.liveMatchday === undefined) s.settings.liveMatchday = false;
   if (s.settings.matchdayFrom === undefined) s.settings.matchdayFrom = 2;
+  // The site walk postdates the first saves too. An older complex has simply
+  // never been walked, so it starts with no stops visited and no certificate.
+  if (!s.siteWalk || !Array.isArray(s.siteWalk.visited)) s.siteWalk = createSiteWalkState();
+  s.siteWalk.restricted = s.siteWalk.restricted || [];
   // Programmes postdate the first saves. An older complex has simply never
   // run one; nothing it has already earned is affected.
   if (!s.programmes || !Array.isArray(s.programmes.active)) s.programmes = createProgrammeState();

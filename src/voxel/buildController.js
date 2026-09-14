@@ -18,6 +18,7 @@ import { PropGhost } from '../world/propRenderer.js';
 
 export const BUILD_MODES = [
   { key: 'build',     name: 'Build',     hint: 'Place blocks' },
+  { key: 'arrange',   name: 'Arrange',   hint: 'Repaint surfaces and move fittings without rebuilding' },
   { key: 'zone',      name: 'Zone',      hint: 'Paint what an area is for' },
   { key: 'demolish',  name: 'Demolish',  hint: 'Remove blocks (30% refund)' },
   { key: 'inspect',   name: 'Inspect',   hint: 'See what the game thinks you built' },
@@ -61,6 +62,12 @@ export class BuildController {
     this.lastPlan = null;
     this.anchor = null;
     this.aim = null;
+    // The height a tap lands at when there is nothing under the crosshair. It
+    // follows whatever you last aimed at, so after walling up to the first
+    // floor you can swing out over open air and the slab lands on that floor
+    // instead of back down on the grass. Without it a second storey can only
+    // ever be built inward from something already standing.
+    this.planeY = GROUND_Y;
     this.aimFace = null;
     this.clipboard = null;
     this.blueprints = [];
@@ -72,7 +79,12 @@ export class BuildController {
     this.prefabKey = null;
     this.rotation = 0;
     this.aimProp = null;
+    // Set while a fitting has been lifted off the ground by the Move tool.
+    // Moving is a relocation, not a sale and a repurchase, so it is free and
+    // the old and new positions go into one undo step.
+    this.movingFrom = null;
 
+    this.hidden = false;    // true while the ghost is off, e.g. in play mode
     this.planning = null;   // { marker, cost, count }
     this.lastPrice = null;
     this.lastCells = null;
@@ -136,12 +148,14 @@ export class BuildController {
       // Prefabs and pasted structures land ON the surface you point at, the
       // same as a block does; every other mode acts on the block itself.
       const placing = this.mode === 'build'
+        || (this.mode === 'arrange' && this.holdingProp)
         || (this.mode === 'blueprint' && (this.tool === 'paste' || this.tool === 'prefab'));
       this.aim = placing
         ? { x: hit.px, y: hit.py, z: hit.pz }
         : { x: hit.x, y: hit.y, z: hit.z };
+      this.planeY = Math.max(0, Math.min(CHUNK_Y - 1, this.aim.y));
     } else {
-      const p = raycastPlane(r.origin, r.dir, GROUND_Y);
+      const p = raycastPlane(r.origin, r.dir, this.planeY);
       this.aimFace = null;
       this.aim = p && this.game.world.inBounds(p.x, p.y, p.z) ? p : null;
     }
@@ -150,7 +164,22 @@ export class BuildController {
   }
 
   /** True when the hotbar slot in hand is a piece of equipment, not a block. */
-  get holdingProp() { return this.mode === 'build' && !!this.propKey; }
+  get holdingProp() {
+    if (!this.propKey) return false;
+    if (this.mode === 'build') return true;
+    // Move and Clone carry a fitting the same way the hotbar does, so the
+    // ghost, the rotation and the footprint check are all the same code.
+    return this.mode === 'arrange' && (this.tool === 'move' || this.tool === 'clone')
+      && (this.tool === 'clone' || !!this.movingFrom);
+  }
+
+  /** True when a Move is in progress, i.e. something is off the ground. */
+  get isCarrying() { return this.mode === 'arrange' && this.tool === 'move' && !!this.movingFrom; }
+
+  /** Painting recolours what is there rather than adding to it. */
+  get isPaintTool() {
+    return this.mode === 'arrange' && (this.tool === 'paint' || this.tool === 'surface' || this.tool === 'paintbox');
+  }
 
   get holdingPrefab() { return this.mode === 'blueprint' && this.tool === 'prefab' && !!this.prefabKey; }
 
@@ -178,6 +207,9 @@ export class BuildController {
   }
 
   toolNeedsTwoPoints() {
+    // Surface reads the whole connected face from a single tap; it is listed
+    // as a sweep only so the dock groups it with the other area tools.
+    if (this.activeTool === 'surface') return false;
     const t = TOOLS.find((x) => x.key === this.activeTool);
     return !!t?.drag;
   }
@@ -257,10 +289,20 @@ export class BuildController {
       clipboard: this.clipboard,
       roofPitch: this.roofPitch,
       domePitch: this.domePitch,
+      face: this.aimFace,
     });
   }
 
+  /** Which of applyEdit's modes the current tool is asking for. */
+  get editMode() {
+    if (this.mode === 'demolish') return 'demolish';
+    if (this.mode === 'zone') return 'zone';
+    if (this.isPaintTool) return 'paint';
+    return this.tool === 'paste' ? 'paste' : 'build';
+  }
+
   refreshPreview() {
+    if (this.hidden) { this.lastCells = null; this.lastPrice = null; return; }
     const cells = this.previewCells();
     this.lastCells = cells;
 
@@ -287,7 +329,7 @@ export class BuildController {
       this.lastPrice = pricePlan(this.game.world, this.lastPlan.cells, this.lastPlan.props);
       this.lastPrice.count = cells.length / 3;
     }
-    const mode = this.mode === 'demolish' ? 'demolish' : this.mode === 'zone' ? 'zone' : (this.tool === 'paste' ? 'paste' : 'build');
+    const mode = this.editMode;
     if (this.isPlanTool && this.lastPlan) {
       // already priced above
     } else if (mode === 'zone') {
@@ -303,6 +345,7 @@ export class BuildController {
       : this.mode === 'demolish' ? 0xff5f6d
       : this.mode === 'zone' ? zone(this.zoneKey).color
       : this.mode === 'inspect' ? 0xf2b73d
+      : this.isPaintTool ? (block(this.material)?.color ?? 0x49b6ff)
       : (this.lastPrice.net > this.game.state.cash && !this.planning) ? 0xff5f6d : 0x39e08a;
     this.setGhostColor(colour);
 
@@ -332,7 +375,8 @@ export class BuildController {
     // Outline the block you are pointing at. In BUILD mode that is the face
     // you are aiming at, so you can see what you are building against; in
     // every other mode it is the block that will be affected.
-    const target = this.mode === 'build' ? this.aimFace : (this.aimFace || this.aim);
+    const target = (this.mode === 'build' || (this.mode === 'arrange' && this.holdingProp))
+      ? this.aimFace : (this.aimFace || this.aim);
     if (target) {
       this.outline.scale.setScalar(BLOCK_SIZE * 1.006);
       this.outline.position.set(
@@ -446,8 +490,20 @@ export class BuildController {
 
     if (button === 2) {
       // Right click / remove button always cancels a pending anchor first.
+      if (this.isCarrying) return this.cancelMove();
+      if (this.mode === 'arrange' && this.tool === 'clone' && this.propKey) {
+        this.propKey = null;
+        this.refreshPreview();
+        this.onChange?.();
+        return 'Put the copy down';
+      }
       if (this.anchor) { this.anchor = null; this.refreshPreview(); return 'Cancelled'; }
       return this.removeSingle(confirmed);
+    }
+
+    if (this.mode === 'arrange') {
+      const r = this.arrangeAct();
+      if (r !== undefined) return r;
     }
 
     // Demolishing a single tap on a piece of equipment takes the equipment.
@@ -467,6 +523,90 @@ export class BuildController {
     }
 
     return this.commit(confirmed);
+  }
+
+  /**
+   * The Arrange toolbox: pick a fitting up and put it down, take a copy of
+   * one, or sample what is under the crosshair. Returns undefined when the tap
+   * is not one of those, so the normal build path can take it.
+   */
+  arrangeAct() {
+    if (this.tool === 'sample') return 'pick';
+
+    if (this.tool === 'move') {
+      if (this.movingFrom) return this.dropCarried();
+      const rec = this.aimProp || this.game.world.props?.at(this.aim.x, this.aim.y, this.aim.z);
+      const type = rec && PROP_BY_ID[rec.typeId];
+      if (!type) return { error: 'Point at a fitting to move it. Blocks move with Blueprint \u2192 Copy.' };
+      this.movingFrom = { x: rec.x, y: rec.y, z: rec.z };
+      this.propKey = type.key;
+      this.rotation = rec.rot || 0;
+      this.refreshPreview();
+      this.onChange?.();
+      return `Carrying ${type.name} \u2014 tap where it should go`;
+    }
+
+    if (this.tool === 'clone') {
+      if (this.propKey) return this.placeProp();
+      const rec = this.aimProp || this.game.world.props?.at(this.aim.x, this.aim.y, this.aim.z);
+      const type = rec && PROP_BY_ID[rec.typeId];
+      if (!type) return { error: 'Point at a fitting to copy it.' };
+      this.propKey = type.key;
+      this.rotation = rec.rot || 0;
+      this.refreshPreview();
+      this.onChange?.();
+      return `Copied ${type.name} \u2014 tap to place one, \u21BB to turn it`;
+    }
+
+    if (this.isPaintTool && this.material === AIR) {
+      return { error: 'Choose a material from the palette to paint with.' };
+    }
+    return undefined;
+  }
+
+  /** Put a carried fitting down: one undo step covers both ends of the move. */
+  dropCarried() {
+    const g = this.game;
+    const type = prop(this.propKey);
+    const from = this.movingFrom;
+    const layer = g.world.props;
+    const orig = layer?.at(from.x, from.y, from.z);
+    if (!type || !orig) { this.cancelMove(); return { error: 'That fitting is no longer there.' }; }
+    if (orig.x === this.aim.x && orig.y === this.aim.y && orig.z === this.aim.z
+        && (orig.rot || 0) === this.rotation) {
+      this.cancelMove();
+      return 'Left where it was';
+    }
+
+    // Lift it before testing, or it would collide with the space it is
+    // vacating and refuse to move one block sideways.
+    layer.remove(orig.x, orig.y, orig.z);
+    const check = layer.canPlace(g.world, type.id, this.aim.x, this.aim.y, this.aim.z, this.rotation);
+    if (!check.ok) {
+      layer.add(orig.typeId, orig.x, orig.y, orig.z, orig.rot);
+      return { error: check.reason };
+    }
+    layer.add(type.id, this.aim.x, this.aim.y, this.aim.z, this.rotation);
+
+    const batch = new EditBatch('Move: ' + type.name);
+    batch.recordProp('del', orig.typeId, orig.x, orig.y, orig.z, orig.rot);
+    batch.recordProp('add', type.id, this.aim.x, this.aim.y, this.aim.z, this.rotation);
+    g.history.push(batch);
+    this.cancelMove();
+    g.markWorldDirty();
+    this.refreshPreview();
+    this.onChange?.();
+    return `${type.name} moved`;
+  }
+
+  /** Put a carried fitting back down where it came from. */
+  cancelMove() {
+    const carried = this.movingFrom;
+    this.movingFrom = null;
+    this.propKey = null;
+    this.refreshPreview();
+    this.onChange?.();
+    return carried ? 'Put it back' : null;
   }
 
   commit(confirmed = false) {
@@ -540,9 +680,7 @@ export class BuildController {
       return `Copied ${this.clipboard.count} blocks`;
     }
 
-    const mode = this.mode === 'demolish' ? 'demolish'
-      : this.mode === 'zone' ? 'zone'
-      : this.tool === 'paste' ? 'paste' : 'build';
+    const mode = this.editMode;
 
     if (mode === 'zone') {
       const batch = applyEdit(g.world, cells, 'zone', 0, { zoneId: zoneId(this.zoneKey), label: `Zone: ${zone(this.zoneKey).name}` });
@@ -571,7 +709,9 @@ export class BuildController {
     const batch = applyEdit(g.world, cells, mode, this.material, {
       clipboard: this.clipboard,
       replaceTarget: this.tool === 'replace' ? this.replaceTarget : null,
-      label: mode === 'demolish' ? 'Demolish' : `Build: ${block(this.material).name}`,
+      label: mode === 'demolish' ? 'Demolish'
+        : mode === 'paint' ? `Paint: ${block(this.material).name}`
+        : `Build: ${block(this.material).name}`,
     });
     g.history.push(batch);
 
@@ -589,6 +729,10 @@ export class BuildController {
       const extra = price.propsRemoved ? ` and ${price.propsRemoved} piece${price.propsRemoved === 1 ? '' : 's'} of equipment` : '';
       return `Removed ${price.removed} blocks${extra} (+${fmt(price.refund)})`;
     }
+    if (mode === 'paint') {
+      if (price.placed === 0) return 'Already that material';
+      return `${price.placed} face${price.placed === 1 ? '' : 's'} repainted in ${block(this.material).name} (${fmt(net)})`;
+    }
     return `${price.placed} blocks placed (${fmt(net)})`;
   }
 
@@ -596,6 +740,7 @@ export class BuildController {
     const st = this.game.state.stats;
     if (this.mode === 'demolish') st.blocksRemoved += batch.voxelCount;
     else if (this.mode === 'build') st.blocksPlaced += batch.voxelCount;
+    else if (this.isPaintTool) st.blocksPainted = (st.blocksPainted || 0) + batch.voxelCount;
     this.anchor = null;
     this.game.markWorldDirty();
     this.game.checkAchievements();
@@ -830,8 +975,17 @@ export class BuildController {
 
   setMode(mode) {
     const prev = this.mode;
+    if (prev === 'arrange' && mode !== 'arrange') this.cancelMove();
     this.mode = mode;
     this.anchor = null;
+    if (mode === 'arrange') {
+      if (!ARRANGE_TOOL_KEYS.includes(this.tool)) this.tool = 'paint';
+      // Whatever the hotbar was holding is irrelevant here: Move and Clone
+      // take their subject from the world, and Paint takes its material from
+      // the slot rather than a fitting.
+      this.propKey = null;
+    }
+    if (mode !== 'arrange' && ARRANGE_TOOL_KEYS.includes(this.tool)) this.tool = 'single';
     if (mode === 'blueprint' && this.tool === 'prefab' && !this.prefabKey) this.tool = 'copy';
     if (mode === 'blueprint' && !this.clipboard && this.tool === 'paste') this.tool = this.prefabKey ? 'prefab' : 'copy';
     if (mode === 'build' && !BUILD_TOOL_KEYS.includes(this.tool)) this.tool = 'single';
@@ -844,6 +998,8 @@ export class BuildController {
   }
 
   setTool(tool) {
+    if (this.movingFrom && tool !== 'move') this.cancelMove();
+    if (this.mode === 'arrange' && tool !== 'clone') this.propKey = null;
     this.tool = tool;
     this.anchor = null;
     this.refreshPreview();
@@ -886,10 +1042,18 @@ export class BuildController {
   }
 
   setVisible(v) {
+    // Also stops the preview being computed at all. Play mode keeps the aim
+    // fresh several times a second, and generating a seating bowl's worth of
+    // cells for a ghost nobody can see is work for nothing.
+    const wasHidden = this.hidden;
+    this.hidden = !v;
     this.propGhost.mesh.visible = v && this.propGhost.mesh.visible;
     this.ghost.visible = v;
     this.outline.visible = v && this.outline.visible;
     this.bbox.visible = v && this.bbox.visible;
+    // Coming back, rebuild the preview at once rather than leaving the dock
+    // showing nothing until the player next moves the mouse.
+    if (v && wasHidden) this.refreshPreview();
   }
 }
 
@@ -902,6 +1066,7 @@ const CONFIRM_BLOCKS = 120;
 const CONFIRM_VALUE = 20_000;
 const FACING = ['north', 'east', 'south', 'west'];
 const TERRAIN_TOOL_KEYS = ['raise', 'lower', 'flatten', 'ramp'];
+const ARRANGE_TOOL_KEYS = ['paint', 'surface', 'paintbox', 'move', 'clone', 'sample'];
 
 const STRUCTURE_LABEL = {
   grandstand: 'Grandstand', garage: 'Parking garage', retaining: 'Retaining wall',
@@ -955,4 +1120,4 @@ const fmt = (v) => {
   return `${s}$${a.toLocaleString()}`;
 };
 
-export { TOOLS, BUILD_TOOL_KEYS, TERRAIN_TOOL_KEYS };
+export { TOOLS, BUILD_TOOL_KEYS, TERRAIN_TOOL_KEYS, ARRANGE_TOOL_KEYS };

@@ -6,6 +6,7 @@ import { climateEffects } from '../data/cities.js';
 import { createHotbarState } from '../ui/hotbar.js';
 import { createLeagueState } from './league.js';
 import { createProgrammeState } from './programmes.js';
+import { createSiteWalkState } from './siteWalk.js';
 import { createHostingState } from './hosting.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
@@ -55,6 +56,7 @@ export function createState(opts = {}) {
     league: createLeagueState(opts.seed ?? 1),
     // What the complex is doing between events, and what that has left behind.
     programmes: createProgrammeState(),
+    siteWalk: createSiteWalkState(),
     // Hosting rights: the named competitions this complex has staged, is
     // staging, and could still bid for.
     hosting: createHostingState(),

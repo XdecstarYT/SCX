@@ -5,6 +5,7 @@ import { fmtMoney, fmtNum } from '../core/economy.js';
 const NAV = [
   { key: 'home',    name: 'Home',    icon: '⌂' },
   { key: 'build',   name: 'Build',   icon: '▦' },
+  { key: 'play',    name: 'Play',    icon: '▶' },
   { key: 'events',  name: 'Events',  icon: '⚑' },
   { key: 'finance', name: 'Finance', icon: '◴' },
   { key: 'more',    name: 'More',    icon: '≡' },
@@ -154,7 +155,7 @@ export class Hud {
 
   setRightRail(buttons) {
     clear(this.rightRail);
-    for (const b of buttons) {
+    for (const b of buttons.filter(Boolean)) {
       this.rightRail.append(el('button.rail-btn' + (b.on ? '.on' : ''), {
         title: b.title, 'aria-label': b.title, disabled: b.disabled, onclick: b.onclick,
       }, el('span.g', { text: b.icon })));
@@ -243,10 +244,15 @@ export class Hud {
   }
 
   closeSheet() {
+    // Only a sheet that was actually open counts as closed. Firing the hook
+    // unconditionally meant every setTab - which closes the sheet first - told
+    // the app the player had just dismissed something and should be returned
+    // to the build tab, so the nav highlight never matched the open screen.
+    const wasOpen = this.sheetOpen;
     this.sheet.classList.add('hidden');
     clear(this.sheetPanel);
     this.sheetBody = null;
-    this.onSheetClose?.();
+    if (wasOpen) this.onSheetClose?.();
   }
 
   get sheetOpen() { return !this.sheet.classList.contains('hidden'); }

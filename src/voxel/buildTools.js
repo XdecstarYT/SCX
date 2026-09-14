@@ -43,6 +43,15 @@ export const TOOLS = [
   { key: 'garage',     name: 'Garage',  icon: '\u26DB', drag: true, hint: 'Tap two corners; builds a multi-level car park' },
   { key: 'retaining',  name: 'Retain',  icon: '\u2261', drag: true, hint: 'Tap two points; builds a retaining wall along the line' },
 
+  // Arranging what is already there: repaint a surface without rebuilding it,
+  // and pick equipment up and put it down instead of demolishing and re-buying.
+  { key: 'paint',    name: 'Paint',   icon: '\u25A4', drag: false, hint: 'Repaint the block you tap with the held material' },
+  { key: 'surface',  name: 'Surface', icon: '\u25A6', drag: true,  hint: 'Repaint the whole connected face you tap - one tap does a wall' },
+  { key: 'paintbox', name: 'Area',    icon: '\u2751', drag: true,  hint: 'Tap two corners; repaints every solid block inside, leaving the shape alone' },
+  { key: 'move',     name: 'Move',    icon: '\u2725', drag: false, hint: 'Tap a fitting to pick it up, tap again to set it down. Free.' },
+  { key: 'clone',    name: 'Clone',   icon: '\u29C9', drag: false, hint: 'Tap a fitting to hold a copy of it, then tap to place' },
+  { key: 'sample',   name: 'Sample',  icon: '\u2316', drag: false, hint: 'Tap anything to put it in your hand' },
+
   // Terrain shaping.
   { key: 'raise',   name: 'Raise',   icon: '\u25B2', drag: true, hint: 'Tap two corners; raises the ground' },
   { key: 'lower',   name: 'Lower',   icon: '\u25BC', drag: true, hint: 'Tap two corners; lowers the ground' },
@@ -53,7 +62,7 @@ export const TOOLS = [
 export const MAX_TOOL_VOXELS = 60000;
 /** Clipboard record layout: dx, dy, dz, blockId, zoneId. */
 export const CLIP_STRIDE = 5;
-export { PLAN_STRIDE };
+export { PLAN_STRIDE, surfaceCells };
 
 const clampY = (y) => Math.max(0, Math.min(CHUNK_Y - 1, y));
 
@@ -229,6 +238,49 @@ function stairCells(a, b, opts, out) {
   return out;
 }
 
+/**
+ * The visible face you tapped, as far as it runs: every cell of the same
+ * material, 4-connected across the plane of the face, that is also exposed in
+ * the same direction. That is what a person means by "this wall" - the far
+ * side of it, and the identical blocks buried behind it, are a different
+ * surface and stay as they are.
+ */
+function surfaceCells(world, hit, out, limit = 20000) {
+  if (!hit) return out;
+  const { x, y, z, nx = 0, ny = 0, nz = 0 } = hit;
+  const id = world.getBlock(x, y, z);
+  if (id === AIR) return out;
+  const exposed = (cx, cy, cz) => {
+    const ax = cx + nx, ay = cy + ny, az = cz + nz;
+    if (!world.inBounds(ax, ay, az)) return true;
+    return world.getBlock(ax, ay, az) === AIR;
+  };
+  // Step along the two axes the face lies in.
+  const axes = nx ? [[0, 1, 0], [0, 0, 1]] : ny ? [[1, 0, 0], [0, 0, 1]] : [[1, 0, 0], [0, 1, 0]];
+  const seen = new Set([packKey(x, y, z)]);
+  const stack = [[x, y, z]];
+  while (stack.length && out.length / 3 < limit) {
+    const [cx, cy, cz] = stack.pop();
+    out.push(cx, cy, cz);
+    for (const [ax, ay, az] of axes) {
+      for (const sgn of [1, -1]) {
+        const px = cx + ax * sgn, py = cy + ay * sgn, pz = cz + az * sgn;
+        if (py < 0 || py >= CHUNK_Y) continue;
+        if (!world.inBounds(px, py, pz)) continue;
+        const k = packKey(px, py, pz);
+        if (seen.has(k)) continue;
+        if (world.getBlock(px, py, pz) !== id) continue;
+        if (!exposed(px, py, pz)) continue;
+        seen.add(k);
+        stack.push([px, py, pz]);
+      }
+    }
+  }
+  return out;
+}
+
+const packKey = (x, y, z) => (y * 4096 + z) * 4096 + x;
+
 /** Flood-fill contiguous empty voxels on one horizontal level. */
 function floodCells(world, start, out, limit = 12000) {
   const seen = new Set();
@@ -320,6 +372,15 @@ export function toolCells(tool, world, a, b, opts = {}) {
     case 'fill':
       floodCells(world, { x: a.x, y: clampY(a.y), z: a.z }, cells);
       break;
+    case 'paint':
+      cells.push(a.x, clampY(a.y), a.z);
+      break;
+    case 'paintbox':
+      boxCells(a, b || a, cells);
+      break;
+    case 'surface':
+      surfaceCells(world, opts.face, cells);
+      break;
     case 'paste': {
       const clip = opts.clipboard;
       if (!clip) break;
@@ -366,6 +427,9 @@ export function priceEdit(world, cells, mode, materialId, opts = {}) {
       }
       continue;
     }
+    // Painting recolours what is there; it never fills a hole, so a brush
+    // dragged past the end of a wall does not quietly build one.
+    if (mode === 'paint' && prev === AIR) continue;
     let id = materialId;
     if (mode === 'paste' && clip) id = clip.cells[ci * CLIP_STRIDE + 3];
     if (filterId !== null && prev !== filterId) continue;
@@ -386,7 +450,9 @@ export function priceEdit(world, cells, mode, materialId, opts = {}) {
 
 /**
  * Apply an edit and return a reversible EditBatch.
- * `mode`: 'build' | 'demolish' | 'zone' | 'paste'
+ * `mode`: 'build' | 'paint' | 'demolish' | 'zone' | 'paste'
+ * 'paint' is 'build' that refuses to touch air: it recolours a surface in
+ * place rather than adding to it.
  */
 export function applyEdit(world, cells, mode, materialId, opts = {}) {
   const batch = new EditBatch(opts.label || mode);
@@ -417,6 +483,7 @@ export function applyEdit(world, cells, mode, materialId, opts = {}) {
       continue;
     }
 
+    if (mode === 'paint' && prevB === AIR) continue;
     let id = materialId;
     let zid = undefined;
     if (mode === 'paste' && clip) { id = clip.cells[ci * CLIP_STRIDE + 3]; zid = clip.cells[ci * CLIP_STRIDE + 4]; }

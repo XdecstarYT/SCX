@@ -30,8 +30,10 @@ export class InputController {
     this.lastPinch = 0;
     this.lastMid = null;
     // While a build button is held we repeat the action, so you can sweep out
-    // a wall rather than tapping forty times.
+    // a wall rather than tapping forty times. The repeat only starts after a
+    // deliberate hold - a tap must place exactly once.
     this.heldAction = null;
+    this.holdStart = 0;
     this.longTimer = null;
     this.suppressTap = false;
     this.bind();
@@ -76,7 +78,7 @@ export class InputController {
       // holding repeats them.
       e.preventDefault();
       if (e.button === 1) { this.h.onPick?.(); return; }
-      this.heldAction = e.button;
+      this.beginHold(e.button);
       this.h.onTap?.({ x: 0, y: 0 }, e.button, true);
       return;
     }
@@ -217,9 +219,19 @@ export class InputController {
     this.move.x = x; this.move.y = y;
   }
 
+  /** Start a hold. The caller fires the first action itself. */
+  beginHold(button) {
+    this.heldAction = button;
+    this.holdStart = performance.now();
+  }
+
   /** True while a build action button is held down. */
   get isHolding() { return this.heldAction !== null; }
   get heldButton() { return this.heldAction; }
+  /** Seconds the current hold has lasted, 0 when nothing is held. */
+  get holdSeconds() {
+    return this.heldAction === null ? 0 : (performance.now() - this.holdStart) / 1000;
+  }
   releaseHold() { this.heldAction = null; }
 
   /** Combined keyboard + on-screen joystick, normalised. */

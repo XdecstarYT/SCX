@@ -4,6 +4,7 @@ import { zone } from '../data/zones.js';
 import { TOOLS } from '../voxel/buildTools.js';
 import { BUILD_MODES } from '../voxel/buildController.js';
 import { fmtMoney } from '../core/economy.js';
+import { GROUND_Y } from '../core/constants.js';
 import { PREFAB_BY_KEY } from '../voxel/prefabs.js';
 
 const FACING = ['N', 'E', 'S', 'W'];
@@ -12,6 +13,7 @@ const TOOL_SETS = {
   build: ['single', 'line', 'wall', 'floor', 'box', 'hollow',
           'circle', 'cylinder', 'dome', 'pitched', 'stairs', 'fill', 'replace',
           'grandstand', 'bowl', 'canopy', 'garage', 'retaining'],
+  arrange: ['paint', 'surface', 'paintbox', 'move', 'clone', 'sample'],
   zone: ['single', 'floor', 'box', 'circle', 'line'],
   demolish: ['single', 'box', 'floor', 'circle', 'wall', 'line'],
   inspect: ['single'],
@@ -134,9 +136,9 @@ export class BuildDock {
       }, el('span.i', { text: '\u21BB' }), el('span.n', { text: FACING[this.bc.rotation & 3] })));
     }
 
-    if (['build', 'zone'].includes(this.bc.mode)) {
+    if (['build', 'zone', 'arrange', 'blueprint'].includes(this.bc.mode)) {
       this.toolrow.append(el('button.tool.palette-btn', {
-        title: 'Choose what goes in the selected hotbar slot',
+        title: 'Search the catalogue: materials, fittings, zones and structures',
         'aria-label': 'Open the palette',
         onclick: () => this.onOpenPalette?.(),
       }, el('span.i', { text: '\u229E' }), el('span.n', { text: 'Palette' })));
@@ -169,10 +171,26 @@ export class BuildDock {
    */
   renderHint() {
     const text = {
+      arrange: {
+        paint:    'Repaint one block at a time with whatever material is in your hand. Nothing is added or removed, so the shape you built stays exactly as it is.',
+        surface:  'Tap any wall, floor or roof and the whole connected face of that material is repainted in one go. Blocks buried behind it are left alone.',
+        paintbox: 'Tap two corners; every solid block between them is repainted. Holes stay holes.',
+        move:     'Tap a fitting to lift it, then tap where it should go. Moving is free \u2014 turn it with \u21BB before you set it down.',
+        clone:    'Tap a fitting to hold a copy of it, then tap to place as many as you like. Each one is charged.',
+        sample:   'Tap anything \u2014 block, zone or fitting \u2014 to put it in your hand.',
+      }[this.bc.tool],
       demolish: 'Tap a block to remove it, or use a tool to clear an area. Demolition refunds 30%.',
       inspect: 'Tap any block to see what the game thinks it is, and which venue it belongs to.',
       terrain: 'Raise and Lower move by the set amount; Flatten levels everything to the first point you tap; Ramp slopes between the two. The surface material is preserved.',
     }[this.bc.mode];
+
+    if (this.bc.isCarrying) {
+      const p = this.bc.previewSummary();
+      fill(this.hint, el('span.gold', { text: p?.blocked
+        ? `Cannot set it down here: ${p.blocked}`
+        : `Carrying ${p?.prop?.name || 'a fitting'} \u2014 tap to set it down, \u21BB to turn it, \u2715 to put it back.` }));
+      return;
+    }
 
     if (this.bc.holdingProp) {
       const p = this.bc.previewSummary();
@@ -266,6 +284,15 @@ export class BuildDock {
     }
 
     const n = (v) => `${v} block${v === 1 ? '' : 's'}`;
+    if (this.bc.isPaintTool) {
+      const m = block(this.bc.material);
+      this.info.append(
+        el('span.chipc', { style: { background: '#' + m.color.toString(16).padStart(6, '0') } }),
+        el('span', { text: s.placed ? `${s.placed} face${s.placed === 1 ? '' : 's'} \u2192 ${m.name}` : `Already ${m.name}` }),
+        el('span', { class: 'cost' + (s.affordable ? '' : ' bad'), text: fmtMoney(s.cost) }));
+      if (!s.affordable) this.info.append(el('span.bad', { text: '\u2014 not enough cash' }));
+      return;
+    }
     const label = this.bc.mode === 'zone'
       ? `${n(s.count)} → ${zone(this.bc.zoneKey).name}`
       : this.bc.mode === 'demolish'
@@ -283,6 +310,14 @@ export class BuildDock {
     if (this.bc.mode === 'build' && this.bc.tool !== 'single') {
       const dims = this.bc.lastCells ? dimsOf(this.bc.lastCells) : null;
       if (dims) this.info.append(el('span.faint', { text: `${dims.x}×${dims.y}×${dims.z} blocks (${dims.x * 2}m×${dims.z * 2}m)` }));
+    }
+    // Over open air the tap lands on the working level rather than the ground,
+    // which is how a first floor gets built; say so rather than surprise them.
+    if (this.bc.mode === 'build' && !this.bc.aimFace && this.bc.planeY > GROUND_Y) {
+      this.info.append(el('span.bluetx', {
+        title: 'Aiming at open sky builds on the level you were last working at. Aim at the ground to drop back down.',
+        text: `◎ level ${this.bc.planeY - GROUND_Y + 1} (${(this.bc.planeY - GROUND_Y) * 2}m up)`,
+      }));
     }
   }
 }

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import './styles/main.css';
 
 import { Game } from './core/game.js';
-import { BLOCK_SIZE, GROUND_Y, SECONDS_PER_DAY } from './core/constants.js';
+import { BLOCK_SIZE, CHUNK_Y, GROUND_Y, SECONDS_PER_DAY } from './core/constants.js';
 import { WorldRenderer } from './voxel/renderer.js';
 import { BuildController } from './voxel/buildController.js';
 import { CameraRig, CAMERA_MODES } from './input/cameras.js';
@@ -33,14 +33,26 @@ import { propSlotKey } from './ui/hotbar.js';
 import { PREFABS, PREFAB_GROUPS, generatePrefab } from './voxel/prefabs.js';
 import { RESEARCH } from './data/research.js';
 import { applyPlan } from './voxel/buildTools.js';
-import { zoneId, zone, ZONE_BY_KEY, ZONE_GROUPS } from './data/zones.js';
+import { zoneId, zone, ZONE_BY_KEY, ZONE_GROUPS, ZONE_BY_ID } from './data/zones.js';
 import { instantiate } from './events/eventGenerator.js';
 import { EVENT_TEMPLATES } from './data/events.js';
 import { makeRng } from './core/rng.js';
+import { applyReputation } from './core/gameState.js';
+import { PlayDock } from './ui/playDock.js';
+import {
+  siteStops, spotReport, seatReport, walkProgress, reachStop, recordSeat,
+  completeWalk, amenityFields, certificateActive, STOP_RADIUS, CERTIFICATE_DAYS,
+} from './core/siteWalk.js';
 
 const AUTOSAVE_SLOT = 'auto';
 /** Seconds between repeated placements while a build button is held. */
 const REPEAT_INTERVAL = 0.11;
+/**
+ * How long the button must be held before the repeat starts. Without this a
+ * tap places twice: the press fires one action and the very next frame fires
+ * the first "repeat" a sixtieth of a second later.
+ */
+const REPEAT_DELAY = 0.34;
 
 class App {
   constructor() {
@@ -49,6 +61,15 @@ class App {
     this.game = new Game();
     this.isTouch = matchMedia('(hover: none) and (pointer: coarse)').matches;
     this.tab = 'build';
+    // Play mode state: where the walk goes, how far the amenities are from
+    // everywhere, and what the player is standing on this instant. Play is a
+    // value of `tab` like any other screen, so the nav, the dock host and the
+    // sheet all behave without a second mode concept to keep in step.
+    this.walkStops = [];
+    this.amenityFields = null;
+    this.walkStamp = -1;
+    this.spot = null;
+    this.playTimer = 0;
     this.accum = 0;
     this.fps = 0;
     this.frames = 0;
@@ -68,7 +89,10 @@ class App {
     this.fpsNode = el('div.fps', { style: { display: 'none' } });
     this.root.append(this.fpsNode);
 
-    this.hud.onSheetClose = () => { if (this.tab !== 'build') this.setTab('build'); };
+    this.hud.onSheetClose = () => {
+      // Play mode has no sheet of its own to return from.
+      if (this.tab !== 'build' && this.tab !== 'play') this.setTab('build');
+    };
     this.hud.onScenario = () => this.showScenario();
     this.wireBus();
     document.getElementById('loading')?.classList.add('hidden');
@@ -275,6 +299,9 @@ class App {
       this.dock.onSaveBlueprint = () => this.promptSaveBlueprint();
       this.dock.onOpenBlueprints = () => this.openBlueprints();
       this.dock.onLocked = (b) => this.toast('warn', `${b.name} is locked`, 'Complete the matching research project to unlock it.');
+
+      this.playDock = new PlayDock();
+      this.playDock.onAction = (a) => this.playAction(a);
       this.setupInput();
       this.setupTouchLayer();
     }
@@ -346,7 +373,7 @@ class App {
 
     // Holding these repeats the action, so a wall is one sweep, not forty taps.
     const holdButton = (node, button) => {
-      const start = (e) => { e.preventDefault(); this.input.heldAction = button; this.onTap(null, button, true); };
+      const start = (e) => { e.preventDefault(); this.input.beginHold(button); this.onTap(null, button, true); };
       const stop = () => { if (this.input.heldAction === button) this.input.releaseHold(); };
       node.addEventListener('pointerdown', start);
       node.addEventListener('pointerup', stop);
@@ -516,6 +543,16 @@ class App {
   onTap(ndc, button, fromButton) {
     if (this.hud.modalOpen) return;
     if (this.show?.active) { this.show.skip(); return; }
+    if (this.tab === 'play') {
+      if (ndc) this.lastNdc = ndc;
+      else if (fromButton) this.lastNdc = { x: 0, y: 0 };
+      if (!this.isTouch && this.rig.isWalking && !this.input.pointerLocked && !fromButton) {
+        this.input.requestLock();
+        return;
+      }
+      this.playInteract();
+      return;
+    }
     if (this.tab !== 'build') { this.setTab('build'); return; }
 
     // Tapping the world aims where you tapped; the action buttons aim at the
@@ -537,6 +574,7 @@ class App {
     if (res.confirm) { this.askConfirm(res.confirm); return; }
     if (res.error) { this.toast('warn', 'Cannot build', res.error); audio.play('deny'); return; }
     if (res === 'inspect') { this.showInspector(); return; }
+    if (res === 'pick') { this.pickBlock(); return; }
     if (typeof res === 'string') {
       this.held?.punch();
       this.emitEffects();
@@ -702,8 +740,19 @@ class App {
     let isProps = !zoneMode && propGroupKeys.has(group);
     if (!zoneMode && !isProps && !BLOCK_CATEGORIES.some((c) => c.key === group)) group = 'structure';
 
-    const body = el('div');
+    // The search box lives outside the re-rendered part, or typing a second
+    // character would tear out the field the player is typing into.
+    let query = '';
+    const search = el('input.input.search', {
+      type: 'search', placeholder: 'Search everything\u2026',
+      'aria-label': 'Search materials, fittings, zones and structures',
+      oninput: (e) => { query = e.target.value.trim(); render(); },
+    });
+    const results = el('div');
+    const body = el('div', {}, el('div.field', { style: { marginBottom: '10px' } }, search), results);
+
     const render = () => {
+      if (query) { fill(results, this.paletteSearch(query, slot)); return; }
       const groups = zoneMode ? ZONE_GROUPS : isProps ? PROP_GROUPS : BLOCK_CATEGORIES;
       if (!groups.some((g) => g.key === group)) {
         group = groups[0].key;
@@ -725,7 +774,7 @@ class App {
         },
       }, label);
 
-      fill(body,
+      fill(results,
         zoneMode ? null : el('div.tabs', { style: { padding: '0 0 8px' } },
           kindTab('Materials', false, 'Blocks you build with'),
           kindTab('Equipment', true, 'Goals, hoops, nets, benches and scoreboards')),
@@ -759,14 +808,421 @@ class App {
         })));
     };
     render();
-    this.hud.openSheet(zoneMode ? 'Choose a zone' : 'Choose a material or fitting', body);
+    this.hud.openSheet(zoneMode ? 'Choose a zone' : 'Catalogue', body);
+  }
+
+  /**
+   * One search across the whole catalogue: materials, fittings, zones and
+   * prefabricated structures together. Categories are how you browse; this is
+   * how you find the thing you already have a name for, and it crosses the
+   * Materials/Equipment divide that browsing cannot.
+   */
+  paletteSearch(query, slot) {
+    const q = query.toLowerCase();
+    const hit = (...fields) => fields.some((f) => f && String(f).toLowerCase().includes(q));
+    const named = (name) => (String(name).toLowerCase().includes(q) ? 0 : 1);
+    const g = this.game;
+
+    const rows = [];
+    for (const b of BLOCK_BY_KEY.values()) {
+      if (b.key === 'air') continue;
+      if (!hit(b.name, b.category, b.hint)) continue;
+      rows.push({ rank: named(b.name), kind: 'Material', name: b.name, sub: b.category, color: b.color,
+        cost: b.cost, locked: b.unlock && !g.isUnlocked(b.unlock),
+        pick: () => {
+          // A material is equally at home in Arrange, where it is the paint.
+          if (this.controller.mode !== 'arrange') this.controller.setMode('build');
+          this.hotbar.assign(b.key, slot);
+        } });
+    }
+    for (const p of PROP_BY_KEY.values()) {
+      if (!hit(p.name, p.group, p.hint, p.sport)) continue;
+      rows.push({ rank: named(p.name), kind: 'Fitting', name: p.name, sub: p.group, color: p.color,
+        cost: p.cost, locked: p.unlock && !g.isUnlocked(p.unlock),
+        pick: () => { this.controller.setMode('build'); this.hotbar.assign(propSlotKey(p.key), slot); } });
+    }
+    for (const z of ZONE_BY_KEY.values()) {
+      if (!hit(z.name, z.group)) continue;
+      rows.push({ rank: named(z.name), kind: 'Zone', name: z.name, sub: z.group, color: z.color, cost: null,
+        pick: () => { this.controller.setMode('zone'); this.hotbar.assign(z.key, slot); } });
+    }
+    for (const def of PREFABS) {
+      if (!hit(def.name, def.group, def.hint)) continue;
+      rows.push({ rank: named(def.name), kind: 'Structure', name: def.name, sub: `${def.size.x}\u00D7${def.size.z} blocks`,
+        color: 0x9aa3ad, cost: this.estimatePrefab(def).cost,
+        locked: def.unlock && !g.isUnlocked(def.unlock),
+        pick: () => { this.controller.setPrefab(def.key); } });
+    }
+
+    if (!rows.length) {
+      return el('div.card', {}, emptyState('\u2315', `Nothing in the catalogue matches "${query}".`));
+    }
+    // Things whose name matches come first, then by kind, then cheapest, so a
+    // search for "roof" opens on roof materials rather than on a gym whose
+    // description happens to mention one.
+    const order = { Material: 0, Fitting: 1, Zone: 2, Structure: 3 };
+    rows.sort((a, b) => (a.rank - b.rank)
+      || (order[a.kind] - order[b.kind])
+      || ((a.cost ?? 0) - (b.cost ?? 0)));
+
+    return el('div.stack', {},
+      el('div.tiny.faint', { text: `${rows.length} match${rows.length === 1 ? '' : 'es'}. Choosing one puts it in slot ${slot + 1} and switches to the mode it belongs to.` }),
+      ...rows.slice(0, 60).map((r) => el('button.card.tight.tap' + (r.locked ? '.off' : ''), {
+        disabled: !!r.locked,
+        'aria-label': `${r.name}, ${r.kind}${r.locked ? ', locked' : ''}`,
+        onclick: () => {
+          r.pick();
+          this.refreshBuildUi();
+          requestAnimationFrame(() => this.hud.closeSheet());
+        },
+      },
+        el('div.rowbetween', {},
+          el('div.palrow', {},
+            el('span.chipc', { style: { background: '#' + r.color.toString(16).padStart(6, '0') } }),
+            el('div', {},
+              el('div.small', { text: r.name }),
+              el('div.tiny.faint', { text: `${r.kind} \u00B7 ${r.sub}` }))),
+          el('div.small.mono' + (r.locked ? '.faint' : ''), {
+            text: r.locked ? 'Locked' : r.cost === null ? '\u2014' : fmtMoney(r.cost) })))),
+      rows.length > 60 ? el('div.tiny.faint', { text: `\u2026 and ${rows.length - 60} more. Narrow the search.` }) : null);
+  }
+
+
+  // ============================================================== PLAY MODE
+  /**
+   * Build mode asks what a thing costs. Play mode asks what it is like. The
+   * split is real rather than cosmetic: the ghost and the dock go away, taps
+   * stop editing the world, and everything on screen is measured from where
+   * the player is standing instead of from the plot as a whole.
+   */
+  enterPlay() {
+    const wasFlying = !this.rig.isWalking;
+    if (wasFlying) this.setCamera('first');
+    this.controller.setVisible(false);
+    this.controller.cancelMove?.();
+    this.held?.setVisible(false);
+    this.worldRenderer.setZoneMode(false);
+    this.actionPad.style.display = 'none';
+    this.joy.style.display = this.isTouch ? '' : 'none';
+    this.jumpBtn.style.display = '';
+    this.pickBtn.style.display = 'none';
+    this.crosshair.style.display = '';
+    this.refreshWalk(true);
+    if (wasFlying) this.spawnAtGate();
+    this.playTimer = 0;
+    this.updatePlay(true, true);
+    if (!this.game.state.siteWalk?.walks && !this._playHint) {
+      this._playHint = true;
+      this.toast('info', 'You are in your own complex',
+        'Walk it. The bar at the bottom reads the spot you are standing on — the view, the clear width, how far the toilets are. Visit every stop on the site walk to file an inspection.');
+    }
+  }
+
+  /**
+   * Arrive the way a spectator would: at the turnstiles if there are any,
+   * otherwise at whatever the first stop is. Being dropped in the middle of
+   * the pitch is a debug camera, not a visit.
+   */
+  spawnAtGate() {
+    const gate = this.walkStops.find((s) => s.kind === 'entrance')
+      || this.walkStops.find((s) => s.kind === 'parking' || s.kind === 'transit')
+      || this.walkStops[0];
+    if (!gate) return;
+    const w = this.game.world;
+    const v = (this.game.analysis.venues || [])[0];
+    // Stand at the edge of the gate that faces the ground, looking in. The
+    // middle of an entrance cluster is usually inside the gatehouse, nose
+    // against a panel.
+    if (v && gate.bounds && gate.zoneKey) {
+      const zid = zoneId(gate.zoneKey);
+      let best = null, bestD = Infinity;
+      for (let x = gate.bounds.minX; x <= gate.bounds.maxX; x++) {
+        for (let z = gate.bounds.minZ; z <= gate.bounds.maxZ; z++) {
+          if (!w.inBounds(x, 0, z)) continue;
+          let y = -1;
+          for (let k = CHUNK_Y - 1; k >= 0; k--) if (w.getZone(x, k, z) === zid) { y = k; break; }
+          if (y < 0) continue;
+          const d = Math.hypot(x - v.centre.x, z - v.centre.z);
+          if (d < bestD) { bestD = d; best = { x, y: y + 1, z }; }
+        }
+      }
+      if (best) { gate.spawn = best; }
+    }
+    const at = gate.spawn || gate;
+    // The stop's own y is the floor of the zone, which is where a person
+    // stands. The terrain height would be the roof of the gatehouse.
+    let y = at.y;
+    while (y < CHUNK_Y - 2 && (w.isSolid(at.x, y, at.z) || w.isSolid(at.x, y + 1, at.z))) y++;
+    this.rig.pos.set((at.x + 0.5) * BLOCK_SIZE, y * BLOCK_SIZE + 0.1, (at.z + 0.5) * BLOCK_SIZE);
+    this.rig.vel.set(0, 0, 0);
+    // Face the nearest playing surface, so the first thing in shot is the thing
+    // the complex is for.
+    if (v) this.rig.fYaw = Math.atan2(v.centre.x - at.x, v.centre.z - at.z);
+    this.rig.fPitch = -0.05;
+  }
+
+  /** Play mode is on foot, so the flying cameras are not offered there. */
+  get cameraModes() {
+    return this.tab === 'play' ? CAMERA_MODES.filter((m) => m.key === 'first' || m.key === 'third') : CAMERA_MODES;
+  }
+
+  leavePlay() {
+    this.controller.setVisible(this.tab === 'build');
+    this.crosshair.style.display = (this.rig.isWalking || (this.isTouch && this.tab === 'build')) ? '' : 'none';
+  }
+
+  /**
+   * The stops and the amenity distance fields, rebuilt when the world has
+   * actually changed. Both are whole-plot passes, so they are not something to
+   * do on a frame.
+   */
+  refreshWalk(force = false) {
+    const stamp = this.game.state.stats.blocksPlaced + this.game.state.stats.blocksRemoved
+      + (this.game.world.props?.version || 0);
+    if (!force && stamp === this.walkStamp && this.walkStops.length) return;
+    this.walkStamp = stamp;
+    const venues = this.game.analysis.venues || [];
+    this.walkStops = siteStops(this.game.world, venues);
+    this.amenityFields = amenityFields(this.game.world);
+    // Stops that no longer exist should not block an inspection for ever.
+    const w = this.game.state.siteWalk;
+    if (w) {
+      const live = new Set(this.walkStops.map((s) => s.id));
+      w.visited = w.visited.filter((id) => live.has(id));
+    }
+  }
+
+  /** One play-mode sample: where am I, what is here, have I reached a stop. */
+  updatePlay(force = false, quiet = false) {
+    if (this.tab !== 'play') return;
+    this.refreshWalk();
+    const p = this.rig.pos;
+    const pos = {
+      x: Math.floor(p.x / BLOCK_SIZE),
+      y: Math.floor(p.y / BLOCK_SIZE),
+      z: Math.floor(p.z / BLOCK_SIZE),
+    };
+    const key = `${pos.x},${pos.y},${pos.z}`;
+    if (!force && key === this._spotKey) return;
+    this._spotKey = key;
+
+    const venues = this.game.analysis.venues || [];
+    this.spot = spotReport(this.game.world, pos, venues, this.amenityFields);
+
+    // Reaching a stop ticks it off. Announced once, because walking past the
+    // same marker four times is not four inspections.
+    for (const stop of this.walkStops) {
+      const d = Math.hypot(stop.x - pos.x, stop.z - pos.z);
+      if (d > STOP_RADIUS) continue;
+      const got = reachStop(this.game.state, stop);
+      if (got && !quiet) {
+        audio.play('ui');
+        this.toast('info', `Inspected: ${got.name}`, this.stopBriefing(got));
+      }
+    }
+    this.renderPlayDock();
+  }
+
+  /**
+   * What to say on arriving somewhere. At a playing surface that is the
+   * venue's own list of faults, which is the whole reason to stand there;
+   * everywhere else it is the question the stop exists to answer.
+   */
+  stopBriefing(stop) {
+    if (stop.kind === 'pitch' && stop.venueKey) {
+      const v = (this.game.analysis.venues || []).find((x) => x.key === stop.venueKey);
+      const issues = (v?.ratings?.issues || []).filter((i) => i.severity !== 'info').slice(0, 3);
+      if (issues.length) {
+        return `Standing here, the inspection flags: ${issues.map((i) => i.text).join(' ')}`;
+      }
+      if (v) return `${stop.ask} Nothing on the snag list for this venue — it rates ${v.ratings.overall}.`;
+    }
+    return stop.ask;
+  }
+
+  renderPlayDock() {
+    const progress = walkProgress(this.game.state, this.walkStops);
+    const w = this.game.state.siteWalk;
+    // Whether filing is actually worth anything right now, so the player is
+    // not walking the rounds for a certificate they already hold.
+    progress.certificate = certificateActive(this.game.state)
+      ? { daysLeft: CERTIFICATE_DAYS - (this.game.state.day - w.completedDay) }
+      : null;
+    progress.restricted = (w?.restricted || []).length;
+    this.playDock.render(this.spot, progress, this.playTarget());
+    this.hud.setDock(this.playDock.node);
+  }
+
+  /** What the Inspect button would act on, named so the button can say it. */
+  playTarget() {
+    const bc = this.controller;
+    bc.updateAim(this.aimNdc());
+
+    // Standing in the stand is the natural way to ask about a seat: you walk
+    // up, you sit down, you look. Only if the player is somewhere else does
+    // the crosshair decide.
+    const feet = this.spot;
+    if (feet) {
+      const under = this.game.world.getZone(feet.x, feet.y - 1, feet.z)
+        || this.game.world.getZone(feet.x, feet.y, feet.z);
+      const zd = under ? ZONE_BY_ID[under] : null;
+      if (zd && zd.group === 'spectator' && zd.capacity) {
+        return {
+          kind: 'seat', label: 'This seat', title: 'What you can see from where you are sitting',
+          cell: { x: feet.x, y: feet.y, z: feet.z },
+        };
+      }
+    }
+    if (bc.aimProp) {
+      const t = PROP_BY_ID[bc.aimProp.typeId];
+      return { kind: 'prop', label: 'Fitting', title: `Look at the ${t?.name || 'fitting'}` };
+    }
+    const f = bc.aimFace;
+    if (f) {
+      const zid = this.game.world.getZone(f.x, f.y, f.z);
+      const zdef = zid ? ZONE_BY_ID[zid] : null;
+      if (zdef && zdef.group === 'spectator' && zdef.capacity) {
+        return { kind: 'seat', label: 'Seat', title: 'What this seat actually sees', cell: { x: f.x, y: f.y, z: f.z } };
+      }
+      return { kind: 'block', label: 'Inspect', title: 'Look closely at this', cell: { x: f.x, y: f.y, z: f.z } };
+    }
+    return { kind: 'spot', label: 'Inspect', title: 'A full report on where you are standing' };
+  }
+
+  playAction(id) {
+    if (id === 'build') { this.setTab('build'); return; }
+    if (id === 'guide') { this.guideToNextStop(); return; }
+    if (id === 'file') { this.fileInspection(); return; }
+    this.playInteract();
+  }
+
+  /** A tap in play mode: read the thing under the crosshair. */
+  playInteract() {
+    const t = this.playTarget();
+    const venues = this.game.analysis.venues || [];
+
+    if (t.kind === 'seat') {
+      const venue = nearestVenueTo(venues, t.cell.x, t.cell.z);
+      const r = seatReport(this.game.world, t.cell, venue);
+      if (!r) { this.toast('info', 'No field in sight', 'This seat is not looking at anything the game recognises as a playing surface.'); return; }
+      recordSeat(this.game.state, r);
+      const tone = r.restricted ? 'warn' : 'info';
+      this.toast(tone, `${r.grade} — ${r.zone || 'seat'}`,
+        `${r.clear} of ${r.total} points on the field are visible from here. `
+        + `${r.distance}m out, ${r.height}m above the surface.`
+        + (r.blockedBy ? ` ${r.blockedBy} is in the way.` : ''));
+      audio.play(r.restricted ? 'deny' : 'ui');
+      this.renderPlayDock();
+      return;
+    }
+
+    if (t.kind === 'prop') {
+      const rec = this.controller.aimProp;
+      const type = PROP_BY_ID[rec.typeId];
+      this.toast('info', type?.name || 'Fitting',
+        `${type?.hint || 'Equipment.'} Facing ${['north', 'east', 'south', 'west'][rec.rot & 3]}.`);
+      audio.play('ui');
+      return;
+    }
+
+    this.showSpotSheet();
+  }
+
+  /** The long form of the spot report, for when the dock line is not enough. */
+  showSpotSheet() {
+    const r = this.spot;
+    if (!r) return;
+    const row = (k, v, cls = '') => el('div.rowbetween', {},
+      el('span.small.faint', { text: k }), el('span.small' + (cls ? '.' + cls : ''), { text: v }));
+    this.hud.openSheet('Standing here', el('div.stack', {},
+      el('div.card', {},
+        el('div.rowbetween', {},
+          el('div.h3', { text: r.zone ? r.zone.name : 'Unzoned ground' }),
+          el('div.big' + (r.score >= 68 ? '.good' : r.score >= 45 ? '.gold' : '.bad'), { text: `${r.score}` })),
+        el('div.tiny.faint', { text: `${r.verdict} · ${r.surface || 'nothing underfoot'}` })),
+      el('div.card', {},
+        el('div.section', { text: 'The place' }),
+        row('Clear width', `${r.widthMetres}m`, r.width <= 3 ? 'bad' : ''),
+        row('Shelter', r.covered ? `Roofed, ${Math.round(r.coverHeight)}m overhead` : 'Open to the sky'),
+        r.view ? row('View of the field', `${r.view.grade} — ${r.view.clear}/${r.view.total} clear, ${r.view.distance}m`,
+          r.view.restricted ? 'bad' : '') : null,
+        r.view?.blockedBy ? row('In the way', r.view.blockedBy, 'bad') : null),
+      el('div.card', {},
+        el('div.section', { text: 'Nearest of each' }),
+        ...r.amenities.map((a) => row(a.label,
+          a.metres === null ? 'None on the plot' : `${a.metres}m`,
+          a.poor ? 'bad' : a.ok ? 'good' : ''))),
+      el('div.card', {},
+        el('div.section', { text: 'Verdict' }),
+        ...r.notes.map((n) => el('div.small', { text: '• ' + n })))));
+  }
+
+  /**
+   * Take the player to a seat found on a walk, so a bad one reported in the
+   * venue screen is one tap from being looked at rather than hunted for.
+   */
+  showSeat(seat) {
+    this.setTab('play');
+    const w = this.game.world;
+    let y = seat.y;
+    while (y < CHUNK_Y - 2 && (w.isSolid(seat.x, y, seat.z) || w.isSolid(seat.x, y + 1, seat.z))) y++;
+    this.rig.pos.set((seat.x + 0.5) * BLOCK_SIZE, y * BLOCK_SIZE + 0.1, (seat.z + 0.5) * BLOCK_SIZE);
+    this.rig.vel.set(0, 0, 0);
+    const v = nearestVenueTo(this.game.analysis.venues || [], seat.x, seat.z);
+    if (v) this.rig.fYaw = Math.atan2(v.centre.x - seat.x, v.centre.z - seat.z);
+    this.rig.fPitch = -0.05;
+    this.updatePlay(true, true);
+    this.toast('info', 'This is the seat', seat.blockedBy
+      ? `${seat.blockedBy} is what is in the way. Clear it, then check the seat again.`
+      : 'Most of the field is hidden from here.');
+  }
+
+  /** Point the player at the next unvisited stop. */
+  guideToNextStop() {
+    const p = walkProgress(this.game.state, this.walkStops);
+    const bad = this.game.state.siteWalk?.restricted || [];
+    // With the rounds done, the thing worth walking to is the worst seat the
+    // player has actually found, because that is a fault with an address.
+    const target = p.next || (bad.length ? {
+      x: bad[0].x, z: bad[0].z,
+      name: 'a restricted-view seat you found',
+      ask: bad[0].blockedBy ? `${bad[0].blockedBy} is in the way of it.` : 'It cannot see most of the field.',
+    } : null);
+    if (!target) { this.toast('info', 'Nothing left', 'Every stop has been visited and no bad seats are on file.'); return; }
+    const dx = (target.x + 0.5) * BLOCK_SIZE - this.rig.pos.x;
+    const dz = (target.z + 0.5) * BLOCK_SIZE - this.rig.pos.z;
+    this.rig.fYaw = Math.atan2(dx, dz);
+    this.rig.fPitch = 0;
+    const dist = Math.round(Math.hypot(dx, dz));
+    this.toast('info', `Toward ${target.name}`, `${dist}m ahead. ${target.ask}`);
+    audio.play('ui');
+  }
+
+  /** File a completed walk and take the certificate. */
+  fileInspection() {
+    const r = completeWalk(this.game.state, this.walkStops);
+    if (!r) { this.toast('warn', 'Not finished', 'Visit every stop on the walk first.'); return; }
+    if (r.reputation > 0) applyReputation(this.game.state, { venue: r.reputation });
+    this.game.markWorldDirty();
+    audio.play('cash');
+    this.toast('good', 'Inspection filed',
+      `${r.stops} stops walked. `
+      + (r.reputation > 0
+        ? `Reputation +${r.reputation}. `
+        : 'Your last certificate was still in date, so no reputation this time. ')
+      + `Safety and comfort lift for ${CERTIFICATE_DAYS} days.`
+      + (r.restricted ? ` ${r.restricted} restricted-view seat${r.restricted === 1 ? '' : 's'} still on file.` : ''));
+    this.renderPlayDock();
+    this.refresh();
   }
 
   // =================================================================== TABS
   setTab(tab) {
+    const was = this.tab;
     this.tab = tab;
     this.hud.setTab(tab);
     this.hud.closeSheet();
+    if (was === 'play' && tab !== 'play') this.leavePlay();
     const building = tab === 'build';
     this.controller.setVisible(building);
     this.actionPad.style.display = this.isTouch && building ? '' : 'none';
@@ -774,9 +1230,10 @@ class App {
       this.crosshair.style.display = (this.rig.isWalking || (this.isTouch && building)) ? '' : 'none';
     }
     if (building) this.refreshBuildUi();
-    else { this.hud.setDock(null); this.worldRenderer.setZoneMode(false); this.refreshHeld(); }
+    else if (tab !== 'play') { this.hud.setDock(null); this.worldRenderer.setZoneMode(false); this.refreshHeld(); }
 
-    if (tab === 'home') this.screens.openHome();
+    if (tab === 'play') this.enterPlay();
+    else if (tab === 'home') this.screens.openHome();
     else if (tab === 'events') this.eventsUi.openBoard();
     else if (tab === 'finance') this.screens.openFinance();
     else if (tab === 'more') this.screens.openMore();
@@ -1273,12 +1730,13 @@ class App {
 
   refresh() {
     this.hud.refresh();
-    this.hud.setCameraButtons(CAMERA_MODES, this.rig.mode, (m) => this.setCamera(m));
+    this.hud.setCameraButtons(this.cameraModes, this.rig.mode, (m) => this.setCamera(m));
     this.hud.setRightRail([
       { icon: '↶', title: 'Undo', disabled: !this.game.history.canUndo, onclick: () => this.undo() },
       { icon: '↷', title: 'Redo', disabled: !this.game.history.canRedo, onclick: () => this.redo() },
       { icon: '✈', title: 'Toggle flight (first person)', on: this.rig.fly, disabled: !this.rig.isWalking, onclick: () => { this.rig.toggleFly(); this.refresh(); } },
-      { icon: '▦', title: 'Show functional zones', on: this.worldRenderer.zoneMode, onclick: () => { this.worldRenderer.setZoneMode(!this.worldRenderer.zoneMode); this.refresh(); } },
+      this.tab === 'play' ? null
+        : { icon: '▦', title: 'Show functional zones', on: this.worldRenderer.zoneMode, onclick: () => { this.worldRenderer.setZoneMode(!this.worldRenderer.zoneMode); this.refresh(); } },
       { icon: '?', title: 'Show the tutorial', onclick: () => this.tutorial.show() },
     ]);
     this.hud.onTab = (t) => this.setTab(t);
@@ -1334,14 +1792,22 @@ class App {
     this.rig.update(dt, move, this.input.run);
 
     // Holding place/break sweeps out a run of blocks.
-    if (this.input.isHolding && this.tab === 'build' && !this.show?.active) {
+    if (this.input.isHolding && this.tab === 'build' && !this.show?.active
+        && this.input.holdSeconds >= REPEAT_DELAY) {
       this.repeatTimer = (this.repeatTimer || 0) - dt;
       if (this.repeatTimer <= 0) {
         this.repeatTimer = REPEAT_INTERVAL;
         this.onTap(null, this.input.heldButton, true);
       }
     } else {
-      this.repeatTimer = 0;
+      this.repeatTimer = REPEAT_INTERVAL;
+    }
+
+    // Play mode reads the ground under the player a few times a second. Only
+    // on a new voxel does it do the work, so standing still costs nothing.
+    if (this.tab === 'play') {
+      this.playTimer -= dt;
+      if (this.playTimer <= 0) { this.playTimer = 0.2; this.updatePlay(); }
     }
 
     this.held?.update(dt, Math.abs(move.x) + Math.abs(move.y) > 0.1);
@@ -1372,6 +1838,17 @@ class App {
     if (!('serviceWorker' in navigator) || !import.meta.env?.PROD) return;
     navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is optional */ });
   }
+}
+
+/** The venue a cell belongs to: the nearest one that can reach it. */
+function nearestVenueTo(venues, x, z) {
+  let best = null, bestD = Infinity;
+  for (const v of venues) {
+    const d = Math.hypot(x - v.centre.x, z - v.centre.z);
+    if (d > (v.reach || 60) * 1.6) continue;
+    if (d < bestD) { bestD = d; best = v; }
+  }
+  return best;
 }
 
 const app = new App();
