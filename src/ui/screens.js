@@ -294,6 +294,63 @@ export class Screens {
   }
 
   /**
+   * The ground itself: what you are licensed to sell to, and what state the
+   * surfaces are in. Both are things that take capacity away from a stadium
+   * which is still standing, so they belong on the same screen.
+   */
+  groundBody(render) {
+    return el('div.stack', {},
+      section('Safety certificates', this.safetyBody(render)),
+      section('Playing surfaces', this.pitchesBody(render)));
+  }
+
+  /**
+   * The licensing screen. The certificate is the number you may actually sell
+   * to, which is lower than the number of seats you have built.
+   */
+  safetyBody(render) {
+    const g = this.game;
+    const rows = g.safetyReport();
+    if (!rows.length) return el('div.card', {}, el('div.small.faint', { text: 'No venues to license yet.' }));
+
+    return el('div.stack', {}, ...rows.map((r) => {
+      const a = r.assessment;
+      const pctOf = Math.round(a.fraction * 100);
+      return el('div.card', {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('div.small', { text: r.name }),
+            el('div.tiny.faint', { text: r.certified
+              ? (r.prohibited ? 'Prohibition notice'
+                : r.daysLeft > 0 ? `Certificate expires in ${r.daysLeft} days` : 'Certificate expired')
+              : r.needsCertificate ? 'Never inspected' : 'Too small to need a certificate' })),
+          el('div.right', {},
+            el('div.small.mono' + (r.permitted > 0 ? '' : '.bad'), { text: fmtNum(r.permitted) }),
+            el('div.tiny.faint', { text: `of ${fmtNum(r.built)} built` }))),
+        r.blocked ? el('div.tiny.bad', { style: { marginTop: '4px' }, text: r.blocked }) : null,
+
+        el('div', { style: { marginTop: '8px' } },
+          el('div.tiny.faint', { text: `An inspection today would certify ${pctOf}% of the ground. `
+            + `The limiting factor is ${a.worst.name.toLowerCase()}.` }),
+          ...a.scores.map((c) => el('div.rowbetween', { style: { padding: '3px 0' } },
+            el('span.tiny' + (c.score < 0.5 ? '.bad' : c.score > 0.85 ? '.good' : '.faint'), { text: c.name }),
+            el('span.tiny.mono.faint', { title: c.hint, text: `${Math.round(c.score * 100)}%` })))),
+
+        el('div.btnrow', { style: { marginTop: '10px' } },
+          el('button.btn.sm.primary', {
+            disabled: r.fee > this.state.cash,
+            title: 'An inspector assesses the ground as it stands today and issues a certificate for that capacity.',
+            onclick: () => {
+              const res = g.requestInspection(r.key);
+              if (res?.error) this.app.toast('warn', 'Cannot inspect', res.error);
+              render();
+              this.app.refresh();
+            },
+          }, `Book an inspection \u00B7 ${fmtMoney(r.fee)}`)));
+    }));
+  }
+
+  /**
    * The ground staff's screen: what state every surface is in, what is
    * installed under it, and what you can order doing to it.
    */
@@ -474,14 +531,14 @@ export class Screens {
 
   // ================================================================== MORE
   openMore(initial = 'Staff') {
-    const tabs = ['Empire', 'Clubs', 'Hosting', 'Pitches', 'Programmes', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
+    const tabs = ['Empire', 'Clubs', 'Hosting', 'Ground', 'Programmes', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
     let active = tabs.includes(initial) ? initial : 'Empire';
     const tabBar = el('div.tabs');
     const render = () => {
       fill(tabBar, ...tabs.map((t) => el('button.tab' + (t === active ? '.on' : ''), {
         onclick: () => { active = t; render(); },
       }, t)));
-      const body = active === 'Pitches' ? this.pitchesBody(render)
+      const body = active === 'Ground' ? this.groundBody(render)
         : active === 'Empire' ? this.empireBody(render)
         : active === 'Clubs' ? this.clubsBody(render)
         : active === 'Hosting' ? this.hostingBody(render)

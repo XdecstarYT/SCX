@@ -2,6 +2,11 @@ import { VoxelWorld } from '../voxel/world.js';
 import { History } from '../voxel/history.js';
 import { combineLift, inspectionLift } from './siteWalk.js';
 import {
+  createSafetyState, assess as assessSafety, issue as issueCertificate,
+  permittedCapacity, blockedReason, daysLeft as certDaysLeft, tickSafety, certFor,
+  CERTIFICATE_DAYS as CERT_DAYS, SMALL_GROUND,
+} from './safety.js';
+import {
   createPitchState, tickPitches, playEventOn, inspect as inspectPitch,
   conditionEffect, orderTreatment, installUpgrade, pitchReport, pitchFor,
   surfaceKeyFor, TREATMENT_BY_ID, UPGRADE_BY_ID,
@@ -381,6 +386,11 @@ export class Game {
     });
     if (ground.upkeep) this.record('maintenance', -ground.upkeep);
     for (const n of ground.notices) this.notify(n.warn ? 'warn' : 'info', n.name, n.text);
+
+    // Safety certificates run out, and a ground that lets one lapse cannot
+    // open. The warning comes a month ahead, not on the day.
+    const safety = tickSafety(s, this.analysis.venues || []);
+    for (const n of safety.notices) this.notify(n.warn ? 'warn' : 'info', n.name, n.text);
 
     // Weather
     if (s.day >= s.weatherUntilDay) {
@@ -1917,6 +1927,65 @@ export class Game {
     this.bus.emit('season', report);
     this.bus.emit('state');
     return report;
+  }
+
+  // ================================================= THE SAFETY CERTIFICATE
+  /** What an inspector would find at every venue, for the screen. */
+  safetyReport() {
+    const s = this.state;
+    return (this.analysis.venues || []).map((v) => {
+      const a = assessSafety(v, s, this.analysis.complex);
+      const rec = certFor(s, v.key);
+      return {
+        key: v.key,
+        name: v.name || v.suggestedName || v.sportName,
+        built: v.capacity.total,
+        permitted: permittedCapacity(s, v),
+        blocked: blockedReason(s, v),
+        daysLeft: certDaysLeft(s, v),
+        needsCertificate: v.capacity.total > SMALL_GROUND,
+        certified: rec.issuedDay >= 0,
+        prohibited: rec.prohibited,
+        assessment: a,
+        fee: this.inspectionFee(v),
+      };
+    });
+  }
+
+  /** What a licensing inspection costs, scaled to the ground. */
+  inspectionFee(venue) {
+    return Math.round(4_000 + venue.capacity.total * 1.6);
+  }
+
+  /**
+   * Book a safety inspection. The certificate freezes the capacity as it is
+   * on the day, which is what makes it worth fixing the ground *before* the
+   * inspector comes rather than after.
+   */
+  requestInspection(venueKey) {
+    const s = this.state;
+    const venue = this.findVenue(venueKey);
+    if (!venue) return { error: 'That venue no longer exists.' };
+    const fee = this.inspectionFee(venue);
+    if (fee > s.cash) {
+      return { error: `An inspection costs ${Math.round(fee).toLocaleString()}. You do not have it.` };
+    }
+    s.cash -= fee;
+    this.record('insurance', -fee);
+    const result = issueCertificate(s, venue, this.analysis.complex);
+    if (result.prohibited) {
+      this.notify('warn', `${venue.name || venue.sportName} closed`,
+        `The inspector served a prohibition notice: ${result.worst.name.toLowerCase()} is not adequate. `
+        + 'The ground cannot open until it is put right and re-inspected.');
+      applyReputation(s, { venue: -6, organiser: -4 });
+    } else {
+      this.notify('info', 'Safety certificate issued',
+        `${venue.name || venue.sportName} is certified for ${result.capacity.toLocaleString()} `
+        + `of its ${venue.capacity.total.toLocaleString()} seats for ${CERT_DAYS} days. `
+        + `The limiting factor is ${result.worst.name.toLowerCase()}.`);
+    }
+    this.bus.emit('state');
+    return result;
   }
 
   // ============================================================== THE PITCH

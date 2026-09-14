@@ -4,6 +4,7 @@ import { createHostingState } from '../core/hosting.js';
 import { createProgrammeState } from '../core/programmes.js';
 import { createSiteWalkState } from '../core/siteWalk.js';
 import { createPitchState } from '../core/groundskeeping.js';
+import { createSafetyState } from '../core/safety.js';
 import { PropLayer } from '../voxel/props.js';
 import { SAVE_VERSION } from '../core/gameState.js';
 import { createHotbarState } from '../ui/hotbar.js';
@@ -202,6 +203,13 @@ export function migrate(save) {
   // Pitches too: an older complex simply has surfaces in perfect condition
   // that nothing has been installed under yet.
   if (!s.pitches || !s.pitches.byVenue) s.pitches = createPitchState();
+  // An older complex has no certificates. Rather than shut every existing
+  // ground overnight, a save that predates the system is grandfathered: each
+  // venue is treated as certified until its first renewal falls due.
+  if (!s.safety || !s.safety.byVenue) {
+    s.safety = createSafetyState();
+    s.safety.grandfatherUntil = s.day + 90;
+  }
   // The site walk postdates the first saves too. An older complex has simply
   // never been walked, so it starts with no stops visited and no certificate.
   if (!s.siteWalk || !Array.isArray(s.siteWalk.visited)) s.siteWalk = createSiteWalkState();

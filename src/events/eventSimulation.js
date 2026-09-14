@@ -1,5 +1,6 @@
 import { makeRng, hashString } from '../core/rng.js';
 import { conditionEffect } from '../core/groundskeeping.js';
+import { permittedCapacity } from '../core/safety.js';
 import { PRICING_TIERS, bidCostMultiplier, contractEffects, clamp } from './bidding.js';
 
 const TIER_BROADCAST = { local: 0, regional: 120_000, national: 900_000, international: 3_400_000, world: 9_500_000 };
