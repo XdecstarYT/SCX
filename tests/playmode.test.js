@@ -102,6 +102,39 @@ test('standing in a corridor reports the corridor, not the plot', () => {
     `a 4m corridor should be called out, got: ${r.notes.join(' | ')}`);
 });
 
+test('a walled room reads as a room, and a gateway is still a way out', async () => {
+  const { propId } = await import('../src/data/props.js');
+  const { generateWallBox } = await import('../src/voxel/structures.js');
+  const w = new VoxelWorld(64);
+  w.generateTerrain();
+  const conc = blockId('floor_conc');
+  for (let x = 8; x < 30; x++) for (let z = 8; z < 30; z++) {
+    w.setBlock(x, G - 1, z, conc, zoneId('concourse'));
+  }
+  const fields = amenityFields(w);
+  const open = spotReport(w, { x: 15, y: G, z: 15 }, [], fields);
+  assert.ok(open.width >= 20, `open concourse should measure wide, got ${open.width}`);
+
+  // A 5 x 5 room round that spot.
+  const box = generateWallBox(w, { x: 13, y: G, z: 13 }, { x: 17, y: G, z: 17 },
+    { typeId: propId('wall_partition') });
+  for (const p of box.props) w.props.add(p.typeId, p.x, p.y, p.z, p.rot);
+
+  const walled = spotReport(w, { x: 15, y: G, z: 15 }, [], fields);
+  assert.equal(walled.width, 5, `inside a 5-cell room the clear width is 5, got ${walled.width}`);
+  assert.equal(walled.widthX, 5);
+  assert.equal(walled.widthZ, 5);
+  assert.ok(walled.width < open.width, 'walls should shorten how far you can walk');
+
+  // Swap one panel for a gateway: the route out through it reopens.
+  w.props.remove(15, G, 13, 0);
+  w.props.add(propId('wall_gate'), 15, G, 13, 0);
+  const withDoor = spotReport(w, { x: 15, y: G, z: 15 }, [], fields);
+  assert.ok(withDoor.widthZ > walled.widthZ,
+    `a gateway is a way out, so the run through it is longer: ${walled.widthZ} -> ${withDoor.widthZ}`);
+  assert.equal(withDoor.widthX, 5, 'the walls that are still there still stop you');
+});
+
 test('the amenity field measures to the nearest one, and says so when there is none', () => {
   const w = new VoxelWorld(64);
   w.generateTerrain();

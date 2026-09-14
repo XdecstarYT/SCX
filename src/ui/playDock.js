@@ -51,7 +51,14 @@ export class PlayDock {
       el('span.playzone', { text: r.zone ? r.zone.name : (r.surface ? `Open ${r.surface.toLowerCase()}` : 'Open ground') }),
       el('span.' + (cls || 'faint'), { text: `${r.verdict} · ${r.score}` }),
       r.view ? el('span.faint', { text: `${r.view.grade} · ${r.view.distance}m from the field` }) : null,
-      el('span.faint', { text: `${r.widthMetres}m clear${r.covered ? ' · under cover' : ''}` }));
+      el('span.faint', {
+        // Both ways when they differ: a corridor and a room can share a
+        // narrowest dimension and be nothing alike to stand in.
+        text: (r.widthX === r.widthZ
+          ? `${r.widthMetres}m clear`
+          : `${r.widthX * BLOCK_SIZE}m × ${r.widthZ * BLOCK_SIZE}m clear`)
+          + (r.covered ? ' · under cover' : ''),
+      }));
   }
 
   renderWalk(p, r) {

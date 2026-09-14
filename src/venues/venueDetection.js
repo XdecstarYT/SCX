@@ -294,7 +294,13 @@ export function detectVenues(world, opts = {}) {
 
     Object.assign(v, equipmentFor(world, v));
     v.appearance += v.equipmentAppearance;
-    v.lighting = lightsNear(stats.floodlights, v.centre.x, v.centre.z, v.reach);
+    // A floodlight mast is a piece of equipment rather than a block, but it
+    // lights the pitch all the same - counting only the blocks meant the tall
+    // mast you paid a hundred and forty thousand for did nothing for the
+    // rating it exists to raise. One mast is worth several lamp blocks
+    // because it carries banks of lamps thirty metres up.
+    v.lighting = lightsNear(stats.floodlights, v.centre.x, v.centre.z, v.reach)
+      + propLightsNear(world, v) ;
     v.screens = countNear(world, stats, v, 'screen');
     v.appearance = appearanceNear(world, v, size);
     v.roofCoverage = roofCoverage(world, v._fieldComp, size, Math.max(0, v.field.y));
@@ -360,6 +366,26 @@ function equipmentFor(world, v) {
     equipmentMissing: missing,
     equipmentWanted: wanted,
   };
+}
+
+/**
+ * Floodlighting from equipment near a venue, in the same units as the block
+ * lamps it is added to: a mast counts for six, a path light for a fifth of one.
+ */
+const LIGHT_WEIGHT = { floodlight_mast: 6, lamp_path: 0.2 };
+
+function propLightsNear(world, v) {
+  const layer = world.props;
+  if (!layer || !layer.size) return 0;
+  let n = 0;
+  for (const rec of layer.values()) {
+    const t = PROP_BY_ID[rec.typeId];
+    const w = t && LIGHT_WEIGHT[t.key];
+    if (!w) continue;
+    if (Math.hypot(rec.x - v.centre.x, rec.z - v.centre.z) > v.reach) continue;
+    n += w;
+  }
+  return n;
 }
 
 /** Distance from a point to the farthest corner of a component's bounds. */

@@ -91,6 +91,22 @@ test('a round part measures the same as the box it replaces', async () => {
   }
 });
 
+test('a floodlight mast lights the pitch it stands beside', async () => {
+  const { detectVenues } = await import('../src/venues/venueDetection.js');
+  const w = pitchWorld();
+  const before = detectVenues(w, { complexName: 'T' }).venues[0];
+
+  // Four masts round the ground, the way a ground is actually lit.
+  for (const [x, z] of [[30, 20], [60, 20], [30, 50], [60, 50]]) {
+    w.props.add(propId('floodlight_mast'), x, GROUND_Y, z, 0);
+  }
+  const after = detectVenues(w, { complexName: 'T' }).venues[0];
+  assert.ok(after.lighting > before.lighting,
+    `masts should light the ground: ${before.lighting} -> ${after.lighting}`);
+  assert.ok(after.ratings.overall >= before.ratings.overall,
+    'lighting a ground should not make it worse');
+});
+
 test('equipment needs solid, empty, unclaimed ground', () => {
   const w = pitchWorld();
   const layer = w.props;

@@ -191,6 +191,18 @@ export class PropLayer {
   }
 
   /**
+   * Is there a wall between these two neighbouring cells? Anything measuring
+   * how far you could walk has to ask this as well as whether the next voxel
+   * is solid, or a walled room reads as open ground.
+   */
+  wallBetween(x, y, z, nx, nz) {
+    const dx = nx - x, dz = nz - z;
+    if (Math.abs(dx) + Math.abs(dz) !== 1) return null;
+    const rot = dz === -1 ? 0 : dz === 1 ? 2 : dx === -1 ? 1 : 3;
+    return this.edgeAt(x, y, z, rot);
+  }
+
+  /**
    * Every wall standing on this cell, including the two stored against its
    * neighbours. A wall sits between two cells and is held up by both, so
    * digging out either floor brings it down - anchoring the answer to one

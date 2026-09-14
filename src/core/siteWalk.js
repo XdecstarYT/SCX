@@ -3,6 +3,7 @@ import { AIR, block } from '../data/blocks.js';
 import { ZONE_BY_ID, zoneId } from '../data/zones.js';
 import { Chunk } from '../voxel/world.js';
 import { raycastVoxel } from '../voxel/raycast.js';
+import { PROP_BY_ID } from '../data/props.js';
 import { scanWorld, components } from '../venues/analysis.js';
 
 /**
@@ -162,13 +163,20 @@ export function spotReport(world, pos, venues = [], fields = null) {
   // How far you can walk in each compass direction before something stops
   // you. The narrowest of the two axes is what a crowd actually feels.
   const runs = [];
+  const layer = world.props;
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     let n = 0;
     while (n < 24) {
+      const cx = x + dx * n, cz = z + dz * n;
       const nx = x + dx * (n + 1), nz = z + dz * (n + 1);
       if (!world.inBounds(nx, y, nz)) break;
       if (world.isSolid(nx, y, nz)) break;
       if (!world.isSolid(nx, y - 1, nz)) break;   // nothing to walk on
+      // A wall on the edge between here and there stops you just as a block
+      // would. Without this a walled room measures as open ground, which is
+      // exactly the sort of thing walking the place is supposed to catch.
+      const wall = layer?.size ? layer.wallBetween(cx, y, cz, nx, nz) : null;
+      if (wall && !isDoorway(wall)) break;
       n++;
     }
     runs.push(n);
@@ -216,6 +224,10 @@ export function spotReport(world, pos, venues = [], fields = null) {
     covered: !!cover,
     coverHeight: cover ? coverAt * BLOCK_SIZE : null,
     width, widthMetres: width * BLOCK_SIZE,
+    // Both axes, because "three metres one way and twenty the other" is a
+    // corridor and "twelve by twelve" is a room, and the narrower number
+    // alone cannot tell them apart.
+    widthX, widthZ,
     amenities,
     venue: venue ? { key: venue.key, name: venue.name || venue.suggestedName || venue.sportName } : null,
     view,
@@ -229,6 +241,12 @@ export function spotReport(world, pos, venues = [], fields = null) {
 function list(items) {
   if (items.length <= 1) return items[0] || '';
   return items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+}
+
+/** A gateway is a wall you can walk through, so it does not close a route. */
+function isDoorway(rec) {
+  const t = PROP_BY_ID[rec.typeId];
+  return t?.key === 'wall_gate';
 }
 
 function verdictFor(score) {
