@@ -1,4 +1,5 @@
 import { makeRng, hashString } from '../core/rng.js';
+import { conditionEffect } from '../core/groundskeeping.js';
 import { PRICING_TIERS, bidCostMultiplier, contractEffects, clamp } from './bidding.js';
 
 const TIER_BROADCAST = { local: 0, regional: 120_000, national: 900_000, international: 3_400_000, world: 9_500_000 };
@@ -268,6 +269,18 @@ export function simulateEvent(ev, venue, state, contract, ops = NO_OPS) {
   const totalCost = Object.values(costs).reduce((a, b) => a + b, 0);
   const profit = totalRevenue - totalCost;
 
+  // The surface everyone came to watch something happen on. A worn pitch is a
+  // worse spectacle and a more dangerous one, and it is the one thing at an
+  // event that a camera is pointed at for the whole ninety minutes.
+  const pitch = state.pitches?.byVenue?.[venue.key]?.condition;
+  const pitchEffect = pitch === undefined ? null : conditionEffect(pitch);
+  if (pitchEffect && pitchEffect.injuryRisk > 0 && rng.chance(pitchEffect.injuryRisk)) {
+    incidents.push({
+      key: 'pitch_injury', text: 'A player went down badly on a rutted surface.',
+      satisfaction: -9, reputation: -1.5, cost: 12_000, dept: 'operations', good: false,
+    });
+  }
+
   // ------------------------------------------------------------- reputation
   let satisfaction = 52
     + (venue.ratings.comfort - 50) * 0.42
@@ -279,6 +292,7 @@ export function simulateEvent(ev, venue, state, contract, ops = NO_OPS) {
     - weatherPenalty * 40;
   for (const i of incidents) satisfaction += i.satisfaction || 0;
   satisfaction += ops.satisfaction || 0;
+  if (pitchEffect) satisfaction += pitchEffect.satisfaction;
   satisfaction = Math.round(clamp(satisfaction, 3, 99));
 
   const delivery = clamp((satisfaction / 100) * 0.6 + (venue.ratings.overall / 100) * 0.4, 0, 1);

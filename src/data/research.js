@@ -50,6 +50,9 @@ export const RESEARCH = [
   { id: 'solar', name: 'On-Site Generation', cost: 2_200_000, days: 24, reqRep: 44, req: ['power_grid'],
     desc: 'Unlocks Solar Roof panels and Solar Arrays, which feed power back into the site.',
     unlocks: ['roof_solar', 'solar_panel'] },
+  { id: 'pitch_tech', name: 'Pitch Technology', cost: 1_400_000, days: 20, reqRep: 32, req: ['adv_surfaces'],
+    desc: 'Undersoil heating, grow lighting and vacuum drainage: a surface that plays in February and recovers under a roof.',
+    unlocks: [] },
 ];
 
 export function researchAvailable(state) {

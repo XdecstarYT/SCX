@@ -1,6 +1,11 @@
 import { VoxelWorld } from '../voxel/world.js';
 import { History } from '../voxel/history.js';
 import { combineLift, inspectionLift } from './siteWalk.js';
+import {
+  createPitchState, tickPitches, playEventOn, inspect as inspectPitch,
+  conditionEffect, orderTreatment, installUpgrade, pitchReport, pitchFor,
+  surfaceKeyFor, TREATMENT_BY_ID, UPGRADE_BY_ID,
+} from './groundskeeping.js';
 import { EventBus } from './eventBus.js';
 import { createState, attachDerived, applyReputation, landInfo, activeSite, utilityStatusFor, SAVE_VERSION } from './gameState.js';
 import { CITIES, city as cityDef, climateEffects } from '../data/cities.js';
@@ -368,6 +373,14 @@ export class Game {
     const recovery = 0.02 + s.staffBonus.operations * 0.05;
     s.pitchWear = Math.max(0, Math.min(1,
       (s.pitchWear || 0) + todayWear * climate.pitchWear - recovery));
+
+    // Each playing surface has its own day as well: its own weather damage,
+    // its own recovery, and whatever is installed under it.
+    const ground = tickPitches(s, this.analysis.venues || [], this.world, {
+      cityId: this.site.cityId, weather: s.weather, operations: s.staffBonus.operations,
+    });
+    if (ground.upkeep) this.record('maintenance', -ground.upkeep);
+    for (const n of ground.notices) this.notify(n.warn ? 'warn' : 'info', n.name, n.text);
 
     // Weather
     if (s.day >= s.weatherUntilDay) {
@@ -985,12 +998,42 @@ export class Game {
     return { ok: true, outcome, evaluation, ev, venue };
   }
 
+  /**
+   * The pitch inspection on the morning of a fixture.
+   *
+   * Postponement is the point of the whole groundskeeping system: a surface
+   * you let go is not a rating that drifts down, it is a Saturday that does
+   * not happen, a fee you hand back and a crowd that went home. Returns true
+   * when the event was called off.
+   */
+  failsInspection(ev, venue) {
+    const s = this.state;
+    const check = this.inspectPitchFor(venue);
+    if (check.pass) return false;
+    const rng = makeRng(hashString(`${ev.uid}:inspect:${s.day}`));
+    if (!rng.chance(check.risk)) return false;
+
+    ev.status = 'postponed';
+    ev.postponed = { day: s.day, reason: check.reason };
+    // The organiser's fee goes back, and it costs standing with them.
+    const fee = ev.bid?.amount || 0;
+    if (fee) { s.cash -= fee; this.record('events', -fee); }
+    applyReputation(s, { organiser: -5, venue: -2, fans: -3 });
+    this.notify('warn', `${ev.name} called off`,
+      `${check.reason} The fee was returned and the crowd went home.`);
+    this.bus.emit('state');
+    return true;
+  }
+
   hostDueEvents() {
     const s = this.state;
     const due = s.events.scheduled.filter((e) => e.eventDay <= s.day);
     for (const ev of due) {
       const venue = this.findVenue(ev.bid.venueKey) || this.primaryVenue;
       if (!venue) { ev.status = 'cancelled'; continue; }
+      // The morning inspection. A fixture on a surface the referee will not
+      // pass does not happen, and the fee goes back with it.
+      if (this.failsInspection(ev, venue)) continue;
       // The biggest event on the board is worth being present for. If the
       // player has asked to run their own matchdays and this one qualifies,
       // the day is held open and they take the calls; otherwise the relevant
@@ -1177,6 +1220,9 @@ export class Game {
 
   applyEventReport(ev, report) {
     const s = this.state;
+    // Whatever was just staged was staged on grass, and it shows.
+    const venue = this.findVenue(report.venueKey || ev.venueKey);
+    if (venue) playEventOn(s, venue.key, ev, this.world, venue);
     for (const [k, v] of Object.entries(report.revenue)) if (v) this.record(k, v);
     for (const [k, v] of Object.entries(report.costs)) if (v) this.record(mapCost(k), -v);
     s.cash += report.profit;
@@ -1871,6 +1917,60 @@ export class Game {
     this.bus.emit('season', report);
     this.bus.emit('state');
     return report;
+  }
+
+  // ============================================================== THE PITCH
+  /** Everything the pitches screen shows, for the site you are on. */
+  pitches() {
+    return pitchReport(this.state, this.analysis.venues || [], this.world);
+  }
+
+  /** Order work on a surface, and pay for it. */
+  orderPitchWork(venueKey, id) {
+    const r = orderTreatment(this.state, venueKey, id);
+    if (r.error) return r;
+    if (r.cost > this.state.cash) {
+      // Put it back: nothing is half-ordered.
+      pitchFor(this.state, venueKey).work = null;
+      return { error: `${r.treatment.name} costs ${Math.round(r.cost).toLocaleString()}. You do not have it.` };
+    }
+    this.state.cash -= r.cost;
+    this.record('maintenance', -r.cost);
+    this.notify('info', r.treatment.name, `Under way. ${r.treatment.days} day${r.treatment.days === 1 ? '' : 's'}.`);
+    this.bus.emit('state');
+    return r;
+  }
+
+  /** Install permanent kit under a pitch, and pay for it. */
+  installPitchUpgrade(venueKey, id) {
+    const def = UPGRADE_BY_ID.get(id);
+    if (def?.unlock && !this.isUnlocked(def.unlock)) {
+      return { error: `${def.name} needs the matching research project first.` };
+    }
+    const r = installUpgrade(this.state, venueKey, id);
+    if (r.error) return r;
+    if (r.cost > this.state.cash) {
+      const rec = pitchFor(this.state, venueKey);
+      rec.upgrades = rec.upgrades.filter((u) => u !== id);
+      return { error: `${r.upgrade.name} costs ${Math.round(r.cost).toLocaleString()}. You do not have it.` };
+    }
+    this.state.cash -= r.cost;
+    this.record('construction', -r.cost);
+    this.analysisDirty = true;
+    this.notify('info', r.upgrade.name, 'Installed.');
+    this.bus.emit('state');
+    return r;
+  }
+
+  /**
+   * The morning inspection for a fixture. Returns what the referee decided and
+   * why, so the caller can call the fixture off rather than play it on a bog.
+   */
+  inspectPitchFor(venue, weather = this.state.weather) {
+    return inspectPitch(this.state, venue.key, {
+      weather,
+      surfaceKey: surfaceKeyFor(this.world, venue),
+    });
   }
 
   notify(kind, title, body) {

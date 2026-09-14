@@ -11,6 +11,7 @@ import { ENDGAME_GOALS, GOAL_GROUPS, endgameProgress } from '../data/endgame.js'
 import { seasonProgress, seasonDay, SEASON_DAYS, division } from '../core/league.js';
 import { COMPETITION_BY_ID } from '../data/competitions.js';
 import { CERTIFICATE_DAYS } from '../core/siteWalk.js';
+import { TREATMENTS, PITCH_UPGRADES } from '../core/groundskeeping.js';
 import { PROGRAMME_CATEGORIES } from '../data/programmes.js';
 import { gameYear } from '../core/constants.js';
 import { MOODS } from '../core/community.js';
@@ -292,6 +293,69 @@ export class Screens {
               : 'Sit in the stand in Play mode to check what an ordinary ticket can see.' })));
   }
 
+  /**
+   * The ground staff's screen: what state every surface is in, what is
+   * installed under it, and what you can order doing to it.
+   */
+  pitchesBody(render) {
+    const g = this.game;
+    const rows = g.pitches();
+    if (!rows.length) {
+      return el('div.card', {}, emptyState('\u2591',
+        'No playing surfaces yet. Lay a pitch and zone it, and the ground staff will start looking after it.'));
+    }
+    const act = (fn) => {
+      const r = fn();
+      if (r?.error) this.app.toast('warn', 'Cannot do that', r.error);
+      render();
+      this.app.refresh();
+    };
+
+    return el('div.stack', {},
+      el('div.tiny.faint', { text:
+        'Weather works on a surface and events tear it up. A pitch that fails its inspection on the morning of a fixture is a fixture that does not happen.' }),
+      ...rows.map((p) => {
+        const pct = Math.round(p.condition * 100);
+        const cls = p.condition >= 0.75 ? 'good' : p.condition >= 0.45 ? 'gold' : 'bad';
+        return el('div.card', {},
+          el('div.rowbetween', {},
+            el('div', {},
+              el('div.small', { text: p.name }),
+              el('div.tiny.faint', { text: `${p.sport} \u00B7 ${p.surface}${p.covered ? ' \u00B7 under a roof' : ''}` })),
+            el('div.right', {},
+              el('div.small.mono.' + cls, { text: `${pct}%` }),
+              el('div.tiny.faint', { text: p.grade }))),
+          meter(pct, 100, cls),
+          el('div.rowbetween', { style: { marginTop: '6px' } },
+            el('span.tiny.faint', { text: `Drainage ${Math.round(p.drainage * 100)}%` }),
+            el('span.tiny.faint', { text: `${p.eventsSince} event${p.eventsSince === 1 ? '' : 's'} since it was last laid` })),
+
+          p.work
+            ? el('div.tiny.gold', { style: { marginTop: '8px' },
+                text: `${p.work.def.name} \u2014 ${p.work.daysLeft} day${p.work.daysLeft === 1 ? '' : 's'} left. The surface is out of use.` })
+            : el('div', { style: { marginTop: '8px' } },
+                el('div.section', { text: 'Order work' }),
+                el('div.btnrow', { style: { flexWrap: 'wrap' } }, ...TREATMENTS.map((t) =>
+                  el('button.btn.sm', {
+                    title: `${t.hint} ${t.days} day${t.days === 1 ? '' : 's'}.`,
+                    disabled: t.cost > this.state.cash,
+                    onclick: () => act(() => g.orderPitchWork(p.key, t.id)),
+                  }, `${t.name} \u00B7 ${fmtMoney(t.cost)}`)))),
+
+          el('div', { style: { marginTop: '10px' } },
+            el('div.section', { text: 'Installed' }),
+            el('div.btnrow', { style: { flexWrap: 'wrap' } }, ...PITCH_UPGRADES.map((u) => {
+              const have = p.upgrades.includes(u.id);
+              const locked = u.unlock && !g.isUnlocked(u.unlock);
+              return el('button.btn.sm' + (have ? '.go' : ''), {
+                title: locked ? `Needs the ${u.unlock.replace(/_/g, ' ')} research project. ${u.hint}` : u.hint,
+                disabled: have || locked || u.cost > this.state.cash,
+                onclick: () => act(() => g.installPitchUpgrade(p.key, u.id)),
+              }, have ? `\u2713 ${u.name}` : locked ? `\u{1F512} ${u.name}` : `${u.name} \u00B7 ${fmtMoney(u.cost)}`);
+            }))));
+      }));
+  }
+
   suitabilityCard(v) {
     const s = this.state;
     const rows = this.app.eventsUi.allTemplatesFor(v);
@@ -410,14 +474,15 @@ export class Screens {
 
   // ================================================================== MORE
   openMore(initial = 'Staff') {
-    const tabs = ['Empire', 'Clubs', 'Hosting', 'Programmes', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
+    const tabs = ['Empire', 'Clubs', 'Hosting', 'Pitches', 'Programmes', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
     let active = tabs.includes(initial) ? initial : 'Empire';
     const tabBar = el('div.tabs');
     const render = () => {
       fill(tabBar, ...tabs.map((t) => el('button.tab' + (t === active ? '.on' : ''), {
         onclick: () => { active = t; render(); },
       }, t)));
-      const body = active === 'Empire' ? this.empireBody(render)
+      const body = active === 'Pitches' ? this.pitchesBody(render)
+        : active === 'Empire' ? this.empireBody(render)
         : active === 'Clubs' ? this.clubsBody(render)
         : active === 'Hosting' ? this.hostingBody(render)
         : active === 'Programmes' ? this.programmesBody(render)

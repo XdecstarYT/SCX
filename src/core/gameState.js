@@ -7,6 +7,7 @@ import { createHotbarState } from '../ui/hotbar.js';
 import { createLeagueState } from './league.js';
 import { createProgrammeState } from './programmes.js';
 import { createSiteWalkState } from './siteWalk.js';
+import { createPitchState } from './groundskeeping.js';
 import { createHostingState } from './hosting.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
@@ -57,6 +58,7 @@ export function createState(opts = {}) {
     // What the complex is doing between events, and what that has left behind.
     programmes: createProgrammeState(),
     siteWalk: createSiteWalkState(),
+    pitches: createPitchState(),
     // Hosting rights: the named competitions this complex has staged, is
     // staging, and could still bid for.
     hosting: createHostingState(),
