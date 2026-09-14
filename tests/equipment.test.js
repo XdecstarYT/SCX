@@ -107,6 +107,23 @@ test('a floodlight mast lights the pitch it stands beside', async () => {
     'lighting a ground should not make it worse');
 });
 
+test('a first aid point and a row of turnstiles count as the provision they are', async () => {
+  const { detectVenues } = await import('../src/venues/venueDetection.js');
+  const w = pitchWorld();
+  const before = detectVenues(w, { complexName: 'T' }).venues[0];
+
+  w.props.add(propId('medical_post'), 34, GROUND_Y, 24, 0);
+  for (let i = 0; i < 4; i++) w.props.add(propId('turnstile'), 30 + i * 2, GROUND_Y, 22, 0);
+  const after = detectVenues(w, { complexName: 'T' }).venues[0];
+
+  assert.ok(after.facilities.medical > before.facilities.medical,
+    'a staffed first aid point is a medical facility');
+  assert.equal(after.facilities.entranceGates, before.facilities.entranceGates + 4,
+    'four turnstiles are four more ways in');
+  assert.ok(after.ratings.safety >= before.ratings.safety,
+    'fitting out a ground should never make it less safe');
+});
+
 test('equipment needs solid, empty, unclaimed ground', () => {
   const w = pitchWorld();
   const layer = w.props;

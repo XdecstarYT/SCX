@@ -796,9 +796,7 @@ class App {
               if (locked) { this.toast('warn', `${item.name} is locked`, 'Complete the matching research project to unlock it.'); return; }
               this.hotbar.assign(item.isProp ? propSlotKey(item.key) : item.key, slot);
               this.refreshBuildUi();
-              // Close on the next frame: tearing the sheet down inside the
-              // click handler lets the release land on whatever was behind it.
-              requestAnimationFrame(() => this.hud.closeSheet());
+              this.closeSheetSoon();
             },
           },
             el('span.chipc', { style: { background: '#' + item.color.toString(16).padStart(6, '0') } }),
@@ -810,6 +808,21 @@ class App {
     };
     render();
     this.hud.openSheet(zoneMode ? 'Choose a zone' : 'Catalogue', body);
+  }
+
+  /**
+   * Close the sheet once this tap has finished being a tap.
+   *
+   * Tearing it down inside the click handler lets the release land on whatever
+   * was behind it - the 3D view - and place a block you did not ask for. This
+   * used to wait for an animation frame, which is the wrong clock: on a phone
+   * struggling at five frames a second that is a fifth of a second of the
+   * palette sitting there after you picked something, and long enough for the
+   * next thing you do to race it.
+   */
+  closeSheetSoon() {
+    clearTimeout(this._sheetTimer);
+    this._sheetTimer = setTimeout(() => this.hud.closeSheet(), 0);
   }
 
   /**
@@ -874,7 +887,7 @@ class App {
         onclick: () => {
           r.pick();
           this.refreshBuildUi();
-          requestAnimationFrame(() => this.hud.closeSheet());
+          this.closeSheetSoon();
         },
       },
         el('div.rowbetween', {},

@@ -335,6 +335,28 @@ export function detectVenues(world, opts = {}) {
  * existed keeps every rating it had, and fitting it out is what raises the
  * score. The missing list is what the player is told to build next.
  */
+/**
+ * Equipment that is a facility in its own right.
+ *
+ * A first aid point is a medical facility whether it is a zoned room or a
+ * staffed kiosk on the concourse, and a turnstile is an entrance whatever the
+ * floor under it is painted. Without this the fifteen pieces of site furniture
+ * would show up as appearance and nothing else, which would make them
+ * decoration you buy instead of provision you build - and a player who fitted
+ * out a ground properly would see no rating for it.
+ *
+ * The numbers are deliberately small: a kiosk is worth a few voxels of retail,
+ * not a shopping arcade. Zoning the space is still the way to build a facility
+ * at scale.
+ */
+const PROP_FACILITY = {
+  medical_post: { medical: 6 },
+  kiosk_food: { retail: 10 },
+  ticket_booth: { retail: 4 },
+  marquee_hosp: { hospitality: 24 },
+  turnstile: { entrance: 2, entranceGates: 1 },
+};
+
 function equipmentFor(world, v) {
   const layer = world.props;
   const have = {};
@@ -347,6 +369,10 @@ function equipmentFor(world, v) {
       have[t.provides] = (have[t.provides] || 0) + 1;
       appearance += t.appearance;
       count++;
+      const facility = PROP_FACILITY[t.key];
+      if (facility) {
+        for (const [k, n] of Object.entries(facility)) v.facilities[k] += n;
+      }
     }
   }
   const wanted = [...(SPORT_EQUIPMENT[v.sport] || []), ...UNIVERSAL_EQUIPMENT];

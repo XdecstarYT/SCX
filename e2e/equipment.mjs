@@ -128,7 +128,14 @@ await page.evaluate(() => { window.__sct.controller.rotation = 2; });
 await tap(64, 7, 41);          // aims at the turf; the goal lands on top of it
 await page.evaluate(() => { window.__sct.controller.rotation = 0; });
 await tap(64, 7, 75);
-await page.waitForTimeout(300);
+// The instance buffers are rebuilt on a frame, and under load a fixed wait is
+// not reliably a frame - so wait for the renderer to catch up rather than
+// assuming it has. It still fails if it never does.
+await page.waitForFunction(() => {
+  const a = window.__sct;
+  const drawn = [...a.propRenderer.meshes.values()].reduce((n, m) => n + m.count, 0);
+  return drawn === a.game.world.props.size;
+}, null, { timeout: 5000 }).catch(() => {});
 s = await state();
 if (s.props !== 2) problems.push(`expected 2 goals placed, world has ${s.props}`);
 if (s.drawn !== s.props) problems.push(`renderer drew ${s.drawn} props for ${s.props} placed`);

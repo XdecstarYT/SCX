@@ -738,7 +738,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'lamp_path', name: 'Path Light', sport: null, group: 'outdoor',
+    key: 'lamp_path', name: 'Path Light', sport: null, group: 'furniture',
     foot: { w: 1, d: 1 }, provides: 'light', pairs: 8,
     cost: 2_200, maintenance: 1.4, power: 0.01, appearance: 2, safety: 2,
     hint: 'Lights a route after dark. A concourse nobody can see is a concourse nobody uses.',
@@ -751,7 +751,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'flagpole', name: 'Flagpole', sport: null, group: 'outdoor',
+    key: 'flagpole', name: 'Flagpole', sport: null, group: 'furniture',
     foot: { w: 1, d: 1 }, provides: 'decor', pairs: 3,
     cost: 4_800, maintenance: 1.6, appearance: 4,
     hint: 'Club colours over the main entrance. Cheap prestige, and every photograph has one in it.',
@@ -833,7 +833,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'sign_wayfinding', name: 'Wayfinding Sign', sport: null, group: 'outdoor',
+    key: 'sign_wayfinding', name: 'Wayfinding Sign', sport: null, group: 'furniture',
     foot: { w: 1, d: 1 }, provides: 'signage', pairs: 6,
     cost: 3_600, maintenance: 1.2, appearance: 2,
     hint: 'Tells people which way the north stand is. Cheap, and it is what stops a concourse jamming.',
@@ -846,7 +846,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'bin_litter', name: 'Litter Bin', sport: null, group: 'outdoor',
+    key: 'bin_litter', name: 'Litter Bin', sport: null, group: 'furniture',
     foot: { w: 1, d: 1 }, provides: 'decor', pairs: 8,
     cost: 320, maintenance: 0.5, appearance: 1,
     hint: 'Forty thousand people generate a lot of rubbish. Somewhere to put it keeps the place looking run.',
@@ -857,7 +857,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'bench_park', name: 'Public Bench', sport: null, group: 'outdoor',
+    key: 'bench_park', name: 'Public Bench', sport: null, group: 'furniture',
     foot: { w: 2, d: 1 }, provides: 'seatbench', pairs: 6,
     cost: 900, maintenance: 0.9, appearance: 2,
     hint: 'Somewhere to wait. A complex with nowhere to sit outside the ground feels like a car park.',
@@ -871,7 +871,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'planter_tree', name: 'Tree Planter', sport: null, group: 'outdoor',
+    key: 'planter_tree', name: 'Tree Planter', sport: null, group: 'furniture',
     foot: { w: 2, d: 2 }, provides: 'decor', pairs: 6,
     cost: 2_400, maintenance: 2.2, appearance: 6,
     hint: 'A tree in a raised bed. Softens a hard landscape, and the shade is welcome in August.',
@@ -885,7 +885,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'statue_club', name: 'Club Statue', sport: null, group: 'outdoor',
+    key: 'statue_club', name: 'Club Statue', sport: null, group: 'furniture',
     foot: { w: 2, d: 2 }, provides: 'decor', pairs: 1,
     cost: 90_000, maintenance: 3, appearance: 14,
     hint: 'A bronze of somebody who mattered here. Pure prestige, and the meeting point before every match.',
@@ -918,7 +918,7 @@ export const PROPS = [
     ],
   },
   {
-    key: 'bollard_row', name: 'Bollards', sport: null, group: 'outdoor',
+    key: 'bollard_row', name: 'Bollards', sport: null, group: 'furniture',
     foot: { w: 3, d: 1 }, provides: 'barrier', pairs: 4,
     cost: 1_400, maintenance: 0.6, appearance: 1, safety: 5,
     hint: 'Keeps vehicles off a pedestrian route. Every venue needs a line of them somewhere.',
@@ -1015,6 +1015,7 @@ export const PROP_GROUPS = [
   { key: 'aquatic', name: 'Pool & Track' },
   { key: 'matchday', name: 'Match Day' },
   { key: 'outdoor', name: 'Outdoor' },
+  { key: 'furniture', name: 'Street & Site' },
   { key: 'barrier', name: 'Walls & Fences' },
 ];
 
