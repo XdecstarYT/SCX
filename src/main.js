@@ -41,6 +41,7 @@ import { makeRng } from './core/rng.js';
 import * as TICKETING_API from './core/ticketing.js';
 import { simulateEvent } from './events/eventSimulation.js';
 import { applyReputation } from './core/gameState.js';
+import { WorldLife } from './world/life.js';
 import { PlayDock } from './ui/playDock.js';
 import {
   siteStops, spotReport, seatReport, walkProgress, reachStop, recordSeat,
@@ -288,6 +289,9 @@ class App {
       this.propRenderer = new PropRenderer(this.scene, world);
       this.effects = new Effects(this.scene);
       this.show = new LiveEventShow(this.scene, world);
+      // The complex, with people in it. Runs all the time, not just on an
+      // event day, because an empty stadium is a model rather than a game.
+      this.life = new WorldLife(this.scene, world);
       this.held = new HeldBlock(this.camera);
       this.scene.add(this.camera);   // so camera children render
 
@@ -311,6 +315,7 @@ class App {
 
     this.worldRenderer.world = world;
     this.show.world = world;
+    this.life?.setWorld(world);
     this.propRenderer.setWorld(world);
     this.sky.setPlot(world.size);
     this.controller.rig = this.rig;
@@ -1277,6 +1282,7 @@ class App {
     });
     bus.on('state', () => this.hud?.refresh());
     bus.on('analysis', () => {
+      this.life?.rebuild(this.game.analysis);
       this.refreshStatus();
       this.tutorial?.refresh();
       // Analysis can fire before the renderer exists, during start-up.
@@ -1593,6 +1599,7 @@ class App {
     const world = this.game.world;
     this.worldRenderer.world = world;
     this.show.world = world;
+    this.life?.setWorld(world);
     this.propRenderer.setWorld(world);
     this.sky.setPlot(world.size);
     this.rig.setWorld(world);
@@ -1795,11 +1802,55 @@ class App {
     requestAnimationFrame(frame);
   }
 
+  /**
+   * How busy the complex should look right now.
+   *
+   * Tied to the game rather than to the clock: a site with nothing built and
+   * nothing on is quiet, a site with facilities and a following has people
+   * about, and on the day of a fixture the stands fill.
+   */
+  lifeContext() {
+    const s = this.game.state;
+    const a = this.game.analysis;
+    const venue = this.game.primaryVenue;
+    const cap = venue?.capacity?.total || 0;
+
+    // A base population from what has actually been built and how well known
+    // the place is, so a bigger, better-regarded complex is a busier one.
+    const built = Math.min(1, (a?.complex?.totalBlocks || 0) / 26_000);
+    const draw = Math.min(1, s.reputation.venue / 70);
+    let population = 0.12 + built * 0.45 + draw * 0.35;
+
+    // A fixture today is a different thing entirely.
+    const today = (s.events.scheduled || []).find((e) => e.eventDay === s.day);
+    let stands = 0;
+    if (today && cap) {
+      population = 1;
+      stands = 0.72;
+    } else if (venue) {
+      // Otherwise a handful of people in the stands: staff, a tour, a few
+      // season ticket holders who came to watch the team train.
+      stands = Math.min(0.06, (s.tickets?.soldSeason || 0) / Math.max(1, cap) * 0.05);
+    }
+    return {
+      population: Math.min(1, population),
+      stands,
+      night: this.sky?.env?.night ?? 0,
+    };
+  }
+
   tickFrame(dt) {
     const g = this.game;
 
     if (!this.show?.active) g.tick(dt);
     else this.show.update(dt);
+
+    // The place fills and empties on its own. The event-day cinematic has its
+    // own crowd, so the standing population steps aside while it runs.
+    if (this.life) {
+      this.life.setEnabled(!this.show?.active);
+      if (!this.show?.active) this.life.update(dt, this.lifeContext());
+    }
 
     // Slow orbit during the event-day cinematic.
     if (this.showOrbit) this.rig.yaw += dt * 0.06;
