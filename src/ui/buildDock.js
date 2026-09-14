@@ -6,12 +6,14 @@ import { BUILD_MODES } from '../voxel/buildController.js';
 import { fmtMoney } from '../core/economy.js';
 import { GROUND_Y } from '../core/constants.js';
 import { PREFAB_BY_KEY } from '../voxel/prefabs.js';
+import { PROP_BY_KEY } from '../data/props.js';
 
 const FACING = ['N', 'E', 'S', 'W'];
 
 const TOOL_SETS = {
   build: ['single', 'line', 'wall', 'floor', 'box', 'hollow',
           'circle', 'cylinder', 'dome', 'pitched', 'stairs', 'fill', 'replace',
+          'wallrun', 'wallbox',
           'grandstand', 'bowl', 'canopy', 'garage', 'retaining'],
   arrange: ['paint', 'surface', 'paintbox', 'move', 'clone', 'sample'],
   zone: ['single', 'floor', 'box', 'circle', 'line'],
@@ -200,6 +202,14 @@ export class BuildDock {
       return;
     }
 
+    if (this.bc.isWallTool) {
+      const w = PROP_BY_KEY.get(this.bc.wallKey);
+      fill(this.hint, el('span', { text: this.bc.tool === 'wallbox'
+        ? `${w?.name || 'Wall'} \u2014 tap two opposite corners and the room is walled all the way round. Open the Palette to choose a different wall or fence.`
+        : `${w?.name || 'Wall'} \u2014 tap where the run starts and where it ends. Open the Palette to choose a different wall or fence.` }));
+      return;
+    }
+
     if (this.bc.mode === 'blueprint') {
       if (this.bc.tool === 'prefab') {
         const def = PREFAB_BY_KEY.get(this.bc.prefabKey);
@@ -259,6 +269,10 @@ export class BuildDock {
     if (structure && structure.meta) {
       const m = structure.meta;
       const bits = [];
+      if (m.wall) {
+        bits.push(`${m.panels} panel${m.panels === 1 ? '' : 's'} \u00B7 ${m.metres}m`);
+        if (m.room) bits.push(`${m.room.x * 2}m \u00D7 ${m.room.z * 2}m inside`);
+      }
       if (m.capacity) bits.push(`${m.capacity.toLocaleString()} seats`);
       if (m.rows) bits.push(`${m.rows} rows`);
       if (m.vomitories) bits.push(`${m.vomitories} vomitories`);

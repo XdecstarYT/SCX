@@ -15,6 +15,36 @@ import { packPos, unpackX, unpackY, unpackZ } from './history.js';
  * 90 degrees about that anchor cell's centre, so the two can never disagree.
  */
 
+/**
+ * ---------------------------------------------------------------------------
+ * EDGE PIECES: WALLS AND FENCES
+ * ---------------------------------------------------------------------------
+ * A voxel is two metres across. A wall built out of them eats two metres of
+ * floor either side of every room, which is why the block tools can lay out a
+ * stadium but cannot lay out a room you would want to stand in.
+ *
+ * So a wall is not a voxel and not an ordinary prop either: it sits on the
+ * *boundary* between two cells, 20cm thick, the way a wall does in a game you
+ * furnish rather than mine. That means up to four of them round one cell, and
+ * it means a wall never stops you putting a bench in the cell it borders.
+ *
+ * The rotations are, following rotateOffset below:
+ *   0  the -z side      1  the -x side      2  the +z side      3  the +x side
+ *
+ * Two of those are the same edge seen from the far cell - the +z side of one
+ * cell is the -z side of its neighbour - so every edge is stored in one
+ * canonical form. Without that you could build two walls in the same wall.
+ */
+export function canonicalEdge(x, y, z, rot) {
+  const r = ((rot % 4) + 4) % 4;
+  if (r === 2) return { x, y, z: z + 1, rot: 0 };
+  if (r === 1) return { x: x - 1, y, z, rot: 3 };
+  return { x, y, z, rot: r };
+}
+
+/** True for a wall or fence, which lives on a cell edge. */
+export const isEdgePiece = (type) => !!type?.edge;
+
 /** Rotate a cell offset by `rot` quarter-turns, matching THREE's rotateY. */
 export function rotateOffset(dx, dz, rot) {
   let x = dx, z = dz;
@@ -33,13 +63,50 @@ export function footprintOffsets(type, rot) {
   return out;
 }
 
-/** Local axis-aligned bounds of a prop's geometry, in metres. */
+/**
+ * Row-major 3x3 rotation for a part's XYZ Euler tilt.
+ *
+ * Lives here rather than in the renderer because the tilt is part of the part
+ * format, and two places need it: the geometry builder, and the bounds below.
+ * A tilt the bounds did not know about would give every raked net a pick box
+ * the wrong shape.
+ */
+export function partTilt([rx = 0, ry = 0, rz = 0]) {
+  const cx = Math.cos(rx), sx = Math.sin(rx);
+  const cy = Math.cos(ry), sy = Math.sin(ry);
+  const cz = Math.cos(rz), sz = Math.sin(rz);
+  return [
+    cy * cz, -cy * sz, sy,
+    cx * sz + sx * sy * cz, cx * cz - sx * sy * sz, -sx * cy,
+    sx * sz - cx * sy * cz, sx * cz + cx * sy * sz, cx * cy,
+  ];
+}
+
+/**
+ * Local axis-aligned bounds of a prop's geometry, in metres.
+ *
+ * w, h and d are a part's size along x, y and z whatever its shape, so only a
+ * tilt can push geometry outside them - and a tilted box's extent along each
+ * axis is the row of the rotation dotted with the half-extents, which is exact
+ * rather than the bounding sphere that a first pass here used. The difference
+ * matters: a sphere around a 7.3m goal net made the goal as deep as it is wide.
+ */
 export function localBounds(type) {
   let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
-  for (const [cx, cy, cz, w, h, d] of type.parts) {
-    x0 = Math.min(x0, cx - w / 2); x1 = Math.max(x1, cx + w / 2);
-    y0 = Math.min(y0, cy - h / 2); y1 = Math.max(y1, cy + h / 2);
-    z0 = Math.min(z0, cz - d / 2); z1 = Math.max(z1, cz + d / 2);
+  for (const part of type.parts) {
+    const [cx, cy, cz, w, h, d] = part;
+    const opts = part[9];
+    let ex = w / 2, ey = h / 2, ez = d / 2;
+    if (opts?.tilt) {
+      const m = partTilt(opts.tilt);
+      const hx = ex, hy = ey, hz = ez;
+      ex = Math.abs(m[0]) * hx + Math.abs(m[1]) * hy + Math.abs(m[2]) * hz;
+      ey = Math.abs(m[3]) * hx + Math.abs(m[4]) * hy + Math.abs(m[5]) * hz;
+      ez = Math.abs(m[6]) * hx + Math.abs(m[7]) * hy + Math.abs(m[8]) * hz;
+    }
+    x0 = Math.min(x0, cx - ex); x1 = Math.max(x1, cx + ex);
+    y0 = Math.min(y0, cy - ey); y1 = Math.max(y1, cy + ey);
+    z0 = Math.min(z0, cz - ez); z1 = Math.max(z1, cz + ez);
   }
   return { x0, y0, z0, x1, y1, z1 };
 }
@@ -89,12 +156,57 @@ export class PropLayer {
 
   get size() { return this.byAnchor.size; }
 
+  /**
+   * The map key for a placement. An edge piece is identified by its edge as
+   * well as its cell, which is what lets four of them meet at one corner.
+   */
+  static keyFor(type, x, y, z, rot) {
+    return isEdgePiece(type)
+      ? packPos(x, y, z) * 4 + (((rot % 4) + 4) % 4)
+      : packPos(x, y, z);
+  }
+
   at(x, y, z) {
     const owner = this.occupied.get(packPos(x, y, z));
     return owner === undefined ? null : this.byAnchor.get(owner) || null;
   }
 
   anchorAt(x, y, z) { return this.byAnchor.get(packPos(x, y, z)) || null; }
+
+  /** The wall or fence on one edge, in whichever form it was stored. */
+  edgeAt(x, y, z, rot) {
+    const c = canonicalEdge(x, y, z, rot);
+    return this.byAnchor.get(packPos(c.x, c.y, c.z) * 4 + c.rot) || null;
+  }
+
+  /** Every edge piece anchored to this cell, however many there are. */
+  edgesOn(x, y, z) {
+    const base = packPos(x, y, z) * 4;
+    const out = [];
+    for (let r = 0; r < 4; r++) {
+      const rec = this.byAnchor.get(base + r);
+      if (rec) out.push(rec);
+    }
+    return out;
+  }
+
+  /**
+   * Every wall standing on this cell, including the two stored against its
+   * neighbours. A wall sits between two cells and is held up by both, so
+   * digging out either floor brings it down - anchoring the answer to one
+   * side would leave half the walls of a demolished room floating.
+   */
+  edgesTouching(x, y, z) {
+    const out = [];
+    const grab = (cx, cz, rot) => {
+      const rec = this.byAnchor.get(packPos(cx, y, cz) * 4 + rot);
+      if (rec && !out.includes(rec)) out.push(rec);
+    };
+    grab(x, z, 0); grab(x, z, 3);
+    grab(x, z + 1, 0);
+    grab(x - 1, z, 3);
+    return out;
+  }
 
   /**
    * Which cells this placement would need, or null if the type is unknown.
@@ -113,6 +225,8 @@ export class PropLayer {
    * below - equipment does not float.
    */
   canPlace(world, typeId, x, y, z, rot) {
+    const type = PROP_BY_ID[typeId];
+    if (isEdgePiece(type)) return this.canPlaceEdge(world, typeId, x, y, z, rot);
     const cells = this.cellsFor(typeId, x, y, z, rot);
     if (!cells) return { ok: false, reason: 'Unknown item.' };
     for (const [cx, cy, cz] of cells) {
@@ -129,18 +243,49 @@ export class PropLayer {
     return { ok: true, cells };
   }
 
+  /**
+   * A wall or fence goes on the boundary, so it asks less of the cell than a
+   * bench does: the cell must be clear of blocks and standing on something,
+   * but whatever else is in that cell is none of the wall's business.
+   */
+  canPlaceEdge(world, typeId, x, y, z, rot) {
+    const c = canonicalEdge(x, y, z, rot);
+    if (!world.inBounds(c.x, c.y, c.z)) {
+      return { ok: false, reason: 'That would run off the edge of your land.' };
+    }
+    if (world.isSolid(c.x, c.y, c.z)) {
+      return { ok: false, reason: 'There is a block in the way.' };
+    }
+    if (c.y > 0 && !world.isSolid(c.x, c.y - 1, c.z)) {
+      return { ok: false, reason: 'A wall needs a floor under it.' };
+    }
+    if (this.edgeAt(c.x, c.y, c.z, c.rot)) {
+      return { ok: false, reason: 'There is already a wall on that edge.' };
+    }
+    return { ok: true, cells: [[c.x, c.y, c.z]], edge: c };
+  }
+
   /** Place without validation. Callers price and validate first. */
   add(typeId, x, y, z, rot) {
-    const key = packPos(x, y, z);
-    if (this.byAnchor.has(key)) this.remove(x, y, z);
+    const type = PROP_BY_ID[typeId];
+    if (isEdgePiece(type)) {
+      const c = canonicalEdge(x, y, z, rot);
+      x = c.x; y = c.y; z = c.z; rot = c.rot;
+    }
+    const key = PropLayer.keyFor(type, x, y, z, rot);
+    if (this.byAnchor.has(key)) this.removeKey(key);
     const rec = { typeId, x, y, z, rot: ((rot % 4) + 4) % 4, key, bounds: null };
     // A placed prop never moves, so its world bounds are computed once here
     // rather than rebuilt for every ray of every frame.
     rec.bounds = worldBounds(rec);
     rec.pickBounds = inflate(rec.bounds, PICK_MARGIN);
     this.byAnchor.set(key, rec);
-    for (const [cx, cy, cz] of this.cellsFor(typeId, x, y, z, rec.rot)) {
-      this.occupied.set(packPos(cx, cy, cz), key);
+    // An edge piece claims no cell, so a wall along a concourse never stops
+    // you putting a bench against it.
+    if (!isEdgePiece(type)) {
+      for (const [cx, cy, cz] of this.cellsFor(typeId, x, y, z, rec.rot)) {
+        this.occupied.set(packPos(cx, cy, cz), key);
+      }
     }
     this.counts.set(typeId, (this.counts.get(typeId) || 0) + 1);
     this.version++;
@@ -162,21 +307,36 @@ export class PropLayer {
     for (const rec of recs) {
       rec.x += dx;
       rec.z += dz;
-      rec.key = packPos(rec.x, rec.y, rec.z);
+      const type = PROP_BY_ID[rec.typeId];
+      rec.key = PropLayer.keyFor(type, rec.x, rec.y, rec.z, rec.rot);
       rec.bounds = worldBounds(rec);
       rec.pickBounds = inflate(rec.bounds, PICK_MARGIN);
       this.byAnchor.set(rec.key, rec);
-      for (const [cx, cy, cz] of this.cellsFor(rec.typeId, rec.x, rec.y, rec.z, rec.rot)) {
-        this.occupied.set(packPos(cx, cy, cz), rec.key);
+      if (!isEdgePiece(type)) {
+        for (const [cx, cy, cz] of this.cellsFor(rec.typeId, rec.x, rec.y, rec.z, rec.rot)) {
+          this.occupied.set(packPos(cx, cy, cz), rec.key);
+        }
       }
     }
     this.version++;
     this.dirty = true;
   }
 
-  /** Remove by anchor cell. Returns the removed record, or null. */
-  remove(x, y, z) {
-    const key = packPos(x, y, z);
+  /**
+   * Remove by anchor cell, and by edge too when `rot` names one. Callers that
+   * found the record first should pass `rec.rot`; a bare cell removes the
+   * ordinary prop standing in it.
+   */
+  remove(x, y, z, rot) {
+    if (rot !== undefined) {
+      const edge = this.edgeAt(x, y, z, rot);
+      if (edge) return this.removeKey(edge.key);
+    }
+    return this.removeKey(packPos(x, y, z));
+  }
+
+  /** Remove one record by its own map key. */
+  removeKey(key) {
     const rec = this.byAnchor.get(key);
     if (!rec) return null;
     for (const [cx, cy, cz] of this.cellsFor(rec.typeId, rec.x, rec.y, rec.z, rec.rot)) {
@@ -206,8 +366,10 @@ export class PropLayer {
     for (const dy of [0, 1]) {
       const rec = this.at(x, y + dy, z);
       if (rec && !dropped.includes(rec)) dropped.push(rec);
+      // Walls stand on the cells they border, so they come down with the floor.
+      for (const e of this.edgesTouching(x, y + dy, z)) if (!dropped.includes(e)) dropped.push(e);
     }
-    for (const rec of dropped) this.remove(rec.x, rec.y, rec.z);
+    for (const rec of dropped) this.removeKey(rec.key);
     return dropped;
   }
 

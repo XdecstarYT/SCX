@@ -34,6 +34,17 @@ const GLASSY = 0xdfe9f0;
 const TURFDARK = 0x2b6b33;
 
 /**
+ * Shorthands for the three orientations of a round part. Equipment is full of
+ * poles, posts, rails and rims, and spelling the options object out at every
+ * one of them buried the geometry in punctuation.
+ */
+const ROUND = { shape: 'cyl', seg: 10 };
+const ROUND_X = { shape: 'cyl', seg: 10, axis: 'x' };
+const ROUND_Z = { shape: 'cyl', seg: 10, axis: 'z' };
+const ROUND_FINE = { shape: 'cyl', seg: 14 };
+const HOOP = { shape: 'tube', seg: 16 };
+
+/**
  * What each of those materials is made of, for the shader.
  *
  * Equipment was drawn in flat colour while the stadium around it had grain,
@@ -42,7 +53,7 @@ const TURFDARK = 0x2b6b33;
  * authored gets its material without any of them being edited.
  */
 export const PART_FINISH = {
-  [NET]: 'mesh',
+  [NET]: 'netting',
   [STEEL]: 'metal',
   [RIM]: 'metal',
   [WOOD]: 'timber',
@@ -59,14 +70,21 @@ export const PROPS = [
     foot: { w: 5, d: 2 }, provides: 'goal', needs: ['pitch_football'], pairs: 2,
     cost: 14_000, maintenance: 6, appearance: 2,
     hint: 'A regulation 7.3m goal. A soccer pitch needs one at each end.',
+    // The goal mouth is 7.32 x 2.44 and the net rakes back 1.6m to a ground
+    // bar, which is the shape that makes it read as a goal rather than a crate.
     parts: [
-      [-3.66, 1.22, 0, 0.24, 2.44, 0.24, WHITE],
-      [3.66, 1.22, 0, 0.24, 2.44, 0.24, WHITE],
-      [0, 2.44, 0, 7.56, 0.24, 0.24, WHITE],
-      [0, 1.3, -0.95, 7.32, 2.5, 0.08, NET],
-      [-3.66, 1.3, -0.5, 0.08, 2.5, 1.0, NET],
-      [3.66, 1.3, -0.5, 0.08, 2.5, 1.0, NET],
-      [0, 0.06, -0.5, 7.32, 0.12, 1.0, NET],
+      [-3.66, 1.22, 0, 0.12, 2.44, 0.12, WHITE, 0, null, ROUND],
+      [3.66, 1.22, 0, 0.12, 2.44, 0.12, WHITE, 0, null, ROUND],
+      [0, 2.44, 0, 7.44, 0.12, 0.12, WHITE, 0, null, ROUND_X],
+      // Net: crossbar down and back to the ground bar, 0.474 rad off vertical.
+      [0, 1.22, -0.98, 7.32, 2.74, 0.04, NET, 0, null, { tilt: [0.474, 0, 0] }],
+      [0, 0.05, -1.6, 7.32, 0.09, 0.09, WHITE, 0, null, ROUND_X],
+      // Side panels close the wedge in from each post.
+      [-3.68, 0.75, -0.8, 0.04, 1.5, 1.6, NET],
+      [3.68, 0.75, -0.8, 0.04, 1.5, 1.6, NET],
+      // Stanchions holding the net clear of the goal line.
+      [-3.66, 2.4, -0.5, 0.06, 0.06, 1.0, WHITE, 0, null, ROUND_Z],
+      [3.66, 2.4, -0.5, 0.06, 0.06, 1.0, WHITE, 0, null, ROUND_Z],
     ],
   },
   {
@@ -75,12 +93,12 @@ export const PROPS = [
     cost: 22_000, maintenance: 8, appearance: 3,
     hint: 'Two 9m goal posts with a behind post either side, as the code requires.',
     parts: [
-      [-3.2, 4.6, 0, 0.3, 9.2, 0.3, WHITE],
-      [3.2, 4.6, 0, 0.3, 9.2, 0.3, WHITE],
-      [-9.6, 2.6, 0, 0.26, 5.2, 0.26, WHITE],
-      [9.6, 2.6, 0, 0.26, 5.2, 0.26, WHITE],
-      [-3.2, 0.35, 0, 0.5, 0.7, 0.5, PAD],
-      [3.2, 0.35, 0, 0.5, 0.7, 0.5, PAD],
+      [-3.2, 4.6, 0, 0.22, 9.2, 0.22, WHITE, 0, null, ROUND],
+      [3.2, 4.6, 0, 0.22, 9.2, 0.22, WHITE, 0, null, ROUND],
+      [-9.6, 2.6, 0, 0.18, 5.2, 0.18, WHITE, 0, null, ROUND],
+      [9.6, 2.6, 0, 0.18, 5.2, 0.18, WHITE, 0, null, ROUND],
+      [-3.2, 0.8, 0, 0.42, 1.6, 0.42, PAD, 0, null, ROUND],
+      [3.2, 0.8, 0, 0.42, 1.6, 0.42, PAD, 0, null, ROUND],
     ],
   },
   {
@@ -89,11 +107,11 @@ export const PROPS = [
     cost: 19_000, maintenance: 7, appearance: 3,
     hint: 'An H frame with the crossbar at 3m and 8m uprights.',
     parts: [
-      [-2.8, 4.2, 0, 0.28, 8.4, 0.28, WHITE],
-      [2.8, 4.2, 0, 0.28, 8.4, 0.28, WHITE],
-      [0, 3.0, 0, 5.9, 0.28, 0.28, WHITE],
-      [-2.8, 1.0, 0, 0.5, 2.0, 0.5, PAD],
-      [2.8, 1.0, 0, 0.5, 2.0, 0.5, PAD],
+      [-2.8, 4.2, 0, 0.2, 8.4, 0.2, WHITE, 0, null, ROUND],
+      [2.8, 4.2, 0, 0.2, 8.4, 0.2, WHITE, 0, null, ROUND],
+      [0, 3.0, 0, 5.9, 0.2, 0.2, WHITE, 0, null, ROUND_X],
+      [-2.8, 1.0, 0, 0.44, 2.0, 0.44, PAD, 0, null, ROUND],
+      [2.8, 1.0, 0, 0.44, 2.0, 0.44, PAD, 0, null, ROUND],
     ],
   },
   {
@@ -102,10 +120,11 @@ export const PROPS = [
     cost: 900, maintenance: 0.6, appearance: 1,
     hint: 'One at each corner of the pitch. Small, but every ground has them.',
     parts: [
-      [0, 0.06, 0, 0.34, 0.12, 0.34, PAD],
-      [0, 0.85, 0, 0.09, 1.7, 0.09, WHITE],
-      [0.26, 1.5, 0, 0.44, 0.3, 0.04, 0xd8b13a],
-      [0.26, 1.22, 0, 0.34, 0.24, 0.04, 0xd8b13a],
+      [0, 0.05, 0, 0.3, 0.1, 0.3, PAD, 0, null, ROUND],
+      [0, 0.85, 0, 0.05, 1.7, 0.05, WHITE, 0, null, ROUND_FINE],
+      // A flag that hangs and creases rather than a flat tab.
+      [0.24, 1.5, 0.02, 0.42, 0.3, 0.03, 0xd8b13a, 0, 'fabric', { tilt: [0, 0.12, 0] }],
+      [0.24, 1.2, -0.02, 0.42, 0.3, 0.03, 0xd8b13a, 0, 'fabric', { tilt: [0, -0.1, 0] }],
     ],
   },
 
@@ -116,14 +135,21 @@ export const PROPS = [
     cost: 26_000, maintenance: 9, appearance: 3,
     hint: 'Backboard, rim and stanchion. A court needs one at each end.',
     parts: [
-      [0, 1.3, -1.5, 0.5, 2.6, 0.5, PAD],
-      [0, 3.6, -1.1, 0.3, 0.3, 1.0, STEEL],
-      [0, 3.45, -0.6, 1.8, 1.05, 0.12, GLASSY],
-      [0, 3.05, -0.5, 0.9, 0.08, 0.08, RIM],
-      [-0.42, 3.05, -0.26, 0.08, 0.08, 0.52, RIM],
-      [0.42, 3.05, -0.26, 0.08, 0.08, 0.52, RIM],
-      [0, 2.85, -0.26, 0.86, 0.36, 0.5, NET],
-      [0, 0.12, -1.5, 1.6, 0.24, 1.4, PAD],
+      // Padded round column on a base plate, with a boom out to the board.
+      [0, 0.1, -1.5, 1.7, 0.2, 1.5, PAD],
+      [0, 1.35, -1.5, 0.46, 2.5, 0.46, PAD, 0, null, ROUND],
+      [0, 2.9, -1.5, 0.3, 0.3, 0.3, STEEL, 0, null, ROUND],
+      [0, 3.5, -1.1, 0.22, 0.22, 1.0, STEEL, 0, null, ROUND_Z],
+      // Braces from the column up to the boom.
+      [0, 3.05, -1.16, 0.14, 0.9, 0.14, STEEL, 0, null, { ...ROUND, tilt: [0.62, 0, 0] }],
+      // Glass backboard with a painted target square.
+      [0, 3.45, -0.62, 1.8, 1.05, 0.06, GLASSY],
+      [0, 3.45, -0.66, 1.86, 1.11, 0.04, WHITE],
+      [0, 3.12, -0.58, 0.62, 0.46, 0.03, 0xd9762a],
+      // The rim is a real ring, hung off the board.
+      [0, 3.05, -0.58, 0.14, 0.1, 0.14, RIM, 0, null, ROUND],
+      [0, 3.05, -0.28, 0.46, 0.04, 0.46, RIM, 0, null, HOOP],
+      [0, 2.82, -0.28, 0.44, 0.42, 0.44, NET, 0, null, { shape: 'tube', seg: 12 }],
     ],
   },
   {
@@ -489,6 +515,154 @@ export const PROPS = [
       [0, 0.82, 0, 2.3, 0.06, 0.06, STEEL],
     ],
   },
+  // ------------------------------------------------------------- barriers
+  //
+  // Everything below is an EDGE piece: it stands on the boundary between two
+  // cells rather than inside one, so a run of them encloses a space without
+  // eating two metres of floor on either side the way a wall of blocks does.
+  // Geometry is authored on the -z edge of the cell, 2m wide so neighbours
+  // meet flush, and the rotation swings it round to any of the four sides.
+  {
+    key: 'wall_partition', name: 'Interior Wall', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 340, maintenance: 0.5, appearance: 1,
+    hint: 'A plastered stud wall, 2.8m tall. Divides a room without costing you the floor.',
+    parts: [
+      [0, 1.4, -1, 2.0, 2.8, 0.18, 0xe4e7ea],
+      [0, 2.86, -1, 2.0, 0.12, 0.24, 0xd2d6da],
+      [0, 0.06, -1, 2.0, 0.12, 0.24, 0xc8ccd2],
+    ],
+  },
+  {
+    key: 'wall_brick', name: 'Brick Wall', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 520, maintenance: 0.7, appearance: 3, safety: 1,
+    hint: 'Solid brick with a coping course on top. Good for a boundary you want to look permanent.',
+    parts: [
+      [0, 1.1, -1, 2.0, 2.2, 0.22, 0x8a4a38, 0, 'brick'],
+      [0, 2.26, -1, 2.0, 0.12, 0.3, 0xb9b3aa, 0, 'stone'],
+    ],
+  },
+  {
+    key: 'wall_glass', name: 'Glass Partition', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 980, maintenance: 1.4, appearance: 5, unlock: 'adv_materials',
+    hint: 'Floor-to-ceiling glazing in a slim frame. Divides without closing in.',
+    parts: [
+      [0, 1.45, -1, 1.9, 2.7, 0.05, GLASSY],
+      [-0.96, 1.45, -1, 0.08, 2.9, 0.12, STEEL],
+      [0.96, 1.45, -1, 0.08, 2.9, 0.12, STEEL],
+      [0, 2.88, -1, 2.0, 0.1, 0.12, STEEL],
+      [0, 0.05, -1, 2.0, 0.1, 0.12, STEEL],
+    ],
+  },
+  {
+    key: 'wall_timber', name: 'Timber Screen', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 420, maintenance: 1.1, appearance: 4,
+    hint: 'Vertical boarding on a frame. Warmer than concrete, and quick to put up.',
+    parts: [
+      [0, 1.05, -1, 2.0, 2.1, 0.12, WOOD, 0, 'timber'],
+      [0, 2.16, -1, 2.0, 0.12, 0.2, 0x6e5436, 0, 'timber'],
+      [-0.94, 1.05, -0.96, 0.12, 2.2, 0.12, 0x6e5436, 0, 'timber'],
+      [0.94, 1.05, -0.96, 0.12, 2.2, 0.12, 0x6e5436, 0, 'timber'],
+    ],
+  },
+  {
+    key: 'railing_steel', name: 'Handrail', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 260, maintenance: 0.6, appearance: 2, safety: 3,
+    hint: 'A 1.1m rail with balusters. What a concourse edge needs before anyone leans on it.',
+    parts: [
+      [0, 1.1, -1, 2.0, 0.06, 0.06, STEEL, 0, null, ROUND_X],
+      [0, 0.62, -1, 2.0, 0.04, 0.04, STEEL, 0, null, ROUND_X],
+      [-0.94, 0.55, -1, 0.07, 1.1, 0.07, STEEL, 0, null, ROUND],
+      [-0.31, 0.55, -1, 0.04, 1.1, 0.04, STEEL, 0, null, ROUND],
+      [0.31, 0.55, -1, 0.04, 1.1, 0.04, STEEL, 0, null, ROUND],
+      [0.94, 0.55, -1, 0.07, 1.1, 0.07, STEEL, 0, null, ROUND],
+    ],
+  },
+  {
+    key: 'fence_chain', name: 'Chain-link Fence', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 150, maintenance: 0.4, appearance: 0, safety: 2,
+    hint: 'Cheap, quick and see-through. The default way to fence a training pitch.',
+    parts: [
+      [0, 1.2, -1, 2.0, 2.4, 0.02, NET],
+      [-0.96, 1.25, -1, 0.08, 2.5, 0.08, STEEL, 0, null, ROUND],
+      [0.96, 1.25, -1, 0.08, 2.5, 0.08, STEEL, 0, null, ROUND],
+      [0, 2.44, -1, 2.0, 0.05, 0.05, STEEL, 0, null, ROUND_X],
+    ],
+  },
+  {
+    key: 'fence_picket', name: 'Picket Fence', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 190, maintenance: 0.8, appearance: 3,
+    hint: 'A low painted fence. Marks a boundary without hiding what is behind it.',
+    parts: [
+      [-0.8, 0.5, -1, 0.1, 1.0, 0.05, 0xeef1f4],
+      [-0.4, 0.5, -1, 0.1, 1.0, 0.05, 0xeef1f4],
+      [0, 0.5, -1, 0.1, 1.0, 0.05, 0xeef1f4],
+      [0.4, 0.5, -1, 0.1, 1.0, 0.05, 0xeef1f4],
+      [0.8, 0.5, -1, 0.1, 1.0, 0.05, 0xeef1f4],
+      [0, 0.78, -1, 2.0, 0.07, 0.04, 0xeef1f4],
+      [0, 0.3, -1, 2.0, 0.07, 0.04, 0xeef1f4],
+    ],
+  },
+  {
+    key: 'barrier_crowd', name: 'Crowd Barrier', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 210, maintenance: 0.5, appearance: 0, safety: 4,
+    hint: 'Interlocking steel pedestrian barrier. What holds a queue where you want it.',
+    parts: [
+      [0, 1.1, -1, 2.0, 0.05, 0.05, STEEL, 0, null, ROUND_X],
+      [0, 0.72, -1, 2.0, 0.04, 0.04, STEEL, 0, null, ROUND_X],
+      [0, 0.34, -1, 2.0, 0.04, 0.04, STEEL, 0, null, ROUND_X],
+      [-0.9, 0.56, -1, 0.06, 1.12, 0.06, STEEL, 0, null, ROUND],
+      [0.9, 0.56, -1, 0.06, 1.12, 0.06, STEEL, 0, null, ROUND],
+      [-0.9, 0.04, -0.78, 0.05, 0.08, 0.5, STEEL],
+      [0.9, 0.04, -0.78, 0.05, 0.08, 0.5, STEEL],
+    ],
+  },
+  {
+    key: 'hoarding_ad', name: 'Advertising Hoarding', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 900, maintenance: 1.2, appearance: 1, revenue: 240,
+    hint: 'Pitchside advertising. Earns every month, and every broadcast shows it.',
+    parts: [
+      [0, 0.58, -1, 2.0, 1.05, 0.09, 0x24407a],
+      [0, 0.58, -1.06, 1.86, 0.8, 0.02, 0xe8e2d0],
+      [0, 1.13, -1, 2.0, 0.07, 0.14, 0x18243c],
+      [-0.92, 0.4, -0.82, 0.06, 0.8, 0.5, STEEL, 0, null, { tilt: [0.5, 0, 0] }],
+      [0.92, 0.4, -0.82, 0.06, 0.8, 0.5, STEEL, 0, null, { tilt: [0.5, 0, 0] }],
+    ],
+  },
+  {
+    key: 'wall_acoustic', name: 'Acoustic Screen', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 1_400, maintenance: 1.8, appearance: 2, unlock: 'adv_materials',
+    hint: 'Absorbent panel on a steel frame. Keeps the noise of an event inside the ground.',
+    parts: [
+      [0, 1.7, -1, 2.0, 3.4, 0.26, 0x5d6a6f, 0, 'mesh'],
+      [-0.95, 1.75, -1, 0.14, 3.5, 0.3, STEEL],
+      [0.95, 1.75, -1, 0.14, 3.5, 0.3, STEEL],
+      [0, 3.48, -1, 2.0, 0.1, 0.34, STEEL],
+    ],
+  },
+  {
+    key: 'wall_gate', name: 'Gateway', sport: null, group: 'barrier',
+    edge: true, foot: { w: 1, d: 1 }, provides: 'barrier',
+    cost: 700, maintenance: 1.0, appearance: 3,
+    hint: 'A doorway through a run of wall, so a room you enclose has a way in.',
+    parts: [
+      [-0.86, 1.4, -1, 0.28, 2.8, 0.2, 0xe4e7ea],
+      [0.86, 1.4, -1, 0.28, 2.8, 0.2, 0xe4e7ea],
+      [0, 2.6, -1, 2.0, 0.4, 0.2, 0xe4e7ea],
+      [0, 2.86, -1, 2.0, 0.12, 0.26, 0xd2d6da],
+      [-0.68, 1.2, -1, 0.08, 2.4, 0.26, WOOD, 0, 'timber'],
+      [0.68, 1.2, -1, 0.08, 2.4, 0.26, WOOD, 0, 'timber'],
+    ],
+  },
 ];
 
 // --------------------------------------------------------------------------
@@ -548,7 +722,8 @@ export const PROP_GROUPS = [
   { key: 'bat', name: 'Cricket' },
   { key: 'aquatic', name: 'Pool & Track' },
   { key: 'matchday', name: 'Match Day' },
-
+  { key: 'outdoor', name: 'Outdoor' },
+  { key: 'barrier', name: 'Walls & Fences' },
 ];
 
 export function propsInGroup(g) {
@@ -598,4 +773,5 @@ export const PROVIDES_LABEL = {
   seatbench: 'spectator benches', holds: 'climbing routes', ramp: 'ramps',
   startgate: 'a start gate', timing: 'a timing tower', podium: 'a medal podium',
   camera: 'camera platforms', water: 'water stations', bikerack: 'bike racks',
+  barrier: 'walls and fences',
 };

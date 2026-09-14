@@ -488,6 +488,10 @@ const PROP_IDS = [
   'bench_crowd', 'goal_practice', 'post_netball', 'goal_handball',
   'net_beach', 'holds_climb', 'ramp_skate', 'gate_start', 'timing_tower',
   'podium', 'camera_platform', 'water_station', 'bike_rack',
+  // Edge pieces: walls and fences, which sit on a cell boundary.
+  'wall_partition', 'wall_brick', 'wall_glass', 'wall_timber', 'railing_steel',
+  'fence_chain', 'fence_picket', 'barrier_crowd', 'hoarding_ad', 'wall_acoustic',
+  'wall_gate',
 ];
 
 test('block, zone and prop ids never move, because saves are written in them', async () => {

@@ -343,6 +343,22 @@ const FRAG = /* glsl */`
     return 0.965 + a * 0.045;
   }
 
+  /**
+   * Netting: a fine mesh rather than a perforated plate.
+   *
+   * A goal net's holes are about a tenth of a metre, and the perforated-sheet
+   * pattern at half a metre read as a row of big dark spots on a slab. There
+   * is no alpha here to punch real holes through, so the next best thing is a
+   * weave fine enough to average out to pale netting at any distance a player
+   * looks at it from.
+   */
+  float netting(vec2 uv, float pitch) {
+    vec2 f = abs(fract(uv / pitch) - 0.5);
+    float strand = max(f.x, f.y);
+    float aa = fwidth(strand) * 1.6 + 0.03;
+    return mix(0.70, 1.06, smoothstep(0.34 - aa, 0.34 + aa, strand));
+  }
+
   /** Perforated sheet: a grid of holes, darker at the centre of each. */
   float perforation(vec2 uv, float pitch) {
     vec2 f = fract(uv / pitch) - 0.5;
@@ -377,6 +393,7 @@ const FRAG = /* glsl */`
     // what makes a voxel scene read as plastic.
     vec3 base = vColor;
     float gloss = 0.0;
+    float evenLit = 0.0;
     float seamMul = 1.0;
     float grain = 0.044;
 
@@ -443,6 +460,9 @@ const FRAG = /* glsl */`
       // Running track: rolled synthetic, with lane joints across the run.
       base *= 0.985 + 0.03 * step(0.5, fract(suv.y * 0.833));
       seamMul = 0.0; grain = 0.045;
+    } else if (fid == 16) {
+      base *= netting(suv, 0.085);                  // goal net, chain-link
+      gloss = 0.12; seamMul = 0.0; grain = 0.015; evenLit = 0.72;
     } else if (fid == 15) {
       base *= grainLines(vec2(suv.y, suv.x)) * courses(suv, 4.0, 0.28, 0.1);  // planking
       seamMul = 0.0; grain = 0.03;
@@ -472,6 +492,16 @@ const FRAG = /* glsl */`
     float sun = sunVisibility(vWorld, ndl);
     vec3 direct = uSunColor * (ndl * 0.66 * sun + wrap * 0.22 * mix(0.55, 1.0, sun));
     vec3 lit = base * (hemi * 0.78 * ao + direct * mix(1.0, ao, 0.45));
+
+    // Netting is mostly holes. Most of what reaches the eye through it is the
+    // sky and grass behind, which does not care which way the strands face, so
+    // shading it like a solid panel turned a raked goal net almost black from
+    // one side and white from the other.
+    if (evenLit > 0.0) {
+      vec3 flatLit = base * (mix(uGroundColor, uSkyColor, 0.72) * 0.82
+        + uSunColor * (0.34 * mix(0.6, 1.0, sun)));
+      lit = mix(lit, flatLit, evenLit);
+    }
 
     if (gloss > 0.0) {
       vec3 V = normalize(cameraPosition - vWorld);

@@ -605,6 +605,11 @@ test('every build tool does what its own hint says it does', async () => {
     covered.add(key);
   }
 
+  // The wall tools lay equipment on cell edges rather than blocks in cells, so
+  // they are covered by their own tests below rather than through toolCells.
+  covered.add('wallrun');
+  covered.add('wallbox');
+
   // prefab and the procedural structures have their own tests above; terrain
   // tools have theirs. What matters here is that nothing ships untested.
   const tested = new Set([...covered, 'prefab', 'grandstand', 'garage', 'retaining',
@@ -829,4 +834,106 @@ test('a surface with no regulation marking set is left alone', async () => {
   const a = detectVenues(w, { complexName: 'S' });
   assert.ok(a.venues.length > 0, 'the probe built no venue');
   assert.deepEqual(pitchRects(a), [], 'a stage should not get pitch markings');
+});
+
+
+// ------------------------------------------------------------------- walls
+//
+// A wall is not a voxel: it sits on the boundary between two cells so a room
+// keeps its floor. These hold that promise and the one that follows from it -
+// that the same physical edge cannot hold two walls.
+
+test('a wall run follows the drag rather than facing it', async () => {
+  const { generateWallRun } = await import('../src/voxel/structures.js');
+  const { propId } = await import('../src/data/props.js');
+  const w = new VoxelWorld(64);
+  w.generateTerrain();
+  const typeId = propId('wall_partition');
+
+  // Six cells east: six panels, all on the same edge of their own cell, all
+  // in the same row. A wall dragged east runs east.
+  const run = generateWallRun(w, { x: 10, y: GROUND_Y, z: 20 }, { x: 15, y: GROUND_Y, z: 20 }, { typeId });
+  assert.equal(run.cells.length, 0, 'a wall run should place no blocks at all');
+  assert.equal(run.props.length, 6, `six cells should give six panels, got ${run.props.length}`);
+  for (const p of run.props) {
+    assert.equal(p.z, 20, 'the run wandered off its row');
+    assert.equal(p.rot, 0, 'every panel in an east-west run sits on the same edge');
+  }
+  assert.equal(run.meta.metres, 12, 'six 2m panels is twelve metres of wall');
+
+  // An L: out east, then south. The corner cell carries both directions.
+  const bent = generateWallRun(w, { x: 10, y: GROUND_Y, z: 20 }, { x: 14, y: GROUND_Y, z: 24 }, { typeId });
+  const rots = new Set(bent.props.map((p) => p.rot));
+  assert.equal(rots.size, 2, 'a bent run should turn a corner, not stay on one edge');
+});
+
+test('a room is walled all the way round, and its inside is left alone', async () => {
+  const { generateWallBox } = await import('../src/voxel/structures.js');
+  const { propId } = await import('../src/data/props.js');
+  const w = new VoxelWorld(64);
+  w.generateTerrain();
+  const typeId = propId('wall_partition');
+
+  // A 4x3 room: 4 panels along each long side, 3 along each short one.
+  const box = generateWallBox(w, { x: 10, y: GROUND_Y, z: 20 }, { x: 13, y: GROUND_Y, z: 22 }, { typeId });
+  assert.equal(box.cells.length, 0);
+  assert.equal(box.props.length, 4 + 4 + 3 + 3, `a 4x3 room needs 14 panels, got ${box.props.length}`);
+  assert.deepEqual(box.meta.room, { x: 4, z: 3 });
+
+  // Nothing is placed inside: the floor of the room stays yours to furnish.
+  const inside = box.props.filter((p) => p.x > 10 && p.x < 13 && p.z > 20 && p.z < 22);
+  assert.equal(inside.length, 0, 'walls were laid through the middle of the room');
+});
+
+test('one edge holds one wall, whichever side you build it from', async () => {
+  const { canonicalEdge } = await import('../src/voxel/props.js');
+  const { propId } = await import('../src/data/props.js');
+  const w = new VoxelWorld(64);
+  w.generateTerrain();
+  const layer = w.props;
+  const id = propId('wall_partition');
+
+  // The +z side of one cell and the -z side of its neighbour are one edge.
+  const a = canonicalEdge(10, GROUND_Y, 20, 2);
+  const b = canonicalEdge(10, GROUND_Y, 21, 0);
+  assert.deepEqual(a, b, 'the same edge should reduce to the same record');
+
+  assert.equal(layer.canPlace(w, id, 10, GROUND_Y, 20, 2).ok, true);
+  layer.add(id, 10, GROUND_Y, 20, 2);
+  assert.equal(layer.size, 1);
+  assert.equal(layer.canPlace(w, id, 10, GROUND_Y, 21, 0).ok, false,
+    'the far side of an edge that already has a wall is not free');
+
+  // Four walls round one cell, which is what a corner needs.
+  for (const rot of [0, 1, 3]) {
+    assert.equal(layer.canPlace(w, id, 10, GROUND_Y, 20, rot).ok, true, `edge ${rot} should be free`);
+    layer.add(id, 10, GROUND_Y, 20, rot);
+  }
+  assert.equal(layer.size, 4, 'a cell should take a wall on each of its four sides');
+
+  // And the cell itself is still free for something to stand in.
+  assert.equal(layer.at(10, GROUND_Y, 20), null, 'walls should not claim the cell they border');
+  const bench = propId('bench_crowd');
+  assert.equal(layer.canPlace(w, bench, 10, GROUND_Y, 20, 0).ok, true,
+    'a wall along a cell edge should not stop a bench standing in that cell');
+});
+
+test('removing a wall takes the right one off the right edge', async () => {
+  const { propId } = await import('../src/data/props.js');
+  const w = new VoxelWorld(64);
+  w.generateTerrain();
+  const layer = w.props;
+  const id = propId('fence_picket');
+  for (const rot of [0, 1, 2, 3]) layer.add(id, 10, GROUND_Y, 20, rot);
+  assert.equal(layer.size, 4);
+
+  layer.remove(10, GROUND_Y, 20, 1);
+  assert.equal(layer.size, 3, 'removing one edge should take exactly one wall');
+  assert.equal(layer.edgeAt(10, GROUND_Y, 20, 1), null, 'that edge should now be empty');
+  assert.ok(layer.edgeAt(10, GROUND_Y, 20, 0), 'the other edges should be untouched');
+
+  // Digging out the floor brings the walls standing on it down too.
+  w.setBlock(10, GROUND_Y - 1, 20, 0);
+  const dropped = layer.onBlockRemoved(10, GROUND_Y - 1, 20);
+  assert.ok(dropped.length >= 3, `the floor going should drop its walls, dropped ${dropped.length}`);
 });

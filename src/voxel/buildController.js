@@ -9,11 +9,12 @@ import {
 } from './buildTools.js';
 import {
   generateGrandstand, generateParkingGarage, generateRetainingWall, generateTerrainEdit,
-  generateBowl, generateCanopy,
+  generateBowl, generateCanopy, generateWallRun, generateWallBox,
 } from './structures.js';
 import { generatePrefab, PREFAB_BY_KEY } from './prefabs.js';
 import { EditBatch } from './history.js';
-import { prop, PROP_BY_ID } from '../data/props.js';
+import { prop, PROP_BY_ID, propId } from '../data/props.js';
+import { isEdgePiece } from './props.js';
 import { PropGhost } from '../world/propRenderer.js';
 
 export const BUILD_MODES = [
@@ -83,6 +84,9 @@ export class BuildController {
     // Moving is a relocation, not a sale and a repurchase, so it is free and
     // the old and new positions go into one undo step.
     this.movingFrom = null;
+    // The last wall or fence chosen, so picking the Wall tool again builds the
+    // same thing rather than reverting to plaster.
+    this.lastWallKey = null;
 
     this.hidden = false;    // true while the ghost is off, e.g. in play mode
     this.planning = null;   // { marker, cost, count }
@@ -166,6 +170,8 @@ export class BuildController {
   /** True when the hotbar slot in hand is a piece of equipment, not a block. */
   get holdingProp() {
     if (!this.propKey) return false;
+    // The wall tools lay their own pieces, so the single-prop ghost stands down.
+    if (this.isWallTool) return false;
     if (this.mode === 'build') return true;
     // Move and Clone carry a fitting the same way the hotbar does, so the
     // ghost, the rotation and the footprint check are all the same code.
@@ -217,6 +223,20 @@ export class BuildController {
   /** True when the active tool generates a multi-material structure. */
   get isPlanTool() { return PLAN_TOOLS.has(this.activeTool); }
 
+  /** True for the two tools that lay walls and fences along cell edges. */
+  get isWallTool() { return this.activeTool === 'wallrun' || this.activeTool === 'wallbox'; }
+
+  /**
+   * Which wall or fence the wall tools will build with: whatever is in hand if
+   * that is an edge piece, and the plainest one going if it is not, so picking
+   * the tool before the material still builds something.
+   */
+  get wallKey() {
+    const held = this.propKey && prop(this.propKey);
+    if (isEdgePiece(held)) return this.propKey;
+    return this.lastWallKey || 'wall_partition';
+  }
+
   /**
    * Build the plan for a procedural tool. Pure: safe to call every frame for
    * the ghost preview.
@@ -256,6 +276,10 @@ export class BuildController {
         return generateRetainingWall(w, a, b, { block: this.material });
       case 'raise': case 'lower': case 'flatten': case 'ramp':
         return generateTerrainEdit(w, a, b, this.activeTool, { amount: this.terrainAmount });
+      case 'wallrun':
+        return generateWallRun(w, a, b, { typeId: propId(this.wallKey) });
+      case 'wallbox':
+        return generateWallBox(w, a, b, { typeId: propId(this.wallKey) });
       case 'prefab':
         return generatePrefab(w, this.prefabKey, a, this.rotation);
       default:
@@ -281,6 +305,10 @@ export class BuildController {
       if (!single && !this.anchor) { this.lastPlan = null; return []; }
       const plan = this.buildPlan(single ? b : a, b);
       this.lastPlan = plan;
+      // A wall run is all equipment and no blocks, so the ghost is drawn from
+      // the cells the pieces sit against rather than from a cell list that is
+      // legitimately empty.
+      if (plan.ghostCells) return plan.ghostCells;
       return planPositions(plan.cells);
     }
     this.lastPlan = null;
@@ -346,6 +374,7 @@ export class BuildController {
       : this.mode === 'zone' ? zone(this.zoneKey).color
       : this.mode === 'inspect' ? 0xf2b73d
       : this.isPaintTool ? (block(this.material)?.color ?? 0x49b6ff)
+      : this.isWallTool ? 0x49b6ff
       : (this.lastPrice.net > this.game.state.cash && !this.planning) ? 0xff5f6d : 0x39e08a;
     this.setGhostColor(colour);
 
@@ -438,7 +467,7 @@ export class BuildController {
   removeProp(rec) {
     const g = this.game;
     const type = PROP_BY_ID[rec.typeId];
-    g.world.props.remove(rec.x, rec.y, rec.z);
+    g.world.props.remove(rec.x, rec.y, rec.z, rec.rot);
     const batch = new EditBatch('Remove: ' + (type?.name || 'equipment'));
     batch.recordProp('del', rec.typeId, rec.x, rec.y, rec.z, rec.rot);
     const refund = (type?.cost || 0) * 0.3;
@@ -580,7 +609,7 @@ export class BuildController {
 
     // Lift it before testing, or it would collide with the space it is
     // vacating and refuse to move one block sideways.
-    layer.remove(orig.x, orig.y, orig.z);
+    layer.remove(orig.x, orig.y, orig.z, orig.rot);
     const check = layer.canPlace(g.world, type.id, this.aim.x, this.aim.y, this.aim.z, this.rotation);
     if (!check.ok) {
       layer.add(orig.typeId, orig.x, orig.y, orig.z, orig.rot);
@@ -603,6 +632,9 @@ export class BuildController {
   cancelMove() {
     const carried = this.movingFrom;
     this.movingFrom = null;
+    // The last wall or fence chosen, so picking the Wall tool again builds the
+    // same thing rather than reverting to plaster.
+    this.lastWallKey = null;
     this.propKey = null;
     this.refreshPreview();
     this.onChange?.();
@@ -1015,7 +1047,9 @@ export class BuildController {
 
   /** Hold a piece of sports equipment instead of a block. */
   setProp(key) {
-    if (!prop(key)) return;
+    const type = prop(key);
+    if (!type) return;
+    if (isEdgePiece(type)) this.lastWallKey = key;
     this.propKey = key;
     if (this.mode !== 'build') this.mode = 'build';
     this.tool = 'single';
@@ -1071,6 +1105,7 @@ const ARRANGE_TOOL_KEYS = ['paint', 'surface', 'paintbox', 'move', 'clone', 'sam
 const STRUCTURE_LABEL = {
   grandstand: 'Grandstand', garage: 'Parking garage', retaining: 'Retaining wall',
   bowl: 'Seating bowl', canopy: 'Canopy roof',
+  wallrun: 'Wall run', wallbox: 'Room walls',
 };
 
 const TOOL_LABEL = {
@@ -1094,6 +1129,10 @@ function describePlan(tool, meta, net) {
       return `Canopy: ${meta.panels.toLocaleString()} panels on ${meta.columns} columns (${money})`;
     case 'retaining':
       return `Retaining wall built (${money})`;
+    case 'wallrun':
+      return `${meta.panels} panel${meta.panels === 1 ? '' : 's'} \u2014 ${meta.metres}m of ${meta.name || 'wall'} (${money})`;
+    case 'wallbox':
+      return `Room walled: ${meta.panels} panels round ${meta.room.x * 2}m \u00D7 ${meta.room.z * 2}m (${money})`;
     case 'prefab':
       return `${meta.name} placed${meta.propCount ? `, ${meta.propCount} fittings` : ''} (${money})`;
     case 'raise': case 'lower': case 'flatten': case 'ramp':

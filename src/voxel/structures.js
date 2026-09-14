@@ -1,6 +1,7 @@
 import { CHUNK_Y, GROUND_Y, BLOCK_SIZE } from '../core/constants.js';
 import { block, blockId, AIR } from '../data/blocks.js';
 import { ZONES, zone, zoneId, ZONE_NONE } from '../data/zones.js';
+import { PROP_BY_ID } from '../data/props.js';
 
 /**
  * Procedural structure generators.
@@ -374,6 +375,95 @@ export function generateCanopy(world, a, b, opts = {}) {
   }
   return { cells, meta: { panels, columns, height: deckY, area: panels } };
 }
+
+/**
+ * ---------------------------------------------------------------------------
+ * WALL AND FENCE RUNS
+ * ---------------------------------------------------------------------------
+ * Both of these lay EDGE pieces, which sit on the boundary between two cells
+ * rather than inside one. The wall therefore runs along the edge the drag is
+ * parallel to - drag east and you get a wall running east, not a line of
+ * panels facing you - which is the difference between drawing a wall and
+ * planting a row of fence posts.
+ *
+ * They return a plan with no blocks in it at all: every piece is equipment, so
+ * the whole thing prices, stages, applies and undoes down the path that
+ * prefabs already use.
+ */
+
+/** Walls along the path from a to b, turning once to reach it. */
+export function generateWallRun(world, a, b, opts = {}) {
+  const typeId = opts.typeId;
+  const y = a.y;
+  const props = [], ghost = [];
+  const seen = new Set();
+  const put = (x, z, rot) => {
+    const k = `${x},${z},${rot}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    props.push({ typeId, x, y, z, rot });
+    ghost.push(x, y, z);
+  };
+
+  const x0 = a.x, z0 = a.z, x1 = b.x, z1 = b.z;
+  // Along x first at the starting row, then along z at the far column: the
+  // same L a drag makes when you pull out and then across. A leg of zero
+  // length lays nothing - a straight run east should not finish with a stub
+  // panel turning the corner into a wall one cell long.
+  if (x1 !== x0) {
+    const stepX = x1 >= x0 ? 1 : -1;
+    for (let x = x0; x !== x1 + stepX; x += stepX) put(x, z0, EDGE_NZ);
+  }
+  if (z1 !== z0) {
+    const stepZ = z1 >= z0 ? 1 : -1;
+    for (let z = z0; z !== z1 + stepZ; z += stepZ) put(x1, z, EDGE_PX);
+  }
+  // A drag that went nowhere still means "one panel here".
+  if (!props.length) put(x0, z0, EDGE_NZ);
+
+  return {
+    cells: [], props, ghostCells: ghost,
+    meta: {
+      wall: true, panels: props.length, metres: props.length * BLOCK_SIZE,
+      name: PROP_BY_ID[typeId]?.name,
+    },
+  };
+}
+
+/** Walls all the way round a rectangle, which is how a room gets enclosed. */
+export function generateWallBox(world, a, b, opts = {}) {
+  const typeId = opts.typeId;
+  const y = a.y;
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x);
+  const z0 = Math.min(a.z, b.z), z1 = Math.max(a.z, b.z);
+  const props = [], ghost = [];
+  const seen = new Set();
+  const put = (x, z, rot) => {
+    const k = `${x},${z},${rot}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    props.push({ typeId, x, y, z, rot });
+    ghost.push(x, y, z);
+  };
+
+  for (let x = x0; x <= x1; x++) { put(x, z0, EDGE_NZ); put(x, z1, EDGE_PZ); }
+  for (let z = z0; z <= z1; z++) { put(x0, z, EDGE_NX); put(x1, z, EDGE_PX); }
+
+  return {
+    cells: [], props, ghostCells: ghost,
+    meta: {
+      wall: true, panels: props.length, metres: props.length * BLOCK_SIZE,
+      name: PROP_BY_ID[typeId]?.name,
+      room: { x: x1 - x0 + 1, z: z1 - z0 + 1 },
+    },
+  };
+}
+
+/** The four edges of a cell, in the rotation order the prop layer uses. */
+const EDGE_NZ = 0;
+const EDGE_NX = 1;
+const EDGE_PZ = 2;
+const EDGE_PX = 3;
 
 export const STRUCTURES = {
   grandstand: generateGrandstand,

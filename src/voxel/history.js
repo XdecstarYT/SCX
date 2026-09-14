@@ -65,7 +65,7 @@ export class History {
     if (layer) {
       for (let i = b.props.length - 1; i >= 0; i--) {
         const op = b.props[i];
-        if (op.op === 'add') layer.remove(op.x, op.y, op.z);
+        if (op.op === 'add') layer.remove(op.x, op.y, op.z, op.rot);
         else layer.add(op.typeId, op.x, op.y, op.z, op.rot);
       }
     }
@@ -89,7 +89,7 @@ export class History {
     if (layer) {
       for (const op of b.props) {
         if (op.op === 'add') layer.add(op.typeId, op.x, op.y, op.z, op.rot);
-        else layer.remove(op.x, op.y, op.z);
+        else layer.remove(op.x, op.y, op.z, op.rot);
       }
     }
     this.undoStack.push(b);

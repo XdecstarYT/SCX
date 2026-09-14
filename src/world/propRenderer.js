@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { BLOCK_SIZE } from '../core/constants.js';
 import { createVoxelMaterial } from '../voxel/renderer.js';
 import { PROP_BY_ID, prop, PART_FINISH } from '../data/props.js';
+import { partTilt } from '../voxel/props.js';
 import { FINISH_ID } from '../voxel/mesher.js';
 
 /**
@@ -15,12 +16,32 @@ import { FINISH_ID } from '../voxel/mesher.js';
 
 const HALF = 0.5;
 
+/**
+ * A part is
+ *   [cx, cy, cz, w, h, d, colour, glow?, finish?, opts?]
+ * in metres, and `opts` is what stops everything being a crate:
+ *
+ *   shape 'box'   the default
+ *         'cyl'   an elliptic cylinder, w and d the diameters, h the length
+ *         'tube'  the same with no end caps, for rims and open frames
+ *   axis  'y' (default), 'x' or 'z' - which way a cylinder runs
+ *   seg   sides around a cylinder (default 10; 6 for small, 16 for prominent)
+ *   tilt  [rx, ry, rz] radians about the part's own centre
+ *
+ * A goal post is a 12cm round tube, not a 24cm square column, and a goal net
+ * rakes back from the crossbar rather than hanging as a flat plate. Neither is
+ * expressible with axis-aligned boxes, which is why every piece of equipment
+ * in the game used to read as a stack of blocks.
+ */
+const DEFAULT_SEG = 10;
+
 /** Build a merged, vertex-coloured geometry for one prop type. */
 export function buildPropGeometry(type) {
   const pos = [], nor = [], col = [], uv = [], emis = [], ao = [], fin = [], idx = [];
   let v = 0;
+
   for (const part of type.parts) {
-    const [cx, cy, cz, w, h, d, colour, glow = 0, finish] = part;
+    const [cx, cy, cz, w, h, d, colour, glow = 0, finish, opts] = part;
     // The shader packs corner occlusion as 0-3. Props are freestanding
     // objects, not voxels wedged into a corner, so they are fully open - and
     // leaving the attribute off entirely meant the shader read 0 and drew
@@ -30,23 +51,19 @@ export function buildPropGeometry(type) {
     const r = ((colour >> 16) & 255) / 255;
     const g = ((colour >> 8) & 255) / 255;
     const b = (colour & 255) / 255;
-    const x0 = cx - w * HALF, x1 = cx + w * HALF;
-    const y0 = cy - h * HALF, y1 = cy + h * HALF;
-    const z0 = cz - d * HALF, z1 = cz + d * HALF;
 
-    // [corners, normal, uv extents] per face.
-    const faces = [
-      [[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [1, 0, 0], d, h],
-      [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [-1, 0, 0], d, h],
-      [[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], [0, 1, 0], w, d],
-      [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0], w, d],
-      [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [0, 0, 1], w, h],
-      [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [0, 0, -1], w, h],
-    ];
-    for (const [a, bb, c, e, n, su, sv] of faces) {
-      for (const p of [a, bb, c, e]) {
-        pos.push(p[0], p[1], p[2]);
-        nor.push(n[0], n[1], n[2]);
+    const quads = opts?.shape === 'cyl' || opts?.shape === 'tube'
+      ? cylinderQuads(w, h, d, opts)
+      : boxQuads(w, h, d);
+
+    const rot = opts?.tilt ? partTilt(opts.tilt) : null;
+
+    for (const [corners, n, su, sv] of quads) {
+      for (const p of corners) {
+        const q = rot ? apply(rot, p) : p;
+        pos.push(q[0] + cx, q[1] + cy, q[2] + cz);
+        const m = rot ? apply(rot, n) : n;
+        nor.push(m[0], m[1], m[2]);
         col.push(r, g, b);
         emis.push(glow);
         ao.push(aoValue);
@@ -68,6 +85,90 @@ export function buildPropGeometry(type) {
   geo.setIndex(idx);
   geo.computeBoundingSphere();
   return geo;
+}
+
+/** The six faces of a box, centred on the origin. */
+function boxQuads(w, h, d) {
+  const x0 = -w * HALF, x1 = w * HALF;
+  const y0 = -h * HALF, y1 = h * HALF;
+  const z0 = -d * HALF, z1 = d * HALF;
+  return [
+    [[[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], [1, 0, 0], d, h],
+    [[[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0], d, h],
+    [[[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], [0, 1, 0], w, d],
+    [[[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0], w, d],
+    [[[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1], w, h],
+    [[[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], [0, 0, -1], w, h],
+  ];
+}
+
+/**
+ * An elliptic cylinder centred on the origin, running along `axis`.
+ *
+ * w, h and d are the part's size along world x, y and z, exactly as they are
+ * for a box - `axis` only says which of the three is the round one's length.
+ * Making the length always mean `h` would read fine for an upright post and
+ * then quietly turn a crossbar into a seven-metre disc the first time someone
+ * wrote the numbers in the order the shape actually has.
+ *
+ * Caps are quads from the rim to the centre rather than a triangle fan, so
+ * the whole kit stays quad-indexed and one index pattern serves every part.
+ */
+function cylinderQuads(w, h, d, opts) {
+  const seg = Math.max(3, opts.seg || DEFAULT_SEG);
+  const capped = opts.shape !== 'tube';
+  const axis = opts.axis || 'y';
+  // Work in a local frame where the length runs along y, then swing it into
+  // place. The two radii are whichever axes are left over.
+  const length = axis === 'x' ? w : axis === 'z' ? d : h;
+  const rx = (axis === 'x' ? d : w) * HALF;
+  const rz = (axis === 'z' ? h : d) * HALF;
+  const half = length * HALF;
+  const swing = axis === 'x' ? ([px, py, pz]) => [py, px, pz]
+    : axis === 'z' ? ([px, py, pz]) => [px, pz, py]
+    : (p) => p;
+
+  const ring = [];
+  for (let i = 0; i < seg; i++) {
+    const a = (i / seg) * Math.PI * 2;
+    ring.push([Math.cos(a) * rx, Math.sin(a) * rz, Math.cos(a), Math.sin(a)]);
+  }
+  const circumference = Math.PI * (rx + rz);
+  const out = [];
+  for (let i = 0; i < seg; i++) {
+    const [ax, az, anx, anz] = ring[i];
+    const [bx, bz, bnx, bnz] = ring[(i + 1) % seg];
+    // One outward normal for the face, which is what a flat-shaded voxel look
+    // wants: a smoothed cylinder would read as plastic beside the stadium.
+    const nx = (anx + bnx) / 2, nz = (anz + bnz) / 2;
+    const len = Math.hypot(nx, nz) || 1;
+    out.push([
+      [swing([ax, -half, az]), swing([bx, -half, bz]), swing([bx, half, bz]), swing([ax, half, az])],
+      swing([nx / len, 0, nz / len]),
+      circumference / seg, length,
+    ]);
+  }
+  if (capped) {
+    for (const [sign, ny] of [[half, 1], [-half, -1]]) {
+      for (let i = 0; i < seg; i++) {
+        const [ax, az] = ring[i];
+        const [bx, bz] = ring[(i + 1) % seg];
+        const face = ny > 0
+          ? [[0, sign, 0], [ax, sign, az], [bx, sign, bz], [0, sign, 0]]
+          : [[0, sign, 0], [bx, sign, bz], [ax, sign, az], [0, sign, 0]];
+        out.push([face.map(swing), swing([0, ny, 0]), rx, rz]);
+      }
+    }
+  }
+  return out;
+}
+
+function apply(m, [x, y, z]) {
+  return [
+    m[0] * x + m[1] * y + m[2] * z,
+    m[3] * x + m[4] * y + m[5] * z,
+    m[6] * x + m[7] * y + m[8] * z,
+  ];
 }
 
 const geoCache = new Map();

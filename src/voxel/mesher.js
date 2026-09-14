@@ -130,6 +130,7 @@ const FINISH_ID = {
   water: 13,      // moving ripples
   track: 14,      // rolled synthetic, running with the lanes
   boards: 15,     // laid planking
+  netting: 16,    // fine woven net, for goal nets and chain-link
 };
 
 /**

@@ -33,6 +33,7 @@ import { propSlotKey } from './ui/hotbar.js';
 import { PREFABS, PREFAB_GROUPS, generatePrefab } from './voxel/prefabs.js';
 import { RESEARCH } from './data/research.js';
 import { applyPlan } from './voxel/buildTools.js';
+import * as STRUCTURES_API from './voxel/structures.js';
 import { zoneId, zone, ZONE_BY_KEY, ZONE_GROUPS, ZONE_BY_ID } from './data/zones.js';
 import { instantiate } from './events/eventGenerator.js';
 import { EVENT_TEMPLATES } from './data/events.js';
@@ -1908,6 +1909,9 @@ window.__sct.dev = {
     };
   },
   prefabKeys: () => PREFABS.map((p) => p.key),
+  /** Plan generators and the plan applier, so tests can build without the UI. */
+  structures: STRUCTURES_API,
+  tools: { applyPlan },
   researchIds: () => RESEARCH.map((r) => r.id),
   /**
    * Project a voxel's top face to client pixels. Used by the end-to-end tests

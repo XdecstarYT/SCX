@@ -122,7 +122,7 @@ export const BLOCKS = [
   // of entrance zone as a gate, and gates are most of what crowd flow and
   // safety are scored on. Cutting doors into a facade is a real decision.
   { key: 'door',       name: 'Doorway',          category: 'exterior', color: 0x6f4c30, cost: 240, maintenance: 2.2, solid: false, transparent: true, opacity: 0.9, support: 2, appearance: 2, autoZone: 'entrance', finish: 'timber' },
-  { key: 'fence',      name: 'Perimeter Fence',  category: 'decor', color: 0x707880, cost: 46,  maintenance: 0.8, solid: true, support: 1, appearance: 1, safety: 1, finish: 'mesh' },
+  { key: 'fence',      name: 'Perimeter Fence',  category: 'decor', color: 0x707880, cost: 46,  maintenance: 0.8, solid: true, support: 1, appearance: 1, safety: 1, finish: 'netting' },
 
   // --------------------------------------------------------------------------
   // The second materials pass. Still appended, still never reordered.
@@ -132,7 +132,7 @@ export const BLOCKS = [
   { key: 'granite',    name: 'Granite',          category: 'structure', color: 0x6f7278, cost: 145, maintenance: 0.7, solid: true, support: 14, appearance: 2, finish: 'stone' },
   { key: 'truss',      name: 'Steel Truss',      category: 'structure', color: 0x6c7681, cost: 240, maintenance: 2.2, solid: true, support: 32, spans: 4, finish: 'metal' },
   { key: 'rebar_conc', name: 'Precast Section',  category: 'structure', color: 0x878d94, cost: 180, maintenance: 1.1, solid: true, support: 18, unlock: 'precast' },
-  { key: 'mesh',       name: 'Steel Mesh',       category: 'structure', color: 0x9aa3ad, cost: 58,  maintenance: 1.0, solid: true, transparent: true, opacity: 0.45, support: 3, finish: 'mesh' },
+  { key: 'mesh',       name: 'Steel Mesh',       category: 'structure', color: 0x9aa3ad, cost: 58,  maintenance: 1.0, solid: true, transparent: true, opacity: 0.45, support: 3, finish: 'netting' },
 
   // Exterior
   { key: 'curtain',    name: 'Curtain Wall',     category: 'exterior', color: 0x8fc3dc, cost: 285, maintenance: 3.4, solid: true, transparent: true, opacity: 0.38, support: 3, appearance: 5, finish: 'gloss', unlock: 'adv_materials' },

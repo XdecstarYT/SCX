@@ -12,6 +12,7 @@ import { PROP_BY_ID } from '../data/props.js';
 export const PLAN_TOOLS = new Set([
   'grandstand', 'bowl', 'canopy', 'garage', 'retaining',
   'raise', 'lower', 'flatten', 'ramp', 'prefab',
+  'wallrun', 'wallbox',
 ]);
 
 export const TOOLS = [
@@ -42,6 +43,11 @@ export const TOOLS = [
   { key: 'canopy',     name: 'Canopy',  icon: '\u2312', drag: true, hint: 'Tap two corners; roofs everything under them on columns' },
   { key: 'garage',     name: 'Garage',  icon: '\u26DB', drag: true, hint: 'Tap two corners; builds a multi-level car park' },
   { key: 'retaining',  name: 'Retain',  icon: '\u2261', drag: true, hint: 'Tap two points; builds a retaining wall along the line' },
+
+  // Walls and fences, which run along the edge between two cells rather than
+  // filling them. Both need a wall or fence in hand to say what to build.
+  { key: 'wallrun',  name: 'Run',     icon: '\u2500', drag: true, hint: 'Tap two points; runs a thin wall or fence along the edge between them, without eating the floor' },
+  { key: 'wallbox',  name: 'Enclose', icon: '\u2B1A', drag: true, hint: 'Tap two corners; walls all the way round them, so the space inside becomes a room' },
 
   // Arranging what is already there: repaint a surface without rebuilding it,
   // and pick equipment up and put it down instead of demolishing and re-buying.
@@ -516,7 +522,7 @@ export function dropProps(world, batch, x, y, z, inPlaceOnly = false) {
     if (above && above !== here) hits.push(above);
   }
   for (const rec of hits) {
-    layer.remove(rec.x, rec.y, rec.z);
+    layer.remove(rec.x, rec.y, rec.z, rec.rot);
     batch.recordProp('del', rec.typeId, rec.x, rec.y, rec.z, rec.rot);
   }
 }

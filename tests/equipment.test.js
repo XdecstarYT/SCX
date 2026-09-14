@@ -58,6 +58,39 @@ test('the geometry turns the same way the footprint does', () => {
   assert.ok(turned.z1 - turned.z0 > turned.x1 - turned.x0, 'rotated goal is not wide in z');
 });
 
+test('a tilted part is bounded by where it actually reaches', async () => {
+  const { localBounds } = await import('../src/voxel/props.js');
+  // A 4 x 1 x 0.2 panel stood on end by a quarter turn about x: its y and z
+  // extents swap, and nothing else moves.
+  const flat = localBounds({ parts: [[0, 0, 0, 4, 1, 0.2, 0xffffff]] });
+  const tipped = localBounds({
+    parts: [[0, 0, 0, 4, 1, 0.2, 0xffffff, 0, null, { tilt: [Math.PI / 2, 0, 0] }]],
+  });
+  const near = (a, b, what) => assert.ok(Math.abs(a - b) < 1e-6, `${what}: ${a} vs ${b}`);
+  near(tipped.x1 - tipped.x0, flat.x1 - flat.x0, 'the tilt changed the width');
+  near(tipped.y1 - tipped.y0, flat.z1 - flat.z0, 'height should become the old depth');
+  near(tipped.z1 - tipped.z0, flat.y1 - flat.y0, 'depth should become the old height');
+
+  // Half a turn puts it back exactly where it started, which a bounding
+  // sphere - the first thing tried here - would not.
+  const spun = localBounds({
+    parts: [[0, 0, 0, 4, 1, 0.2, 0xffffff, 0, null, { tilt: [Math.PI, 0, 0] }]],
+  });
+  near(spun.y1 - spun.y0, flat.y1 - flat.y0, 'a half turn changed the height');
+  near(spun.z1 - spun.z0, flat.z1 - flat.z0, 'a half turn changed the depth');
+});
+
+test('a round part measures the same as the box it replaces', async () => {
+  const { localBounds } = await import('../src/voxel/props.js');
+  const box = localBounds({ parts: [[0, 1, 0, 0.3, 2, 0.3, 0xffffff]] });
+  for (const axis of ['x', 'y', 'z']) {
+    const cyl = localBounds({
+      parts: [[0, 1, 0, 0.3, 2, 0.3, 0xffffff, 0, null, { shape: 'cyl', axis }]],
+    });
+    assert.deepEqual(cyl, box, `a ${axis}-axis cylinder should occupy its own w/h/d`);
+  }
+});
+
 test('equipment needs solid, empty, unclaimed ground', () => {
   const w = pitchWorld();
   const layer = w.props;
