@@ -4,6 +4,7 @@
  * human actually touches produces a venue the simulation recognises.
  */
 import { chromium } from 'playwright';
+import { makeTap } from './harness.mjs';
 
 const SHOTS = process.env.SHOTS || '/tmp/shots';
 const browser = await chromium.launch({
@@ -47,29 +48,7 @@ const frame = async (cx, cz, dist) => {
   await page.waitForTimeout(300);
 };
 
-/**
- * Tap a voxel's top face. Verifies the point is actually over the 3D view and
- * not behind a HUD panel - a tap that lands on the dock would silently change
- * the tool instead of placing a block.
- */
-const tap = async (vx, vy, vz) => {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const p = await page.evaluate(([x, y, z]) => {
-      const q = window.__sct.dev.project(x, y, z);
-      const hit = document.elementFromPoint(q.x, q.y);
-      return { ...q, overCanvas: hit?.tagName === 'CANVAS' };
-    }, [vx, vy, vz]);
-    if (p.onScreen && p.overCanvas) {
-      await page.mouse.click(p.x, p.y);
-      await page.waitForTimeout(70);
-      return;
-    }
-    // Pull the camera back and try again.
-    await page.evaluate(() => { window.__sct.rig.zoom(1.28); });
-    await page.waitForTimeout(180);
-  }
-  throw new Error(`voxel ${vx},${vy},${vz} could not be tapped (off screen or behind the HUD)`);
-};
+const tap = makeTap(page, { settle: 70 });
 const pickMode = async (name) => {
   await page.locator('.modebar button', { hasText: new RegExp(`^${name}$`, 'i') }).first().click();
   await page.waitForTimeout(150);

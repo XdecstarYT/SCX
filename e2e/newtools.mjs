@@ -4,6 +4,7 @@
  * its own hint; this proves the buttons a player actually taps reach them.
  */
 import { chromium } from 'playwright';
+import { makeTap } from './harness.mjs';
 
 const SHOTS = process.env.SHOTS || '/tmp/shots';
 const browser = await chromium.launch({
@@ -54,23 +55,7 @@ const frame = async (cx, cz, dist) => {
   }, [cx, cz, dist]);
   await page.waitForTimeout(280);
 };
-const tap = async (vx, vy, vz) => {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const p = await page.evaluate(([x, y, z]) => {
-      const q = window.__sct.dev.project(x, y, z);
-      const hit = document.elementFromPoint(q.x, q.y);
-      return { ...q, overCanvas: hit?.tagName === 'CANVAS' };
-    }, [vx, vy, vz]);
-    if (p.onScreen && p.overCanvas) {
-      await page.mouse.click(p.x, p.y);
-      await page.waitForTimeout(90);
-      return;
-    }
-    await page.evaluate(() => { window.__sct.rig.zoom(1.3); });
-    await page.waitForTimeout(180);
-  }
-  throw new Error(`voxel ${vx},${vy},${vz} could not be tapped`);
-};
+const tap = makeTap(page, { settle: 90 });
 const pickMode = async (name) => {
   await page.locator('.modebar button', { hasText: new RegExp(`^${name}$`, 'i') }).first().click();
   await page.waitForTimeout(150);

@@ -4,6 +4,7 @@
  * facility, and prove a careless demolition asks before it takes a scoreboard.
  */
 import { chromium } from 'playwright';
+import { makeTap } from './harness.mjs';
 
 const SHOTS = process.env.SHOTS || '/tmp/shots';
 const browser = await chromium.launch({
@@ -37,23 +38,7 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(400);
 
-const tap = async (vx, vy, vz) => {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const p = await page.evaluate(([x, y, z]) => {
-      const q = window.__sct.dev.project(x, y, z);
-      const hit = document.elementFromPoint(q.x, q.y);
-      return { ...q, overCanvas: hit?.tagName === 'CANVAS' };
-    }, [vx, vy, vz]);
-    if (p.onScreen && p.overCanvas) {
-      await page.mouse.click(p.x, p.y);
-      await page.waitForTimeout(90);
-      return;
-    }
-    await page.evaluate(() => { window.__sct.rig.zoom(1.28); });
-    await page.waitForTimeout(180);
-  }
-  throw new Error(`voxel ${vx},${vy},${vz} could not be tapped`);
-};
+const tap = makeTap(page, { settle: 90 });
 const pickMode = async (name) => {
   await page.locator('.modebar button', { hasText: new RegExp(`^${name}$`, 'i') }).first().click();
   await page.waitForTimeout(150);
