@@ -2,6 +2,10 @@ import { VoxelWorld } from '../voxel/world.js';
 import { History } from '../voxel/history.js';
 import { combineLift, inspectionLift } from './siteWalk.js';
 import {
+  createTicketState, sellSeason, summary as ticketSummary,
+  SEASON_TIERS, MEMBERSHIP_TIERS, CONCESSION_TIERS,
+} from './ticketing.js';
+import {
   createSafetyState, assess as assessSafety, issue as issueCertificate,
   permittedCapacity, blockedReason, daysLeft as certDaysLeft, tickSafety, certFor,
   CERTIFICATE_DAYS as CERT_DAYS, SMALL_GROUND,
@@ -1927,6 +1931,47 @@ export class Game {
     this.bus.emit('season', report);
     this.bus.emit('state');
     return report;
+  }
+
+  // ===================================================================== TICKETS
+  /** Everything the ticketing screen shows. */
+  ticketing() {
+    return ticketSummary(this.state, this.primaryVenue);
+  }
+
+  /** Change one of the three ticketing arrangements. */
+  setTicketing(field, key) {
+    const t = this.state.tickets || (this.state.tickets = createTicketState());
+    if (!['season', 'membership', 'concession'].includes(field)) return { error: 'Unknown setting.' };
+    t[field] = key;
+    this.bus.emit('state');
+    return { ok: true };
+  }
+
+  /**
+   * Put the season's books on sale. Money now against seats promised away for
+   * the year, which is the whole trade.
+   */
+  openSeasonSales() {
+    const s = this.state;
+    const venue = this.primaryVenue;
+    if (!venue) return { error: 'You need a venue before you can sell a season ticket for it.' };
+    const t = s.tickets || (s.tickets = createTicketState());
+    if (t.lastRenewalDay && s.day - t.lastRenewalDay < 300) {
+      const wait = 300 - (s.day - t.lastRenewalDay);
+      return { error: `The books are already out for this season. Renewals open in ${wait} days.` };
+    }
+    const r = sellSeason(s, venue);
+    if (r.gross > 0) {
+      s.cash += r.gross;
+      this.record('tickets', r.gross);
+      this.notify('info', 'Season tickets sold',
+        `${r.season.seats.toLocaleString()} season tickets and ${r.members.members.toLocaleString()} `
+        + `memberships, ${Math.round(r.gross).toLocaleString()} banked. `
+        + `Those seats are spoken for until next summer.`);
+    }
+    this.bus.emit('state');
+    return r;
   }
 
   // ================================================= THE SAFETY CERTIFICATE

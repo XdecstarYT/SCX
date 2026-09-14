@@ -12,6 +12,7 @@ import { seasonProgress, seasonDay, SEASON_DAYS, division } from '../core/league
 import { COMPETITION_BY_ID } from '../data/competitions.js';
 import { CERTIFICATE_DAYS } from '../core/siteWalk.js';
 import { TREATMENTS, PITCH_UPGRADES } from '../core/groundskeeping.js';
+import { SEASON_TIERS, MEMBERSHIP_TIERS, CONCESSION_TIERS } from '../core/ticketing.js';
 import { PROGRAMME_CATEGORIES } from '../data/programmes.js';
 import { gameYear } from '../core/constants.js';
 import { MOODS } from '../core/community.js';
@@ -294,6 +295,69 @@ export class Screens {
   }
 
   /**
+   * Ticketing. Three arrangements, all of them a trade rather than an upgrade:
+   * money now against seats promised away, a fee against a habit, a lower
+   * price against a fuller ground.
+   */
+  ticketsBody(render) {
+    const g = this.game;
+    const t = g.ticketing();
+    if (!t.capacity) {
+      return el('div.card', {}, emptyState('\u2709',
+        'Build a venue with some seats in it and you will have something to sell.'));
+    }
+    const pick = (field, tiers, current) => choiceRow(
+      null, null,
+      tiers.map((x) => ({ value: x.key, label: x.name, title: x.hint })),
+      current.key,
+      (v) => { g.setTicketing(field, v); render(); this.app.refresh(); });
+
+    const offer = t.nextOffer;
+    return el('div.stack', {},
+      el('div.card', {},
+        el('div.rowbetween', {},
+          el('div', {},
+            el('div.small', { text: 'Committed for the season' }),
+            el('div.tiny.faint', { text: `${fmtNum(t.soldSeason)} season tickets \u00B7 ${fmtNum(t.members)} members` })),
+          el('div.right', {},
+            el('div.big' + (t.committedPct > 0 ? '.good' : '.faint'), { text: `${t.committedPct}%` }),
+            el('div.tiny.faint', { text: `of ${fmtNum(t.capacity)}` }))),
+        meter(t.committedPct, 100, t.committedPct > 60 ? 'gold' : 'good'),
+        el('div.tiny.faint', { style: { marginTop: '6px' }, text: t.committedPct === 0
+          ? 'Every seat is sold on the day, at whatever the day is worth.'
+          : `Those seats turn up whatever the weather, and they cannot be sold again on the day.` }),
+        t.renewalRate ? el('div.tiny.faint', { text: `${Math.round(t.renewalRate * 100)}% of last year's holders renewed.` }) : null),
+
+      section('Season tickets', el('div.card', {},
+        pick('season', SEASON_TIERS, t.season),
+        el('div.tiny.faint', { style: { marginTop: '6px' }, text: t.season.hint }),
+        offer.seats ? el('div.rowbetween', { style: { marginTop: '8px' } },
+          el('span.small', { text: `${fmtNum(offer.seats)} seats at ${fmtMoney(offer.price)}` }),
+          el('span.small.mono.good', { text: fmtMoney(offer.gross) })) : null,
+        el('div.btnrow', { style: { marginTop: '10px' } },
+          el('button.btn.sm.primary', {
+            disabled: !offer.seats,
+            title: 'Bank the money now against seats you have promised away for the year.',
+            onclick: () => {
+              const r = g.openSeasonSales();
+              if (r?.error) this.app.toast('warn', 'Not yet', r.error);
+              render(); this.app.refresh();
+            },
+          }, 'Put the books on sale')))),
+
+      section('Membership', el('div.card', {},
+        pick('membership', MEMBERSHIP_TIERS, t.membership),
+        el('div.tiny.faint', { style: { marginTop: '6px' }, text: t.membership.hint }),
+        t.memberOffer.members ? el('div.rowbetween', { style: { marginTop: '6px' } },
+          el('span.small', { text: `${fmtNum(t.memberOffer.members)} members at ${fmtMoney(t.membership.fee)}` }),
+          el('span.small.mono.good', { text: fmtMoney(t.memberOffer.gross) })) : null)),
+
+      section('Concessions', el('div.card', {},
+        pick('concession', CONCESSION_TIERS, t.concession),
+        el('div.tiny.faint', { style: { marginTop: '6px' }, text: t.concession.hint }))));
+  }
+
+  /**
    * The ground itself: what you are licensed to sell to, and what state the
    * surfaces are in. Both are things that take capacity away from a stadium
    * which is still standing, so they belong on the same screen.
@@ -531,14 +595,15 @@ export class Screens {
 
   // ================================================================== MORE
   openMore(initial = 'Staff') {
-    const tabs = ['Empire', 'Clubs', 'Hosting', 'Ground', 'Programmes', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
+    const tabs = ['Empire', 'Clubs', 'Hosting', 'Ground', 'Tickets', 'Programmes', 'Staff', 'Sponsors', 'Research', 'Infra', 'Rivals', 'Community', 'Goals', 'Awards', 'Settings'];
     let active = tabs.includes(initial) ? initial : 'Empire';
     const tabBar = el('div.tabs');
     const render = () => {
       fill(tabBar, ...tabs.map((t) => el('button.tab' + (t === active ? '.on' : ''), {
         onclick: () => { active = t; render(); },
       }, t)));
-      const body = active === 'Ground' ? this.groundBody(render)
+      const body = active === 'Tickets' ? this.ticketsBody(render)
+        : active === 'Ground' ? this.groundBody(render)
         : active === 'Empire' ? this.empireBody(render)
         : active === 'Clubs' ? this.clubsBody(render)
         : active === 'Hosting' ? this.hostingBody(render)

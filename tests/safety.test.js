@@ -181,6 +181,61 @@ test('an inspection never leaves a ground worse off than no inspection', () => {
     + 'which would make never booking one the right move');
 });
 
+test('the certificate actually caps the crowd at an event, not just on a screen', async () => {
+  const { simulateEvent } = await import('../src/events/eventSimulation.js');
+  const { instantiate } = await import('../src/events/eventGenerator.js');
+  const { EVENT_TEMPLATES } = await import('../src/data/events.js');
+  const { makeRng } = await import('../src/core/rng.js');
+  const { createTicketState } = await import('../src/core/ticketing.js');
+
+  // Plenty of turnstiles, so the certificate is what limits the crowd rather
+  // than the queue. This is the test that was missing when the cap was wired
+  // into the screen but never into the simulation.
+  const v = {
+    key: 'v1', capacity: { total: 40_000, seated: 40_000, vip: 0, standing: 0, boxes: 0 },
+    ratings: {
+      overall: 75, comfort: 75, crowdFlow: 75, appearance: 70, accessibility: 70, safety: 75,
+      measures: { concession: 0.6, retail: 0.5, hospitality: 0.2, locker: 0.6, medical: 1, media: 0.3, broadcast: 0.2, exit: 1, concourse: 1, stairs: 1 },
+    },
+    facilities: { entrance: 60, entranceGates: 60, exitGates: 10 },
+    field: { regulation: 1 }, indoor: false, parkingCars: 2000, screens: 2,
+    roofCoverage: 0, seatRoofCoverage: 0, structuralWarnings: 0,
+  };
+  const base = () => ({
+    day: 200, weather: 'sunny', cash: 1e6,
+    reputation: { venue: 70, fans: 80, athletes: 50, organiser: 50, community: 60 },
+    staffBonus: { marketing: 0, security: 0, operations: 0, events: 0, hospitality: 0, finance: 0, management: 0 },
+    sponsorBonuses: { food: 0, merch: 0, sponsor: 0, broadcast: 0, athlete: 0 },
+    sponsorPerEvent: 0, transitShare: 0.2, complex: { adverts: 0 },
+    stats: { bestSatisfaction: 70 }, tickets: createTicketState(),
+    programmes: { effects: {} }, research: { completed: [] },
+    safety: createSafetyState(), staff: ['stewards', 'stewards', 'stewards', 'stewards'],
+  });
+
+  const ev = instantiate(EVENT_TEMPLATES[0], base(), makeRng(5));
+  const contract = { amount: 0, venueKey: 'v1', packages: [], terms: [], pricing: 'standard' };
+
+  // Uncertified: a small ground however many seats are standing.
+  const uncertified = base();
+  const small = simulateEvent(ev, v, uncertified, contract);
+  assert.ok(small.attendance <= SMALL_GROUND,
+    `an uncertified ground cannot admit more than ${SMALL_GROUND}, admitted ${small.attendance}`);
+
+  // Certified: the ground fills.
+  const certified = base();
+  issue(certified, v, { emergencyRoad: 500 });
+  const big = simulateEvent(ev, v, certified, contract);
+  assert.ok(big.attendance > small.attendance * 2,
+    `a certificate should let the ground fill: ${small.attendance} vs ${big.attendance}`);
+  assert.ok(big.revenue.tickets > small.revenue.tickets, 'and be worth money');
+
+  // Prohibited: nobody comes in at all.
+  const closed = base();
+  issue(closed, { ...v, structuralWarnings: 8 }, { emergencyRoad: 500 });
+  const none = simulateEvent(ev, v, closed, contract);
+  assert.equal(none.attendance, 0, 'a prohibited ground admits nobody');
+});
+
 test('a demolished venue stops holding a certificate', () => {
   const st = stateWith();
   issue(st, venue(), complex);

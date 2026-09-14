@@ -1,6 +1,7 @@
 import { makeRng, hashString } from '../core/rng.js';
 import { conditionEffect } from '../core/groundskeeping.js';
 import { permittedCapacity } from '../core/safety.js';
+import { eventEffect as ticketEffect } from '../core/ticketing.js';
 import { PRICING_TIERS, bidCostMultiplier, contractEffects, clamp } from './bidding.js';
 
 const TIER_BROADCAST = { local: 0, regional: 120_000, national: 900_000, international: 3_400_000, world: 9_500_000 };
@@ -117,9 +118,15 @@ export function simulateEvent(ev, venue, state, contract, ops = NO_OPS) {
     * (0.55 + state.reputation.venue / 220 + state.reputation.fans / 300);
   const comfortPull = (venue.ratings.comfort / 100) * 0.18 + (venue.ratings.accessibility / 100) * 0.14;
   const marketing = 1 + state.staffBonus.marketing * 0.22;
+  // Season tickets and memberships change the shape of the demand: a floor
+  // under it from seats already paid for, and a lift from a following that
+  // turns up rather than a crowd that decides on the day.
+  const tick = ticketEffect(state, venue);
   let fill = clamp(
-    (demandPool + comfortPull) * pricing.elasticity * marketing * rng.jitter(0.12) * ops.fill,
+    (demandPool + comfortPull + tick.fillBonus) * pricing.elasticity * marketing
+      * rng.jitter(0.12) * ops.fill,
     0.05, 1.0);
+  fill = Math.max(fill, tick.floor);
 
   // Weather bites outdoor venues.
   const weather = state.weather;
@@ -137,10 +144,16 @@ export function simulateEvent(ev, venue, state, contract, ops = NO_OPS) {
   // land on the same numbers, so they multiply together rather than one of
   // them quietly winning.
   const prog = state.programmes?.effects || {};
+  // The safety certificate is the number you may actually sell to, which is
+  // not the number of seats you have built: no certificate, an expired one or
+  // a prohibition notice all cost you a crowd you have the seats for.
+  const sellable = state.safety
+    ? Math.min(venue.capacity.total, permittedCapacity(state, venue))
+    : venue.capacity.total;
   const gateThroughput = venue.facilities.entrance * 400 * 2.2 * ops.gate * (prog.gate || 1);
-  const gateCapped = gateThroughput > 0 ? Math.min(venue.capacity.total, gateThroughput) : venue.capacity.total * 0.35;
+  const gateCapped = gateThroughput > 0 ? Math.min(sellable, gateThroughput) : sellable * 0.35;
   const soldOut = fill >= 0.985;
-  let attendance = Math.round(Math.min(venue.capacity.total * fill, gateCapped));
+  let attendance = Math.round(Math.min(sellable * fill, gateCapped));
   const turnedAway = Math.max(0, Math.round(venue.capacity.total * fill) - attendance);
 
   // ---------------------------------------------------------------- incidents
@@ -194,7 +207,10 @@ export function simulateEvent(ev, venue, state, contract, ops = NO_OPS) {
   const days = ev.days + (eff.extraDays || 0);
   const perDay = Math.max(1, ev.days * 0.55 + 0.45);
 
-  const tickets = Math.round(attendance * ev.base * priceMult * ops.price * q * perDay);
+  // Only the seats that were not sold in the summer are sold again today, and
+  // concessions come in under the full price.
+  const gateAttend = attendance * tick.gateShare;
+  const tickets = Math.round(gateAttend * ev.base * priceMult * tick.priceMult * ops.price * q * perDay);
   const vipAttend = Math.min(venue.capacity.vip, Math.round(venue.capacity.vip * clamp(fill + 0.15, 0, 1)));
   const boxes = venue.capacity.boxes || 0;
   const vip = Math.round(vipAttend * ev.base * 5.4 * priceMult * perDay

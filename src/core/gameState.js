@@ -9,6 +9,7 @@ import { createProgrammeState } from './programmes.js';
 import { createSiteWalkState } from './siteWalk.js';
 import { createPitchState } from './groundskeeping.js';
 import { createSafetyState } from './safety.js';
+import { createTicketState } from './ticketing.js';
 import { createHostingState } from './hosting.js';
 
 const STAFF_ROLE_MAP = new Map(STAFF_ROLES.map((r) => [r.id, r]));
@@ -61,6 +62,7 @@ export function createState(opts = {}) {
     siteWalk: createSiteWalkState(),
     pitches: createPitchState(),
     safety: createSafetyState(),
+    tickets: createTicketState(),
     // Hosting rights: the named competitions this complex has staged, is
     // staging, and could still bid for.
     hosting: createHostingState(),

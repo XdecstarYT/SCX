@@ -38,6 +38,8 @@ import { zoneId, zone, ZONE_BY_KEY, ZONE_GROUPS, ZONE_BY_ID } from './data/zones
 import { instantiate } from './events/eventGenerator.js';
 import { EVENT_TEMPLATES } from './data/events.js';
 import { makeRng } from './core/rng.js';
+import * as TICKETING_API from './core/ticketing.js';
+import { simulateEvent } from './events/eventSimulation.js';
 import { applyReputation } from './core/gameState.js';
 import { PlayDock } from './ui/playDock.js';
 import {
@@ -1941,6 +1943,9 @@ window.__sct.dev = {
       onScreen: Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 && v.z < 1,
     };
   },
+  /** The ticketing module and the event simulator, for driving the trade-offs. */
+  ticketing: TICKETING_API,
+  simulate: simulateEvent,
   /** Push a specific catalogue event onto the board. */
   makeEvent(templateId, seed = Date.now() & 0xffff) {
     const tpl = EVENT_TEMPLATES.find((t) => t.id === templateId);

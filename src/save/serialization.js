@@ -5,6 +5,7 @@ import { createProgrammeState } from '../core/programmes.js';
 import { createSiteWalkState } from '../core/siteWalk.js';
 import { createPitchState } from '../core/groundskeeping.js';
 import { createSafetyState } from '../core/safety.js';
+import { createTicketState } from '../core/ticketing.js';
 import { PropLayer } from '../voxel/props.js';
 import { SAVE_VERSION } from '../core/gameState.js';
 import { createHotbarState } from '../ui/hotbar.js';
@@ -203,6 +204,7 @@ export function migrate(save) {
   // Pitches too: an older complex simply has surfaces in perfect condition
   // that nothing has been installed under yet.
   if (!s.pitches || !s.pitches.byVenue) s.pitches = createPitchState();
+  if (!s.tickets || !s.tickets.season) s.tickets = createTicketState();
   // An older complex has no certificates. Rather than shut every existing
   // ground overnight, a save that predates the system is grandfathered: each
   // venue is treated as certified until its first renewal falls due.
