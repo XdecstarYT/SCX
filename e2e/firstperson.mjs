@@ -105,18 +105,40 @@ const beforeHold = await count('concrete');
 await page.evaluate(() => {
   const app = window.__sct;
   app.rig.fPitch = -0.7;                 // look at the ground ahead
-  app.input.heldAction = 0;              // as if the place button were held
+  app.input.beginHold(0);                // as if the place button were held
 });
 // Walk sideways while holding, the way you would sweep out a wall.
-for (let i = 0; i < 16; i++) {
+//
+// Long enough that the answer cannot depend on the frame rate: the repeat
+// waits a third of a second before it starts and then fires every 110ms, and
+// SwiftShader renders this scene at about five frames a second, so a short
+// sweep can come down to whether one more frame happened to land.
+for (let i = 0; i < 24; i++) {
   await page.evaluate(() => { window.__sct.rig.pos.x += 2.2; });
-  await page.waitForTimeout(90);
+  await page.waitForTimeout(160);
 }
 await page.evaluate(() => window.__sct.input.releaseHold());
 await page.waitForTimeout(200);
 const afterHold = await count('concrete');
 console.log(`  holding placed a further ${afterHold - beforeHold} blocks`);
 if (afterHold - beforeHold < 4) throw new Error('holding the button did not repeat placement');
+// And the delay before the repeat starts is what stops a tap placing twice,
+// so check the other end of the same mechanism while we are here.
+{
+  const beforeTap = await count('concrete');
+  await page.evaluate(() => {
+    const app = window.__sct;
+    app.rig.pos.x += 40;                 // fresh ground, nothing already on it
+    app.input.beginHold(0);
+    app.onTap(null, 0, true);            // the press fires one action itself
+  });
+  await page.waitForTimeout(220);        // a long tap, still shorter than the delay
+  await page.evaluate(() => window.__sct.input.releaseHold());
+  await page.waitForTimeout(200);
+  const placed = (await count('concrete')) - beforeTap;
+  console.log(`  a 220ms tap placed ${placed} block(s)`);
+  if (placed !== 1) throw new Error(`a tap should place exactly one block, placed ${placed}`);
+}
 await shot(4, 'swept');
 
 // ------------------------------------------------------ pick block

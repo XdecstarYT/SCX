@@ -1800,7 +1800,10 @@ class App {
         this.onTap(null, this.input.heldButton, true);
       }
     } else {
-      this.repeatTimer = REPEAT_INTERVAL;
+      // Zero, not one interval: the delay gate above is what makes the player
+      // wait, so once it opens the first repeat is due immediately. Starting
+      // the timer at a full interval would charge for the wait twice.
+      this.repeatTimer = 0;
     }
 
     // Play mode reads the ground under the player a few times a second. Only
